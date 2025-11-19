@@ -31,6 +31,7 @@ exports.handler = async (event) => {
       ""; // подстрахуемся под разные варианты
 
     const contactId = body.contact_id || body.user_id || null;
+    const context = body.context || ""; // сюда ManyChat передаёт ai_context
 
     if (!userMessage) {
       return {
@@ -41,7 +42,7 @@ exports.handler = async (event) => {
     }
 
     // === Здесь формируем ответ нейросети ===
-    const replyText = await generateReply(userMessage, contactId);
+    const replyText = await generateReply(userMessage, contactId, context);
 
     // Возвращаем максимально простой JSON
     return {
@@ -67,7 +68,7 @@ exports.handler = async (event) => {
 };
 
 // ====== ЛОГИКА ОТВЕТА ======
-async function generateReply(userMessage, contactId) {
+async function generateReply(userMessage, contactId, context = "") {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("OPENAI_API_KEY is not set");
@@ -90,6 +91,9 @@ async function generateReply(userMessage, contactId) {
 • Без длинных лекций и сухих инструкций. Лучше разбить диалог на шаги и задавать уточняющие вопросы.
 • Можно иногда использовать простые эмодзи, но не злоупотребляй.
 • Не копируй одно и то же приветствие каждый раз дословно — слегка вари формулировки.
+• ОЧЕНЬ ВАЖНО: не начинай ответ с приветствия («Здравствуйте», «Ассалому алайкум», «Привет» и т.п.), если пользователь в этом сообщении сам НЕ здоровается. 
+  В таких случаях сразу переходи к сути ответа или уточняющему вопросу, без отдельного приветствия.
+• Если в истории переписки уже были ваши предыдущие сообщения, не нужно заново представляться и отдельно здороваться каждый раз — общайся как в обычном живом диалоге.
 
 ЛОГИКА ЯЗЫКА И ШАБЛОННЫХ СООБЩЕНИЙ:
 • Часто первое сообщение прилетает автоматически от рекламы: 
@@ -204,6 +208,26 @@ BUSINESS / PREMIER:
 
 Главное: отвечай как нормальный живой оператор, коротко, по делу и человеческим языком.`;
 
+    const messages = [
+      { role: "system", content: systemPrompt },
+    ];
+
+    // Если ManyChat прислал контекст — добавляем его как системное сообщение,
+    // чтобы модель учитывала историю и не повторяла одни и те же вопросы/приветствия.
+    if (context && typeof context === "string" && context.trim().length > 0) {
+      messages.push({
+        role: "system",
+        content:
+          "Вот краткая история переписки с этим клиентом. Учитывай её, не дублируй приветствия и по возможности не повторяй одни и те же вопросы:\n" +
+          context,
+      });
+    }
+
+    messages.push({
+      role: "user",
+      content: userMessage,
+    });
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -212,13 +236,7 @@ BUSINESS / PREMIER:
       },
       body: JSON.stringify({
         model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: userMessage,
-          },
-        ],
+        messages,
         temperature: 0.7,
       }),
     });

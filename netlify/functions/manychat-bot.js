@@ -1,12 +1,33 @@
 // netlify/functions/manychat-bot.js
 
+// Простой helper, чтобы не дублировать заголовки
+const JSON_HEADERS = {
+  "Content-Type": "application/json",
+};
+
 // Этот хэндлер дергает ManyChat
 exports.handler = async (event) => {
+  // ЛОГИРУЕМ САМО ФАКТ ВЫЗОВА ФУНКЦИИ
+  console.log("=== manychat-bot invoked ===");
+  console.log("Method:", event.httpMethod);
+  console.log("Headers:", event.headers);
+  console.log("Raw body:", event.body);
+
   try {
+    // CORS/OPTIONS на всякий случай
+    if (event.httpMethod === "OPTIONS") {
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ ok: true }),
+      };
+    }
+
     if (event.httpMethod !== "POST") {
+      console.log("Wrong method, expected POST");
       return {
         statusCode: 405,
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ error: "Method not allowed" }),
       };
     }
@@ -19,12 +40,12 @@ exports.handler = async (event) => {
       console.error("Bad JSON from ManyChat:", e);
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ error: "Bad JSON" }),
       };
     }
 
-    console.log("Incoming from ManyChat:", body);
+    console.log("Parsed body:", body);
 
     const userMessage =
       body.message ||
@@ -32,13 +53,18 @@ exports.handler = async (event) => {
       body.user_input ||
       ""; // подстрахуемся под разные варианты
 
-    const contactId = body.contact_id || body.user_id || null;
+    const contactId = body.contact_id || body.user_id || body.userId || null;
     const context = body.context || ""; // сюда ManyChat передаёт ai_context
 
+    console.log("userMessage:", userMessage);
+    console.log("contactId:", contactId);
+    console.log("context:", context);
+
     if (!userMessage) {
+      console.log("No message in body");
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ error: "No message provided" }),
       };
     }
@@ -46,12 +72,12 @@ exports.handler = async (event) => {
     // === Здесь формируем ответ нейросети ===
     const replyText = await generateReply(userMessage, contactId, context);
 
+    console.log("AI reply:", replyText);
+
     // Возвращаем максимально простой JSON
     return {
       statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         reply: replyText,
       }),
@@ -61,7 +87,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         reply: "Произошла ошибка. Попробуй ещё раз чуть позже 🙏",
       }),

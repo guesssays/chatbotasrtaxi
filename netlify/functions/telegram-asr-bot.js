@@ -352,7 +352,7 @@ const SYSTEM_PROMPT = `
   Lexus LS,
   Zeekr 001 / 007 / 009,
   LiXiang L7 / L8 / L9,
-  и другие премиальные модели из официального списка.
+  и другие премиальные модели из официальной таблицы.
 • Если авто не соответствует этим требованиям по классу, цвету или оснащению — ассистент должен честно сказать, что для «Premier» оно не подходит, но можно рассмотреть «Бизнес» или другие тарифы.
 
 ---
@@ -395,6 +395,10 @@ function addToSession(chatId, role, content) {
   }
 }
 
+// === БЛОКЛИСТ (в памяти, как и сессии) ===
+const blockedUsers = new Set();
+
+
 // ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 
 function escapeHtml(text) {
@@ -405,15 +409,20 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
-async function sendTelegramMessage(chatId, text) {
+async function sendTelegramMessage(chatId, text, replyMarkup) {
+  const body = {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+  };
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+
   const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -446,7 +455,8 @@ async function callOpenAI(messages) {
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
-// ================== ОСНОВНОЙ ХЭНДЛЕР NETLIFY ==================
+
+// ================== ПОСТРОЕНИЕ КОНТЕНТА ДЛЯ ИИ ==================
 
 function buildUserContentFromMessage(msg) {
   const parts = [];
@@ -507,6 +517,8 @@ function buildUserContentFromMessage(msg) {
 }
 
 
+// ================== ОСНОВНОЙ ХЭНДЛЕР NETLIFY ==================
+
 exports.handler = async (event) => {
   console.log("=== telegram-asr-bot invoked ===");
   console.log("Method:", event.httpMethod);
@@ -543,14 +555,61 @@ exports.handler = async (event) => {
 
     console.log("Update:", JSON.stringify(update));
 
+    // === CALLBACK "ЗАБЛОКИРОВАТЬ" ОТ ОПЕРАТОРА ===
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const fromId = cb.from?.id;
+      const data = cb.data || "";
+      const cbId = cb.id;
+
+      // обрабатываем только, если нажал настоящий админ
+      if (
+        ADMIN_CHAT_ID &&
+        String(fromId) === String(ADMIN_CHAT_ID) &&
+        data.startsWith("block:")
+      ) {
+        const targetId = data.split(":")[1];
+        if (targetId) {
+          blockedUsers.add(String(targetId));
+          console.log("Blocked user:", targetId);
+
+          // ответ на callback, чтобы убрать "часики"
+          await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              callback_query_id: cbId,
+              text: "Клиент заблокирован 👍",
+              show_alert: false,
+            }),
+          });
+
+          // уведомим оператора
+          await sendTelegramMessage(
+            ADMIN_CHAT_ID,
+            `Пользователь с Chat ID <code>${targetId}</code> заблокирован. Бот больше не будет ему отвечать.`
+          );
+        }
+      }
+
+      // другие callback-и сейчас не используем
+      return { statusCode: 200, body: "Callback handled" };
+    }
+
     const msg = update.message || update.edited_message;
     if (!msg) {
-      // ничего не делаем, если это не message (например, callback_query и т.п.)
+      // ничего не делаем, если это не message (например, только callback_query и т.п.)
       return { statusCode: 200, body: "No message" };
     }
 
     const chatId = msg.chat?.id;
     const chatType = msg.chat?.type;
+
+    // если пользователь в блок-листе — игнорируем
+    if (chatId && blockedUsers.has(String(chatId))) {
+      console.log("Incoming message from blocked user:", chatId);
+      return { statusCode: 200, body: "Blocked user" };
+    }
 
     const text = msg.text || msg.caption || "";
 
@@ -588,7 +647,6 @@ exports.handler = async (event) => {
       ...history,
     ];
 
-
     let assistantReply;
     try {
       assistantReply = await callOpenAI(messages);
@@ -611,6 +669,7 @@ exports.handler = async (event) => {
 
     // отправляем ответ водителю
     await sendTelegramMessage(chatId, assistantReply);
+
     // ===== ЛОГИРОВАНИЕ ДИАЛОГА В КАНАЛ =====
     if (LOG_CHAT_ID) {
       const username = msg.from?.username ? `@${msg.from.username}` : "";
@@ -642,9 +701,20 @@ exports.handler = async (event) => {
         "<b>Ответ бота:</b>\n" +
         `${escapeHtml(assistantReply)}`;
 
-      await sendTelegramMessage(LOG_CHAT_ID, logText);
-    }
+      // Кнопка "Заблокировать клиента"
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: "🚫 Заблокировать клиента",
+              callback_data: `block:${chatId}`,
+            },
+          ],
+        ],
+      };
 
+      await sendTelegramMessage(LOG_CHAT_ID, logText, replyMarkup);
+    }
 
     // простая логика оповещения оператора, если ассистент говорит, что передаёт оператору
     if (

@@ -3,7 +3,8 @@
 const TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || null; // опционально
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || null; // чат оператора, если нужен алерт
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || null; // личка оператора для алертов
+const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null; // канал/чат для логов диалогов
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
@@ -282,6 +283,14 @@ function addToSession(chatId, role, content) {
 
 // ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 async function sendTelegramMessage(chatId, text) {
   const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
@@ -393,14 +402,14 @@ exports.handler = async (event) => {
       console.error("OpenAI call failed:", e);
       await sendTelegramMessage(
         chatId,
-        "Сервес временно недоступен, оператор скоро ответит вручную."
+        "Сервис временно недоступен, оператор скоро ответит вручную."
       );
       return { statusCode: 200, body: "AI error" };
     }
 
     if (!assistantReply) {
       assistantReply =
-        "Серия временно недоступен, оператор скоро ответит вручную.";
+        "Сервис временно недоступен, оператор скоро ответит вручную.";
     }
 
     // сохраняем ответ ассистента в историю
@@ -408,6 +417,28 @@ exports.handler = async (event) => {
 
     // отправляем ответ водителю
     await sendTelegramMessage(chatId, assistantReply);
+
+    // ===== ЛОГИРОВАНИЕ ДИАЛОГА В КАНАЛ =====
+    if (LOG_CHAT_ID) {
+      const username = msg.from?.username
+        ? `@${msg.from.username}`
+        : "";
+      const fullName = `${msg.from?.first_name || ""} ${
+        msg.from?.last_name || ""
+      }`.trim();
+
+      const logText =
+        "👀 <b>Новый диалог с водителем</b>\n\n" +
+        `Chat ID: <code>${chatId}</code>\n` +
+        (username ? `Username: ${escapeHtml(username)}\n` : "") +
+        (fullName ? `Имя: ${escapeHtml(fullName)}\n` : "") +
+        "\n<b>Сообщение водителя:</b>\n" +
+        `${escapeHtml(text)}\n\n` +
+        "<b>Ответ бота:</b>\n" +
+        `${escapeHtml(assistantReply)}`;
+
+      await sendTelegramMessage(LOG_CHAT_ID, logText);
+    }
 
     // простая логика оповещения оператора, если ассистент говорит, что передаёт оператору
     if (
@@ -421,8 +452,8 @@ exports.handler = async (event) => {
       const alertText =
         "⚠️ Запрос передан оператору.\n\n" +
         `Чат: <code>${chatId}</code>\n` +
-        (username ? `Пользователь: ${username}\n` : "") +
-        `Последнее сообщение водителя:\n${text}`;
+        (username ? `Пользователь: ${escapeHtml(username)}\n` : "") +
+        `Последнее сообщение водителя:\n${escapeHtml(text)}`;
 
       await sendTelegramMessage(ADMIN_CHAT_ID, alertText);
     }

@@ -195,7 +195,7 @@ async function generateReply(userMessage, contactId, context = "") {
   }
 
   try {
-   const systemPrompt = `
+    const systemPrompt = `
 ИНСТРУКЦИЯ ДЛЯ INSTAGRAM-АССИСТЕНТА ASR TAXI
 ТЫ СТРОГО СЛЕДУЕШЬ ЭТИМ ПРАВИЛАМ.
 
@@ -1075,8 +1075,9 @@ Moskvich 3 → Start(да), Comfort(2022+)
 Если ты не понял модель машины - не молчи, а уточни что имел ввиду водитель, сравни похожие названия из списка и предложи их в ответе.
 
 `;
-const formatPrompt = `
-СЕЙЧАС ОЧЕНЬ ВАЖНО: отвечай СТРОГО в формате одного JSON-объекта без лишнего текста до или после.
+ const formatPrompt = `
+СЕЙЧАС ОЧЕНЬ ВАЖНО: отвечай СТРОГО одним JSON-объектом БЕЗ форматирования кода, 
+БЕЗ тройных кавычек и блоков \`\`\`.
 
 Формат:
 {
@@ -1091,6 +1092,7 @@ const formatPrompt = `
 
 Никакого другого формата, только этот JSON.
 `;
+
     // Собираем пользовательское сообщение: история + новое сообщение
     let fullUserContent;
     if (context && typeof context === "string" && context.trim().length > 0) {
@@ -1119,6 +1121,8 @@ const formatPrompt = `
         model: "gpt-4o",
         messages,
         temperature: 0.7,
+        // просим строго JSON
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -1133,22 +1137,29 @@ const formatPrompt = `
     }
 
     const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content?.trim() || "";
+    let raw = data.choices?.[0]?.message?.content?.trim() || "";
 
     console.log("Raw OpenAI answer:", raw);
+
+    // На всякий случай убираем ```json ... ``` если модель вдруг их поставит
+    if (raw.startsWith("```")) {
+      raw = raw
+        .replace(/^```[a-zA-Z]*\s*/i, "") // убираем ``` или ```json
+        .replace(/```$/i, "")            // убираем закрывающие ```
+        .trim();
+    }
 
     let parsed;
     try {
       parsed = JSON.parse(raw);
     } catch (e) {
-      console.error(
-        "Failed to parse JSON from OpenAI, fallback to plain text",
-        e
-      );
+      console.error("Failed to parse JSON from OpenAI:", e, "raw:", raw);
       return {
-        reply: raw || "Не удалось сформировать ответ 😔",
-        handover: 0,
-        operator_note: "",
+        reply: "Не удалось сформировать ответ 😔 Передаю вопрос оператору, чуть подождите.",
+        handover: 1,
+        operator_note:
+          "Модель вернула невалидный JSON. Нужен ответ оператора по вопросу: " +
+          userMessage,
       };
     }
 

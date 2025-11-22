@@ -181,12 +181,10 @@ exports.handler = async (event) => {
   }
 };
 
-// ====== ЛОГИКА ОТВЕТА ======
 async function generateReply(userMessage, contactId, context = "") {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("OPENAI_API_KEY is not set");
-    // На всякий случай хоть что-то ответим
     return {
       reply: `Вы написали: "${userMessage}"`,
       handover: 0,
@@ -194,8 +192,20 @@ async function generateReply(userMessage, contactId, context = "") {
     };
   }
 
+  // 🔥 Ограничиваем длину контекста
+  const MAX_CONTEXT_CHARS = 4000; // можно 3000–6000, по вкусу
+  let safeContext = "";
+
+  if (typeof context === "string" && context.trim().length > 0) {
+    safeContext = context.trim();
+    if (safeContext.length > MAX_CONTEXT_CHARS) {
+      // берём только хвост истории
+      safeContext = safeContext.slice(-MAX_CONTEXT_CHARS);
+    }
+  }
+
   try {
-    const systemPrompt = `
+    const systemPrompt =`
 ИНСТРУКЦИЯ ДЛЯ INSTAGRAM-АССИСТЕНТА ASR TAXI
 ТЫ СТРОГО СЛЕДУЕШЬ ЭТИМ ПРАВИЛАМ.
 
@@ -1093,12 +1103,11 @@ Moskvich 3 → Start(да), Comfort(2022+)
 Никакого другого формата, только этот JSON.
 `;
 
-    // Собираем пользовательское сообщение: история + новое сообщение
-    let fullUserContent;
-    if (context && typeof context === "string" && context.trim().length > 0) {
+ let fullUserContent;
+    if (safeContext) {
       fullUserContent =
-        "Предыдущая переписка с этим клиентом:\n" +
-        context.trim() +
+        "Предыдущая переписка с этим клиентом (усечённая):\n" +
+        safeContext +
         "\n\nНовое сообщение клиента:\n" +
         userMessage;
     } else {

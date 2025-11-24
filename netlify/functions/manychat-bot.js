@@ -1,6 +1,6 @@
 // netlify/functions/manychat-bot.js
 
-// Простой helper, чтобы не дублировать заголовки
+
 const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
@@ -43,16 +43,16 @@ async function sendTelegramAlert(text) {
 }
 // =======================================================================
 
-// Этот хэндлер дергает ManyChat
+
 exports.handler = async (event) => {
-  // ЛОГИРУЕМ САМО ФАКТ ВЫЗОВА ФУНКЦИИ
+
   console.log("=== manychat-bot invoked ===");
   console.log("Method:", event.httpMethod);
   console.log("Headers:", event.headers);
   console.log("Raw body:", event.body);
 
   try {
-    // CORS/OPTIONS на всякий случай
+  
     if (event.httpMethod === "OPTIONS") {
       return {
         statusCode: 200,
@@ -70,7 +70,7 @@ exports.handler = async (event) => {
       };
     }
 
-    // Разбираем тело запроса от ManyChat
+ 
     let body;
     try {
       body = JSON.parse(event.body || "{}");
@@ -89,12 +89,12 @@ exports.handler = async (event) => {
       body.message ||
       body.text ||
       body.user_input ||
-      ""; // подстрахуемся под разные варианты
+      ""; 
 
     const contactId = body.contact_id || body.user_id || body.userId || null;
-    const context = body.context || ""; // сюда ManyChat передаёт ai_context
+    const context = body.context || ""; 
 
-    // NEW: имя и инста-логин, которые ты передаёшь из ManyChat
+
     const contactName =
       body.contact_name ||
       body.user_name ||
@@ -125,12 +125,12 @@ exports.handler = async (event) => {
       };
     }
 
-    // === Здесь формируем ответ нейросети ===
+    // ======
     const aiResult = await generateReply(userMessage, contactId, context);
 
     console.log("AI result:", aiResult);
 
-    // ================= NEW: если нужен оператор — шлём алерт в Телеграм =================
+    // ==================================
     try {
       if (aiResult && aiResult.handover) {
         let alertText = "🟡 Новый диалог из Instagram\n\n";
@@ -160,7 +160,7 @@ exports.handler = async (event) => {
     }
     // ====================================================================
 
-    // Возвращаем JSON для ManyChat
+
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
@@ -192,14 +192,14 @@ async function generateReply(userMessage, contactId, context = "") {
     };
   }
 
-  // 🔥 Ограничиваем длину контекста
-  const MAX_CONTEXT_CHARS = 4000; // можно 3000–6000, по вкусу
+
+  const MAX_CONTEXT_CHARS = 4000; 
   let safeContext = "";
 
   if (typeof context === "string" && context.trim().length > 0) {
     safeContext = context.trim();
     if (safeContext.length > MAX_CONTEXT_CHARS) {
-      // берём только хвост истории
+   
       safeContext = safeContext.slice(-MAX_CONTEXT_CHARS);
     }
   }
@@ -1220,7 +1220,7 @@ UZ:
         model: "gpt-4o",
         messages,
         temperature: 0.7,
-        // просим строго JSON
+
         response_format: { type: "json_object" },
       }),
     });
@@ -1241,11 +1241,11 @@ if (!response.ok) {
 
     console.log("Raw OpenAI answer:", raw);
 
-    // На всякий случай убираем ```json ... ``` если модель вдруг их поставит
+
     if (raw.startsWith("```")) {
       raw = raw
-        .replace(/^```[a-zA-Z]*\s*/i, "") // убираем ``` или ```json
-        .replace(/```$/i, "")            // убираем закрывающие ```
+        .replace(/^```[a-zA-Z]*\s*/i, "") 
+        .replace(/```$/i, "")            
         .trim();
     }
 
@@ -1267,7 +1267,7 @@ return {
         ? parsed.reply.trim()
         : "Не удалось сформировать ответ 😔";
 
-    const handover = parsed.handover ? 1 : 0; // ManyChat удобно 0/1
+    const handover = parsed.handover ? 1 : 0; 
     const operatorNote =
       typeof parsed.operator_note === "string"
         ? parsed.operator_note.trim()

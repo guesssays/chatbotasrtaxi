@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Загрузка документов ASR TAXI</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #050608;
+      color: #f5f5f5;
+    }
+    .wrapper {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    p {
+      font-size: 14px;
+      opacity: 0.85;
+    }
+    .camera-container {
+      position: relative;
+      margin-top: 16px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 3/4;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    /* рамка-оверлей */
+    .frame {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .frame::before {
+      content: "";
+      position: absolute;
+      top: 12%;
+      left: 8%;
+      right: 8%;
+      bottom: 40%;
+      border: 3px solid #00ff99;
+      border-radius: 8px;
+      box-shadow: 0 0 12px rgba(0,255,153,0.9);
+    }
+    .frame::after {
+      /* затемнение вокруг рамки */
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        ellipse at center,
+        rgba(0, 0, 0, 0.1) 0,
+        rgba(0, 0, 0, 0.65) 60%
+      );
+      mix-blend-mode: multiply;
+    }
+    .btn {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 999px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #00ff99, #00b3ff);
+      color: #050608;
+      width: 100%;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    #preview {
+      margin-top: 16px;
+      display: none;
+    }
+    #preview img {
+      max-width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .note {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <h1>Загрузка документов</h1>
+  <p id="userInfo"></p>
+  <p>Поместите документ полностью внутри рамки и сделайте фото.</p>
+
+  <div class="camera-container">
+    <video id="video" autoplay playsinline></video>
+    <div class="frame"></div>
+  </div>
+
+  <button class="btn" id="captureBtn">📸 Сделать снимок</button>
+  <p id="status" class="note"></p>
+
+  <div class="note">Фото автоматически подстроится под нужный формат.</div>
+
+  <div id="preview">
+    <p>Проверьте фото документа:</p>
+    <img id="previewImg" alt="Предпросмотр документа" />
+  </div>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const captureBtn = document.getElementById("captureBtn");
+  const preview = document.getElementById("preview");
+  const previewImg = document.getElementById("previewImg");
+  const userInfo = document.getElementById("userInfo");
+  const statusEl = document.getElementById("status");
+
+  // Читаем параметры из URL (tg_id и phone)
+  const params = new URLSearchParams(location.search);
+  const tgId = params.get("tg_id");
+  const phone = params.get("phone");
+
+  if (phone) {
+    userInfo.textContent = `Телефон: ${phone}`;
+  } else {
+    userInfo.textContent = "";
+  }
+
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      video.srcObject = stream;
+    } catch (e) {
+      console.error("Camera error:", e);
+      alert("Не удалось получить доступ к камере. Разрешите доступ в браузере.");
+    }
+  }
+
+  captureBtn.addEventListener("click", async () => {
+    const videoTrack = (video.srcObject && video.srcObject.getVideoTracks()[0]) || null;
+    const settings = videoTrack ? videoTrack.getSettings() : {};
+
+    const width = settings.width || 720;
+    const height = settings.height || 960;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, width, height);
+
+    // 1) DataURL для превью
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+    // Показать превью
+    previewImg.src = dataUrl;
+    preview.style.display = "block";
+
+    // 2) Отправка на Netlify-функцию upload-doc
+    statusEl.textContent = "Отправляю документ оператору...";
+
+    try {
+      const res = await fetch("/.netlify/functions/upload-doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: dataUrl,
+          tg_id: tgId || "",
+          phone: phone || "",
+          docType: "document" // позже можно заменить на 'права', 'техпаспорт' и т.п.
+        }),
+      });
+
+      if (res.ok) {
+        statusEl.textContent = "Документ отправлен оператору ✅";
+      } else {
+        console.error("upload-doc error status:", res.status);
+        statusEl.textContent = "Не удалось отправить документ. Попробуйте ещё раз.";
+      }
+    } catch (e) {
+      console.error("upload-doc exception:", e);
+      statusEl.textContent = "Ошибка при отправке документа.";
+    }
+  });
+
+  startCamera();
+</script>
+</body>
+</html>

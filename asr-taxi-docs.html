@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="uz">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Загрузка документов ASR TAXI</title>
+  <title>ASR TAXI uchun hujjatlarni yuklash</title>
   <style>
     :root {
       --bg: #050608;
@@ -272,7 +272,7 @@
       background: #000;
       width: 100%;
       max-width: 440px;
-      aspect-ratio: 3/4;
+      height: 360px; /* фиксированная высота, чтобы рамка была прямоугольной */
     }
 
     video {
@@ -291,10 +291,11 @@
     .frame::before {
       content: "";
       position: absolute;
-      top: 10%;
-      left: 8%;
-      right: 8%;
-      bottom: 30%;
+      /* прямоугольная рамка: уже по ширине, выше по высоте */
+      top: 6%;
+      bottom: 14%;
+      left: 10%;
+      right: 10%;
       border: 3px solid var(--accent1);
       border-radius: 12px;
       box-shadow: 0 0 16px rgba(0,255,153,0.9);
@@ -482,88 +483,94 @@
       .field-label {
         font-size: 13px;
       }
+      .camera-container {
+        height: 300px; /* пониже на совсем узких экранах */
+      }
     }
   </style>
 </head>
 <body>
 <div class="wrapper">
-  <h1 class="main-title">Подключение к ASR TAXI</h1>
+  <h1 class="main-title">ASR TAXI ga ulanish</h1>
   <p class="main-subtitle">
-    Загрузите <span class="screen-text-strong">В/У и техпаспорт</span>, чтобы оператор мог быстрее подключить вас к парку.
+    Operator sizni parkka tezroq ulashi uchun
+    <span class="screen-text-strong">haydovchilik guvohnomangiz</span> va
+    <span class="screen-text-strong">texpassportingiz</span> suratini yuklang.
   </p>
 
   <!-- Прогресс регистрации -->
   <div class="steps-widget">
     <div class="steps-header">
-      <span class="steps-label" id="stepsLabel">Шаг 1 из 3</span>
+      <span class="steps-label" id="stepsLabel">1-qadam / 3</span>
     </div>
     <div class="steps-bar">
       <div class="steps-bar-fill" id="stepsBarFill"></div>
     </div>
     <div class="steps-names">
-      <div class="step-name step-name--active" data-step="0">Авто и контакт</div>
-      <div class="step-name" data-step="1">Документы</div>
-      <div class="step-name" data-step="2">Готово</div>
+      <div class="step-name step-name--active" data-step="0">Avto va kontakt</div>
+      <div class="step-name" data-step="1">Hujjatlar</div>
+      <div class="step-name" data-step="2">Tayyor</div>
     </div>
   </div>
 
   <!-- Шаги по документам -->
   <div class="doc-steps" id="docStepsBox">
-    <div class="doc-step-label" id="docStepLabel">Документ 1 из 3</div>
-    <div class="doc-step-title" id="docStepTitle">В/У — лицевая сторона</div>
+    <div class="doc-step-label" id="docStepLabel">1-hujjat / 3</div>
+    <div class="doc-step-title" id="docStepTitle">Haydovchilik guvohnomasi — old tomoni</div>
   </div>
 
   <!-- ЭКРАН 1: авто + цвет + телефон -->
   <div id="screenIntro" class="screen screen-active">
-    <h2 class="screen-title">Укажите данные автомобиля</h2>
+    <h2 class="screen-title">Avtomobil ma'lumotlarini kiriting</h2>
     <p class="screen-text">
-      <span class="screen-text-strong">Важно:</span> выберите реальную
-      <span class="screen-text-strong">модель</span> и <span class="screen-text-strong">цвет</span> автомобиля, а также
-      оставьте номер телефона для связи с оператором.
+      <span class="screen-text-strong">Muhim:</span> haqiqiy
+      <span class="screen-text-strong">model</span> va
+      <span class="screen-text-strong">rang</span>ni tanlang, shuningdek
+      operator siz bilan bog'lana olishi uchun telefon raqamingizni qoldiring.
     </p>
 
     <div class="form-group">
-      <label for="carInput" class="field-label">Модель автомобиля</label>
+      <label for="carInput" class="field-label">Avtomobil modeli</label>
       <div class="autocomplete">
         <input
           id="carInput"
           class="input"
           type="text"
           autocomplete="off"
-          placeholder="Начните вводить (Camry, Nexia, Sonata...)"
+          placeholder="Yozishni boshlang (Cobalt, Nexia, Camry...)"
         />
         <div id="carSuggestions" class="suggestions"></div>
       </div>
       <p class="field-hint" id="carHint">
-        Начните вводить <span class="field-hint-strong">полное название</span> авто и выберите вариант из подсказок ниже.
+        Yozishni boshlang va <span class="field-hint-strong">albatta ro'yxatdan modelni tanlang</span>.
       </p>
     </div>
 
     <div class="form-group">
-      <label for="colorSelect" class="field-label">Цвет автомобиля</label>
+      <label for="colorSelect" class="field-label">Avtomobil rangi</label>
       <select id="colorSelect" class="select">
-        <option value="">Выберите цвет из списка</option>
-        <option value="Жёлтый">Жёлтый</option>
-        <option value="Белый">Белый</option>
-        <option value="Чёрный">Чёрный</option>
-        <option value="Серый">Серый</option>
-        <option value="Красный">Красный</option>
-        <option value="Синий">Синий</option>
-        <option value="Голубой">Голубой</option>
-        <option value="Коричневый">Коричневый</option>
-        <option value="Зелёный">Зелёный</option>
-        <option value="Розовый">Розовый</option>
-        <option value="Оранжевый">Оранжевый</option>
-        <option value="Фиолетовый">Фиолетовый</option>
-        <option value="Бежевый">Бежевый</option>
+        <option value="">Ro'yxatdan rangni tanlang</option>
+        <option value="Sariq">Sariq</option>
+        <option value="Oq">Oq</option>
+        <option value="Qora">Qora</option>
+        <option value="Kulrang">Kulrang</option>
+        <option value="Qizil">Qizil</option>
+        <option value="Ko'k">Ko'k</option>
+        <option value="Moviy">Moviy</option>
+        <option value="Jigarrang">Jigarrang</option>
+        <option value="Yashil">Yashil</option>
+        <option value="Pushti">Pushti</option>
+        <option value="To'q sariq">To'q sariq</option>
+        <option value="Siyohrang">Siyohrang</option>
+        <option value="Bej">Bej</option>
       </select>
       <p class="field-hint" id="colorHint">
-        Выберите тот же цвет, который будете указывать в анкете Яндекс.
+        Yandex anketasida ko'rsatadigan rang bilan <span class="field-hint-strong">bir xil rangni</span> tanlang.
       </p>
     </div>
 
     <div class="form-group">
-      <label for="phoneInput" class="field-label">Номер телефона</label>
+      <label for="phoneInput" class="field-label">Telefon raqami</label>
       <input
         id="phoneInput"
         class="input"
@@ -572,7 +579,8 @@
         placeholder="+998 90 123-45-67"
       />
       <p class="field-hint" id="phoneHint">
-        Укажите <span class="field-hint-strong">актуальный номер</span> телефона для связи с оператором.
+        Operator siz bilan bog'lana olishi uchun
+        <span class="field-hint-strong">amalda ishlaydigan raqam</span>ni kiriting.
       </p>
     </div>
 
@@ -582,16 +590,17 @@
           <path fill="currentColor"
             d="M5 12a1 1 0 0 1 1-1h9.586l-3.293-3.293a1 1 0 1 1 1.414-1.414l5 5a1.003 1.003 0 0 1 .21.326 1 1 0 0 1 0 .764 1.003 1.003 0 0 1-.21.326l-5 5a1 1 0 0 1-1.414-1.414L15.586 13H6a1 1 0 0 1-1-1Z" />
         </svg>
-        <span>Продолжить к документам</span>
+        <span>Hujjatlarga o'tish</span>
       </button>
     </div>
   </div>
 
   <!-- ЭКРАН 2: камера (съёмка документа) -->
   <div id="screenCamera" class="screen">
-    <h2 class="screen-title" id="screenCameraTitle">Сделайте фото документа</h2>
+    <h2 class="screen-title" id="screenCameraTitle">Hujjat fotosini oling</h2>
     <p class="screen-text" id="screenCameraText">
-      Разместите <span class="screen-text-strong">нужный документ</span> в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.
+      Kerakli <span class="screen-text-strong">hujjatni</span> ramka ichiga joylashtiring va aniq suratga oling.
+      Istasangiz, galereyadan tayyor rasmni ham yuklashingiz mumkin.
     </p>
 
     <div class="camera-container">
@@ -599,7 +608,8 @@
       <div class="frame"></div>
     </div>
     <p class="camera-hint">
-      Документ (В/У или техпаспорт) должен быть полностью в кадре, без бликов и размытости.
+      Hujjat (haydovchilik guvohnomasi yoki texpassport) to'liq kadr ichida bo'lishi,
+      xiralik va kuchli yaltirashsiz tushishi kerak.
     </p>
 
     <div class="buttons-row">
@@ -608,7 +618,7 @@
           <path fill="currentColor"
             d="M9 4a2 2 0 0 0-1.788 1.106L6.618 6H5a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-7a3 3 0 0 0-3-3h-1.618l-.594-1.894A2 2 0 0 0 15 4H9Zm3 4a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z" />
         </svg>
-        <span>Сделать фото</span>
+        <span>Foto olish</span>
       </button>
 
       <button class="btn btn-secondary" id="galleryBtn">
@@ -616,11 +626,11 @@
           <path fill="currentColor"
             d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v12h14V6H5Zm3 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-1 8 2.5-3 1.5 2 2.5-3 3.5 4H7Z" />
         </svg>
-        <span>Выбрать из галереи</span>
+        <span>Galereyadan tanlash</span>
       </button>
 
       <button class="btn btn-ghost" id="backToIntroBtn">
-        <span>Вернуться назад</span>
+        <span>Ortga qaytish</span>
       </button>
     </div>
 
@@ -629,16 +639,17 @@
 
   <!-- ЭКРАН 3: подтверждение фото -->
   <div id="screenPreview" class="screen">
-    <h2 class="screen-title">Проверьте фото документа</h2>
+    <h2 class="screen-title">Hujjat fotosini tekshiring</h2>
     <p class="screen-text">
-      Убедитесь, что все данные читаются. Если что-то не видно — сделайте другое фото.
+      Barcha ma'lumotlar o'qilishi aniq ekanligiga ishonch hosil qiling.
+      Agar nimadir ko'rinmasa — boshqa suratga oling.
     </p>
 
     <div class="preview-img-wrapper">
-      <img id="previewImg" alt="Предпросмотр документа" />
+      <img id="previewImg" alt="Hujjat rasmi oldindan ko'rish" />
     </div>
     <p class="preview-hint">
-      Документ не должен быть обрезан, размытый или с бликами.
+      Hujjat chetlari kesilmagan, xiralashmagan va kuchli yaltirashsiz bo'lishi kerak.
     </p>
 
     <div class="buttons-row">
@@ -647,7 +658,7 @@
           <path fill="currentColor"
             d="M9.707 16.293 5.414 12l1.414-1.414 2.879 2.879 7.879-7.879L19 7l-9.293 9.293a1 1 0 0 1-1.414 0Z" />
         </svg>
-        <span>Подтвердить и сохранить</span>
+        <span>Tasdiqlash va yuborish</span>
       </button>
 
       <button class="btn btn-secondary" id="retakeBtn">
@@ -655,19 +666,21 @@
           <path fill="currentColor"
             d="M4 4h5v2H6.414l1.293 1.293A7 7 0 1 1 5.05 17.95l1.414-1.414A5 5 0 1 0 9 7.101V10H7V4Zm13.95 2.05A7 7 0 0 1 18 19h-5v-2h2.586l-1.293-1.293A5 5 0 0 0 17 8.515V5h2v3.586l-1.05-1.536Z" />
         </svg>
-        <span>Сделать другое фото</span>
+        <span>Yana bir marta suratga olish</span>
       </button>
     </div>
   </div>
 
   <!-- ЭКРАН 4: всё готово -->
   <div id="screenDone" class="screen">
-    <h2 class="screen-title">Документы отправлены оператору</h2>
+    <h2 class="screen-title">Hujjatlar operatorga yuborildi</h2>
     <p class="screen-text">
-      Все фотографии успешно загружены. Оператор ASR TAXI проверит документы и свяжется с вами по указанному номеру.
+      Barcha suratlar muvaffaqiyatli yuklandi.
+      ASR TAXI operatori hujjatlarni tekshiradi va siz ko'rsatgan raqam orqali
+      siz bilan bog'lanadi.
     </p>
     <p class="note">
-      Если потребуется что-то уточнить или дослать, оператор напишет вам в Telegram.
+      Agar qo'shimcha ma'lumot kerak bo'lsa, operator sizga Telegram orqali yozadi.
     </p>
     <div class="centered">
       <a
@@ -676,7 +689,7 @@
         target="_blank"
         rel="noopener noreferrer"
       >
-        Открыть бот ASR TAXI
+        ASR TAXI botini ochish
       </a>
     </div>
   </div>
@@ -686,8 +699,8 @@
 <div class="loader-overlay" id="loaderOverlay">
   <div class="loader-card">
     <div class="spinner"></div>
-    <p class="loader-title">Идёт обработка…</p>
-    <p class="loader-text" id="loaderText">Пожалуйста, не закрывайте страницу.</p>
+    <p class="loader-title">Qayta ishlanmoqda…</p>
+    <p class="loader-text" id="loaderText">Iltimos, sahifani yopmang.</p>
   </div>
 </div>
 
@@ -743,11 +756,11 @@
     phoneInput.value = initialPhone;
   }
 
-  const MAIN_STEPS = ["Авто и контакт", "Документы", "Готово"];
+  const MAIN_STEPS = ["Avto va kontakt", "Hujjatlar", "Tayyor"];
   const DOC_STEPS = [
-    { id: "vu_front",  title: "В/У — лицевая сторона" },
-    { id: "tech_front", title: "Техпаспорт — лицевая сторона" },
-    { id: "tech_back",  title: "Техпаспорт — оборотная сторона" },
+    { id: "vu_front",  title: "Haydovchilik guvohnomasi — old tomoni" },
+    { id: "tech_front", title: "Texpassport — old tomoni" },
+    { id: "tech_back",  title: "Texpassport — orqa tomoni" },
   ];
 
   let currentMainStep = 0;
@@ -772,7 +785,7 @@
 
   function setMainStep(index) {
     currentMainStep = index;
-    stepsLabel.textContent = `Шаг ${index + 1} из ${MAIN_STEPS.length}`;
+    stepsLabel.textContent = `${index + 1}-qadam / ${MAIN_STEPS.length}`;
     const percent = (index / (MAIN_STEPS.length - 1)) * 100;
     stepsBarFill.style.width = percent + "%";
 
@@ -802,28 +815,26 @@
     const step = DOC_STEPS[currentDocIndex];
     docStepsBox.style.display = "block";
     docStepLabel.textContent =
-      "Документ " + (currentDocIndex + 1) + " из " + DOC_STEPS.length;
+      (currentDocIndex + 1) + "-hujjat / " + DOC_STEPS.length;
     docStepTitle.textContent = step.title;
 
-    // Обновляем заголовок и текст на экране камеры,
-    // чтобы ещё раз выделить название документа.
-    screenCameraTitle.textContent = "Сделайте фото: " + step.title;
+    screenCameraTitle.textContent = "Foto oling: " + step.title;
     screenCameraText.innerHTML =
-      'Разместите <span class="screen-text-strong">' +
+      'Kerakli <span class="screen-text-strong">' +
       step.title +
-      '</span> в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.';
+      '</span>ni ramka ichiga joylashtiring va aniq suratga oling. Galereyadan tayyor rasmni ham yuklashingiz mumkin.';
   }
 
   colorSelect.addEventListener("change", () => {
     selectedColor = colorSelect.value;
     if (selectedColor) {
       colorHint.innerHTML =
-        'Цвет выбран: <span class="field-hint-strong">' +
+        'Rang tanlandi: <span class="field-hint-strong">' +
         selectedColor +
-        "</span>. Нажмите «Продолжить к документам».";
+        "</span>. \"Hujjatlarga o'tish\" tugmasini bosing.";
     } else {
       colorHint.textContent =
-        "Выберите тот же цвет, который будете указывать в анкете Яндекс.";
+        "Yandex anketasida ko'rsatadigan rang bilan bir xil rangni tanlang.";
     }
   });
 
@@ -832,10 +843,10 @@
     storedPhone = val || initialPhone;
     if (val) {
       phoneHint.innerHTML =
-        "Если номер изменился — оператор будет использовать именно этот номер.";
+        "Agar raqamni o'zgartirsangiz — operator aynan shu raqam orqali bog'lanadi.";
     } else {
       phoneHint.innerHTML =
-        'Укажите <span class="field-hint-strong">актуальный номер</span> телефона для связи с оператором.';
+        'Operator siz bilan bog\'lana olishi uchun <span class="field-hint-strong">amalda ishlaydigan raqam</span>ni kiriting.';
     }
   });
 
@@ -844,11 +855,11 @@
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       cameraStatus.textContent =
-        "Камера недоступна в этом браузере. Используйте загрузку из галереи.";
+        "Bu brauzerda kamera ishlamaydi. Galereyadan rasm yuklang.";
       return;
     }
 
-    setLoading(true, "Открываем камеру…");
+    setLoading(true, "Kamerani yoqmoqdamiz…");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -862,21 +873,21 @@
       if (playPromise && typeof playPromise.then === "function") {
         playPromise.catch(err => {
           console.error("video.play() error:", err);
-          cameraStatus.textContent = "Не удалось запустить камеру: " + err.name;
+          cameraStatus.textContent = "Kamerani ishga tushirib bo'lmadi: " + err.name;
         });
       }
 
       video.onloadedmetadata = () => {
         setLoading(false);
-        cameraStatus.textContent = "Камера запущена. Наведите документ в рамку.";
+        cameraStatus.textContent = "Kamera ishga tushdi. Hujjatni ramka ichiga joylashtiring.";
       };
     } catch (e) {
       console.error("Camera error:", e);
       setLoading(false);
       cameraStatus.textContent =
-        "Не удалось получить доступ к камере. Разрешите доступ или используйте галерею.";
+        "Kameraga ruxsat berilmadi. Brauzerda ruxsat bering yoki galereyadan foydalaning.";
       alert(
-        "Не удалось получить доступ к камере. Разрешите доступ в браузере или используйте галерею."
+        "Kameraga kirish imkoni bo'lmadi. Brauzerda ruxsat bering yoki galereyadan rasm yuklang."
       );
     }
   }
@@ -892,7 +903,7 @@
   function captureFromCamera() {
     if (!video || !video.srcObject) {
       cameraStatus.textContent =
-        "Камера не запущена. Обновите страницу или используйте галерею.";
+        "Kamera ishlamayapti. Sahifani yangilang yoki galereyadan foydalaning.";
       return;
     }
 
@@ -919,8 +930,9 @@
 
   /* ===== Автомобили: автодополнение ===== */
 
-  // СЮДА нужно вставить твой список авто как есть между обратными кавычками.
-  // Можно скопировать блок из сообщения полностью.
+  // Senga kerak bo'lgan butun avtomobil ro'yxatini shu yerga qo'yasan:
+  // const RAW_CAR_LIST = `...`;
+  // Hozircha bu yerda faqat kichik namunaviy matn bilan zaglushka turadi.
   const RAW_CAR_LIST = `
 
 Acura MDX	от 2004
@@ -2227,7 +2239,6 @@ Zeekr 001	от 2021
 Zeekr 007	от 2023
 Zeekr 009	от 2022
 `.trim();
-  // В реальном коде вместо "..." вставь весь список строк, который ты прислал.
 
   function normalizeForSearch(str) {
     if (!str) return "";
@@ -2255,7 +2266,6 @@ Zeekr 009	от 2022
       } else if (ch === " " || ch === "-" || ch === "_") {
         out += " ";
       }
-      // все остальное выкидываем
     }
     return out.replace(/\s+/g, " ").trim();
   }
@@ -2277,9 +2287,9 @@ Zeekr 009	от 2022
         const tmp = dp[j];
         const cost = a[i - 1] === b[j - 1] ? 0 : 1;
         dp[j] = Math.min(
-          dp[j] + 1,      // удаление
-          dp[j - 1] + 1,  // вставка
-          prev + cost     // замена
+          dp[j] + 1,
+          dp[j - 1] + 1,
+          prev + cost
         );
         prev = tmp;
       }
@@ -2292,10 +2302,9 @@ Zeekr 009	от 2022
     RAW_CAR_LIST.split(/\r?\n/).forEach(line => {
       const trimmed = line.trim();
       if (!trimmed) return;
-      if (/не допускается/i.test(trimmed)) return; // такие модели не показываем
+      if (/ne dopuskaetsya/i.test(trimmed) || /не допускается/i.test(trimmed)) return;
 
-      // Берём часть до "от ХХХХ" или таба / двух пробелов
-      const name = trimmed.split(/\s{2,}|\t| от /i)[0].trim();
+      const name = trimmed.split(/\s{2,}|\t| ot | от /i)[0].trim();
       if (!name) return;
       set.add(name);
     });
@@ -2356,11 +2365,11 @@ Zeekr 009	от 2022
       confirmedCarModel = "";
       const empty = document.createElement("div");
       empty.className = "suggestion-empty";
-      empty.textContent = "Модель не найдена. Попробуйте ввести иначе (например, марку и модель).";
+      empty.textContent = "Model topilmadi. Masalan, marka + modelni boshqa yozib ko'ring.";
       carSuggestionsBox.appendChild(empty);
       carSuggestionsBox.style.display = "block";
       carHint.textContent =
-        "Модель не найдена. Попробуйте другое написание (можно латиницей или кириллицей).";
+        "Model topilmadi. Boshqa yozilish variantini sinab ko'ring (lotin yoki kirill bo'lishi mumkin).";
       return;
     }
 
@@ -2375,7 +2384,7 @@ Zeekr 009	от 2022
         carSuggestionsBox.innerHTML = "";
         carSuggestionsBox.style.display = "none";
         carHint.innerHTML =
-          'Модель выбрана: <span class="field-hint-strong">' +
+          'Model tanlandi: <span class="field-hint-strong">' +
           item.name +
           "</span>.";
       });
@@ -2386,7 +2395,7 @@ Zeekr 009	от 2022
   carInput.addEventListener("input", () => {
     confirmedCarModel = "";
     carHint.innerHTML =
-      'Начните вводить и <span class="field-hint-strong">обязательно выберите</span> модель из подсказок ниже.';
+      'Yozishni boshlang va <span class="field-hint-strong">albatta ro\'yxatdan modelni tanlang</span>.';
     updateCarSuggestions(carInput.value);
   });
 
@@ -2404,28 +2413,27 @@ Zeekr 009	от 2022
 
   /* ===== Переходы ===== */
 
-  // Переход с экрана 1 на этап документов
   startDocsBtn.addEventListener("click", () => {
     selectedColor = colorSelect.value;
     storedPhone = phoneInput.value.trim() || initialPhone;
 
     if (!confirmedCarModel) {
       carHint.innerHTML =
-        'Пожалуйста, <span class="field-hint-strong">выберите модель авто из списка подсказок</span>. Нельзя вводить своё название.';
+        'Iltimos, <span class="field-hint-strong">modelni ro\'yxatdagi takliflardan tanlang</span>. O\'zingizcha yozish mumkin emas.';
       carInput.focus();
       updateCarSuggestions(carInput.value);
       return;
     }
 
     if (!selectedColor) {
-      colorHint.textContent = "Пожалуйста, выберите цвет автомобиля.";
+      colorHint.textContent = "Iltimos, avtomobil rangini tanlang.";
       colorSelect.focus();
       return;
     }
 
     if (!storedPhone) {
       phoneHint.innerHTML =
-        "Пожалуйста, укажите номер телефона, чтобы оператор мог с вами связаться.";
+        "Iltimos, operator siz bilan bog'lana olishi uchun telefon raqamini kiriting.";
       phoneInput.focus();
       return;
     }
@@ -2438,7 +2446,6 @@ Zeekr 009	от 2022
     startCamera();
   });
 
-  // Кнопки камеры
   captureBtn.addEventListener("click", () => {
     captureFromCamera();
   });
@@ -2459,7 +2466,7 @@ Zeekr 009	от 2022
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      cameraStatus.textContent = "Пожалуйста, выберите изображение документа.";
+      cameraStatus.textContent = "Iltimos, hujjat rasmi bo'lgan faylni tanlang.";
       return;
     }
 
@@ -2470,22 +2477,20 @@ Zeekr 009	от 2022
     };
     reader.onerror = () => {
       cameraStatus.textContent =
-        "Не удалось прочитать файл. Попробуйте ещё раз.";
+        "Faylni o'qib bo'lmadi. Qaytadan urinib ko'ring.";
     };
     reader.readAsDataURL(file);
   });
 
-  // Превью: сделать другое фото
   retakeBtn.addEventListener("click", () => {
     currentImageDataUrl = null;
     previewImg.src = "";
     showScreen("camera");
   });
 
-  // Превью: подтвердить документ
   confirmDocBtn.addEventListener("click", async () => {
     if (!currentImageDataUrl) {
-      alert("Сначала сделайте фото документа.");
+      alert("Avval hujjat rasmini oling.");
       return;
     }
 
@@ -2496,18 +2501,16 @@ Zeekr 009	от 2022
     };
 
     if (currentDocIndex < DOC_STEPS.length - 1) {
-      // Переходим к следующему документу
       currentDocIndex++;
       updateDocStepUI();
       currentImageDataUrl = null;
       previewImg.src = "";
       showScreen("camera");
       cameraStatus.textContent =
-        "Камера запущена. Наведите следующий документ в рамку.";
+        "Kamera ishga tushdi. Keyingi hujjatni ramka ichiga joylashtiring.";
       return;
     }
 
-    // Последний документ — отправляем всё разом
     await sendAllDocs();
   });
 
@@ -2523,11 +2526,11 @@ Zeekr 009	от 2022
     }).filter(Boolean);
 
     if (!imagesPayload.length) {
-      alert("Не удалось собрать документы для отправки. Попробуйте ещё раз.");
+      alert("Yuborish uchun hujjatlar topilmadi. Qaytadan urinib ko'ring.");
       return;
     }
 
-    setLoading(true, "Отправляем документы оператору…");
+    setLoading(true, "Hujjatlar operatorga yuborilmoqda…");
 
     try {
       const res = await fetch("/.netlify/functions/upload-doc", {
@@ -2551,18 +2554,17 @@ Zeekr 009	от 2022
         showScreen("done");
       } else {
         console.error("upload-doc (batch) error status:", res.status);
-        alert("Не удалось отправить документы. Попробуйте ещё раз.");
+        alert("Hujjatlarni yuborib bo'lmadi. Qaytadan urinib ko'ring.");
         showScreen("preview");
       }
     } catch (e) {
       setLoading(false);
       console.error("upload-doc (batch) exception:", e);
-      alert("Ошибка при отправке документов. Проверьте интернет и попробуйте ещё раз.");
+      alert("Yuborish vaqtida xatolik yuz berdi. Internetni tekshirib, qayta urinib ko'ring.");
       showScreen("preview");
     }
   }
 
-  // Инициализация
   buildCarModels();
   setMainStep(0);
   phoneInput.dispatchEvent(new Event("input"));

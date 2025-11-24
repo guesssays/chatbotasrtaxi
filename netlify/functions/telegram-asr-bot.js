@@ -11,8 +11,6 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
 // ===== БАЗОВЫЙ URL СТРАНИЦЫ ЗАГРУЗКИ ДОКОВ =====
-// Либо задаём через переменную окружения DOCS_BASE_URL,
-// либо используем текущий Netlify-домен проекта.
 const DOCS_BASE_URL =
   process.env.DOCS_BASE_URL ||
   "https://asrchatbotmany.netlify.app/asr-taxi-docs.html";
@@ -20,9 +18,9 @@ const DOCS_BASE_URL =
 // ====== НАСТРОЙКИ ЯНДЕКС ФЛИТ API ======
 const FLEET_API_URL =
   process.env.FLEET_API_URL || "https://fleet-api.taxi.yandex.net";
-const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || ""; // X-Client-ID (taxi/park/...)
-const FLEET_API_KEY = process.env.FLEET_API_KEY || ""; // X-API-Key
-const FLEET_PARK_ID = process.env.FLEET_PARK_ID || ""; // id парка (без taxi/park/)
+const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || "";
+const FLEET_API_KEY = process.env.FLEET_API_KEY || "";
+const FLEET_PARK_ID = process.env.FLEET_PARK_ID || "";
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
@@ -212,7 +210,7 @@ exports.handler = async (event) => {
       if (data === "start_registration" && chatId) {
         const replyMarkup = {
           keyboard: [
-            [{ text: "📱 Отправить номер телефона", request_contact: true }],
+            [{ text: "📱 Telefon raqamni yuborish", request_contact: true }],
           ],
           resize_keyboard: true,
           one_time_keyboard: true,
@@ -220,7 +218,7 @@ exports.handler = async (event) => {
 
         await sendTelegramMessage(
           chatId,
-          "Чтобы продолжить, нажмите кнопку ниже и отправьте номер, который привязан к вашему аккаунту Telegram.",
+          "Davom etish uchun quyidagi tugmani bosing va Telegram akkauntingizga ulangan telefon raqamingizni yuboring.",
           replyMarkup
         );
       }
@@ -253,13 +251,13 @@ exports.handler = async (event) => {
     if (text === "/start") {
       const inlineKeyboard = {
         inline_keyboard: [
-          [{ text: "🚖 Пройти регистрацию", callback_data: "start_registration" }],
+          [{ text: "🚖 Ro'yxatdan o'tish", callback_data: "start_registration" }],
         ],
       };
 
       await sendTelegramMessage(
         chatId,
-        "Здравствуйте! 👋\nЭтот бот помогает водителям пройти регистрацию в парке ASR TAXI.\n\nНажмите кнопку ниже, чтобы начать.",
+        "Assalomu alaykum! 👋\nBu bot haydovchilarga ASR TAXI parkiga ulanishda yordam beradi.\n\nBoshlash uchun quyidagi tugmani bosing.",
         inlineKeyboard
       );
 
@@ -274,7 +272,7 @@ exports.handler = async (event) => {
       if (contact.user_id && from && contact.user_id !== from.id) {
         await sendTelegramMessage(
           chatId,
-          "Пожалуйста, отправьте именно свой номер телефона, на который зарегистрирован ваш аккаунт Telegram."
+          "Iltimos, aynan o'zingizning Telegram akkauntingizga ulangan raqamni yuboring."
         );
         return { statusCode: 200, body: "Foreign contact rejected" };
       }
@@ -293,7 +291,7 @@ exports.handler = async (event) => {
 
       await sendTelegramMessage(
         chatId,
-        `Спасибо! Номер <b>${normalized}</b> получен.\nПроверяю вас в базе Яндекс.Такси...`
+        `Rahmat! <b>${normalized}</b> raqam qabul qilindi.\nSizni Yandex.Taxi bazasida tekshiryapman...`
       );
 
       await sendLog(
@@ -308,7 +306,7 @@ exports.handler = async (event) => {
       if (check.error === "fleet_error" || check.error === "fleet_exception") {
         await sendTelegramMessage(
           chatId,
-          "Сейчас не получается проверить данные в базе Яндекс.Такси. Я передам ваш номер оператору, он свяжется с вами вручную."
+          "Hozircha Yandex.Taxi bazasini tekshirib bo'lmadi. Raqamingizni operatorga yuboraman, u siz bilan qo'lda bog'lanadi."
         );
 
         if (ADMIN_CHAT_IDS.length) {
@@ -325,7 +323,7 @@ exports.handler = async (event) => {
       if (check.exists) {
         await sendTelegramMessage(
           chatId,
-          "Вы уже есть в базе Яндекс.Такси. ✅\nОператор проверит данные и напишет вам по подключению."
+          "Siz allaqachon Yandex.Taxi bazasida ro'yxatdan o'tgansiz. ✅\nOperator ma'lumotlarni tekshiradi va siz bilan ulanish bo'yicha bog'lanadi."
         );
 
         const p = check.profile || {};
@@ -335,9 +333,7 @@ exports.handler = async (event) => {
         const shortInfo =
           `ФИО: <b>${dp.last_name || ""} ${dp.first_name || ""}</b>\n` +
           (car.brand || car.model || car.number
-            ? `Авто: <b>${car.brand || "—"} ${car.model || "—"}</b> (${
-                car.number || "—"
-              })\n`
+            ? `Авто: <b>${car.brand || "—"} ${car.model || "—"}</b> (${car.number || "—"})\n`
             : "") +
           `Статус: <code>${p.current_status?.status || "unknown"}</code>`;
 
@@ -365,7 +361,7 @@ exports.handler = async (event) => {
 
         await sendTelegramMessage(
           chatId,
-          `Вас ещё нет в базе Яндекс.Такси.\n\nПерейдите по ссылке и загрузите документы для регистрации:\n${docsUrl}\n\nПосле проверки оператор подключит вас к парку.`
+          `Siz hozircha Yandex.Taxi bazasida topilmadingiz.\n\nQuyidagi havola orqali o'tib, ro'yxatdan o'tish uchun hujjatlaringizni yuklang:\n${docsUrl}\n\nTekshiruvdan so'ng operator sizni parkka ulaydi.`
         );
 
         if (ADMIN_CHAT_IDS.length) {
@@ -391,7 +387,7 @@ exports.handler = async (event) => {
     // 3) Всё остальное
     await sendTelegramMessage(
       chatId,
-      "Сейчас этот бот отвечает только за регистрацию водителей.\nНажмите /start, чтобы начать регистрацию."
+      "Hozircha bu bot faqat haydovchilarni ro'yxatdan o'tkazish uchun ishlaydi.\nRo'yxatdan o'tishni boshlash uchun /start buyrug'ini yuboring."
     );
 
     return { statusCode: 200, body: "OK" };

@@ -5,69 +5,103 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Загрузка документов ASR TAXI</title>
   <style>
+    :root {
+      --bg: #050608;
+      --fg: #f5f5f5;
+      --accent1: #00ff99;
+      --accent2: #00b3ff;
+      --muted: rgba(255,255,255,0.7);
+      --border-soft: rgba(255,255,255,0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #050608;
-      color: #f5f5f5;
+      background: var(--bg);
+      color: var(--fg);
     }
+
     .wrapper {
-      max-width: 480px;
+      width: 100%;
+      max-width: 520px;
       margin: 0 auto;
-      padding: 16px;
+      padding: 16px 16px 32px;
     }
+
     h1 {
       font-size: 20px;
+      margin: 4px 0 8px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
       margin-bottom: 8px;
+      line-height: 1.4;
     }
-    p {
-      font-size: 14px;
-      opacity: 0.85;
+
+    .info {
+      font-size: 13px;
+      margin-bottom: 4px;
+      opacity: 0.9;
     }
+
     .camera-container {
       position: relative;
-      margin-top: 16px;
+      margin-top: 12px;
       border-radius: 16px;
       overflow: hidden;
       background: #000;
+      width: 100%;
+      /* соотношение сторон близкое к документу */
       aspect-ratio: 3/4;
     }
+
     video {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      background: #000;
     }
-    /* рамка-оверлей */
+
+    /* рамка-оверлей без затемнения */
     .frame {
       position: absolute;
       inset: 0;
       pointer-events: none;
     }
+
     .frame::before {
       content: "";
       position: absolute;
-      top: 12%;
+      top: 10%;
       left: 8%;
       right: 8%;
-      bottom: 40%;
-      border: 3px solid #00ff99;
+      bottom: 38%;
+      border: 3px solid var(--accent1);
       border-radius: 8px;
-      box-shadow: 0 0 12px rgba(0,255,153,0.9);
+      box-shadow: 0 0 10px rgba(0,255,153,0.8);
     }
-    .frame::after {
-      /* затемнение вокруг рамки */
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(
-        ellipse at center,
-        rgba(0, 0, 0, 0.1) 0,
-        rgba(0, 0, 0, 0.65) 60%
-      );
-      mix-blend-mode: multiply;
+
+    .hint-under-frame {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
     }
-    .btn {
+
+    .buttons-row {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
       margin-top: 16px;
+    }
+
+    .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -77,50 +111,144 @@
       border: none;
       font-size: 15px;
       font-weight: 600;
-      background: linear-gradient(135deg, #00ff99, #00b3ff);
-      color: #050608;
       width: 100%;
+      cursor: pointer;
+      transition: transform 0.08s ease, opacity 0.08s ease, box-shadow 0.15s ease;
     }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      color: #050608;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.45);
+    }
+
+    .btn-secondary {
+      background: #11141a;
+      color: var(--fg);
+      border: 1px solid var(--border-soft);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px dashed var(--border-soft);
+    }
+
     .btn:active {
-      transform: scale(0.98);
+      transform: scale(0.97);
+      opacity: 0.9;
     }
+
+    .btn-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
     #preview {
-      margin-top: 16px;
+      margin-top: 18px;
       display: none;
     }
+
     #preview img {
       max-width: 100%;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.2);
+      border: 1px solid var(--border-soft);
+      display: block;
     }
+
+    .preview-title {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
     .note {
       font-size: 12px;
       opacity: 0.7;
-      margin-top: 4px;
+      margin-top: 6px;
+      white-space: pre-line;
+    }
+
+    #status {
+      margin-top: 10px;
+    }
+
+    /* адаптация под очень маленькие экраны */
+    @media (max-width: 360px) {
+      h1 {
+        font-size: 18px;
+      }
+      .subtitle,
+      .info {
+        font-size: 12px;
+      }
+      .btn {
+        font-size: 14px;
+        padding: 10px 12px;
+      }
     }
   </style>
 </head>
 <body>
 <div class="wrapper">
+  <p class="info" id="userInfo"></p>
   <h1>Загрузка документов</h1>
-  <p id="userInfo"></p>
-  <p>Поместите документ полностью внутри рамки и сделайте фото.</p>
+  <p class="subtitle">
+    Сфотографируйте документ или выберите файл из галереи. После снимка вы увидите
+    предварительный просмотр и сможете подтвердить отправку.
+  </p>
 
   <div class="camera-container">
-    <video id="video" autoplay playsinline></video>
+    <video id="video" autoplay playsinline muted></video>
     <div class="frame"></div>
   </div>
+  <p class="hint-under-frame">
+    Разместите документ ровно в рамке, чтобы все данные были хорошо видны.
+  </p>
 
-  <button class="btn" id="captureBtn">📸 Сделать снимок</button>
+  <div class="buttons-row">
+    <button class="btn btn-primary" id="captureBtn">
+      <!-- Иконка камеры -->
+      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor"
+          d="M9 3a2 2 0 0 0-1.789 1.106L6.618 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-1.618l-.593-1.894A2 2 0 0 0 15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z"/>
+      </svg>
+      <span>Сделать фото документа</span>
+    </button>
+
+    <button class="btn btn-secondary" id="galleryBtn">
+      <!-- Иконка загрузки -->
+      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor"
+          d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293a1 1 0 0 1 1.414 1.414l-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
+      </svg>
+      <span>Загрузить из галереи</span>
+    </button>
+
+    <button class="btn btn-primary" id="sendBtn" style="display:none;">
+      <!-- Иконка отправки -->
+      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor"
+          d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022l5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553l-1.447 3.349-1-2.667 1.98-0.98Z"/>
+      </svg>
+      <span>Отправить документ</span>
+    </button>
+
+    <button class="btn btn-ghost" id="retakeBtn" style="display:none;">
+      <span>Сделать другой снимок</span>
+    </button>
+  </div>
+
   <p id="status" class="note"></p>
 
-  <div class="note">Фото автоматически подстроится под нужный формат.</div>
-
   <div id="preview">
-    <p>Проверьте фото документа:</p>
+    <p class="preview-title">Предварительный просмотр документа:</p>
     <img id="previewImg" alt="Предпросмотр документа" />
   </div>
 </div>
+
+<!-- скрытый инпут для выбора файла -->
+<input type="file" id="fileInput" accept="image/*" style="display:none;" />
 
 <canvas id="canvas" style="display:none;"></canvas>
 
@@ -128,41 +256,92 @@
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
   const captureBtn = document.getElementById("captureBtn");
+  const galleryBtn = document.getElementById("galleryBtn");
+  const sendBtn = document.getElementById("sendBtn");
+  const retakeBtn = document.getElementById("retakeBtn");
   const preview = document.getElementById("preview");
   const previewImg = document.getElementById("previewImg");
   const userInfo = document.getElementById("userInfo");
   const statusEl = document.getElementById("status");
+  const fileInput = document.getElementById("fileInput");
 
-  // Читаем параметры из URL (tg_id и phone)
   const params = new URLSearchParams(location.search);
   const tgId = params.get("tg_id");
   const phone = params.get("phone");
 
   if (phone) {
-    userInfo.textContent = `Телефон: ${phone}`;
+    userInfo.textContent = "Номер для связи: " + phone;
   } else {
     userInfo.textContent = "";
   }
 
+  let currentImageDataUrl = null;
+
   async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = "Камера недоступна в этом браузере. Используйте загрузку из галереи.";
+      console.warn("mediaDevices.getUserMedia is not supported");
+      return;
+    }
+
+    statusEl.textContent = "Запрашиваем доступ к камере...";
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: { facingMode: { ideal: "environment" } },
         audio: false,
       });
+
       video.srcObject = stream;
+
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise.catch(err => {
+          console.error("video.play() error:", err);
+          statusEl.textContent = "Не удалось запустить камеру: " + err.name;
+        });
+      } else {
+        statusEl.textContent = "Камера запущена. Наведите документ в рамку.";
+      }
+
+      video.onloadedmetadata = () => {
+        console.log("video metadata:", video.videoWidth, video.videoHeight);
+        statusEl.textContent = "Камера запущена. Наведите документ в рамку.";
+      };
     } catch (e) {
       console.error("Camera error:", e);
-      alert("Не удалось получить доступ к камере. Разрешите доступ в браузере.");
+      statusEl.textContent =
+        "Не удалось получить доступ к камере. Вы можете загрузить фото из галереи.";
+      alert("Не удалось получить доступ к камере. Разрешите доступ в браузере или используйте галерею.");
     }
   }
 
-  captureBtn.addEventListener("click", async () => {
-    const videoTrack = (video.srcObject && video.srcObject.getVideoTracks()[0]) || null;
-    const settings = videoTrack ? videoTrack.getSettings() : {};
+  function showPreview(dataUrl) {
+    currentImageDataUrl = dataUrl;
+    previewImg.src = dataUrl;
+    preview.style.display = "block";
+    sendBtn.style.display = "inline-flex";
+    retakeBtn.style.display = "inline-flex";
 
-    const width = settings.width || 720;
-    const height = settings.height || 960;
+    statusEl.textContent =
+      "Проверьте, чтобы все данные на документе были хорошо видны.\n" +
+      "Если всё верно — нажмите «Отправить документ». Если нет — «Сделать другой снимок».";
+    // немного прокручиваем к превью
+    preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function captureFromCamera() {
+    if (!video.srcObject) {
+      statusEl.textContent = "Камера не запущена. Обновите страницу или используйте галерею.";
+      return;
+    }
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+
+    // сохраняем максимальное доступное разрешение от камеры
+    let width = vw || 1280;
+    let height = vh || 720;
 
     canvas.width = width;
     canvas.height = height;
@@ -170,41 +349,87 @@
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, width, height);
 
-    // 1) DataURL для превью
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    // качество максимально близко к оригиналу
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.98);
+    showPreview(dataUrl);
+  }
 
-    // Показать превью
-    previewImg.src = dataUrl;
-    preview.style.display = "block";
+  captureBtn.addEventListener("click", () => {
+    captureFromCamera();
+  });
 
-    // 2) Отправка на Netlify-функцию upload-doc
-    statusEl.textContent = "Отправляю документ оператору...";
+  galleryBtn.addEventListener("click", () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      statusEl.textContent = "Пожалуйста, выберите изображение документа.";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      showPreview(dataUrl);
+    };
+    reader.onerror = () => {
+      statusEl.textContent = "Не удалось прочитать файл. Попробуйте ещё раз.";
+    };
+    reader.readAsDataURL(file);
+  });
+
+  retakeBtn.addEventListener("click", () => {
+    currentImageDataUrl = null;
+    previewImg.src = "";
+    preview.style.display = "none";
+    sendBtn.style.display = "none";
+    retakeBtn.style.display = "none";
+    statusEl.textContent = "Сделайте новое фото или выберите другой файл.";
+  });
+
+  sendBtn.addEventListener("click", async () => {
+    if (!currentImageDataUrl) {
+      statusEl.textContent = "Сначала сделайте фото или выберите файл.";
+      return;
+    }
+
+    const confirmed = window.confirm("Отправить это фото документа оператору?");
+    if (!confirmed) {
+      statusEl.textContent = "Отправка отменена. Вы можете переснять или выбрать другой файл.";
+      return;
+    }
+
+    statusEl.textContent = "Отправляем документ оператору...";
 
     try {
       const res = await fetch("/.netlify/functions/upload-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image: dataUrl,
+          image: currentImageDataUrl,
           tg_id: tgId || "",
           phone: phone || "",
-          docType: "document" // позже можно заменить на 'права', 'техпаспорт' и т.п.
+          docType: "document"
         }),
       });
 
       if (res.ok) {
-        statusEl.textContent = "Документ отправлен оператору ✅";
+        statusEl.textContent = "Документ отправлен оператору. Ожидайте обратную связь.";
       } else {
         console.error("upload-doc error status:", res.status);
         statusEl.textContent = "Не удалось отправить документ. Попробуйте ещё раз.";
       }
     } catch (e) {
       console.error("upload-doc exception:", e);
-      statusEl.textContent = "Ошибка при отправке документа.";
+      statusEl.textContent = "Ошибка при отправке документа. Проверьте интернет и попробуйте ещё раз.";
     }
   });
 
-  startCamera();
+  window.addEventListener("load", startCamera);
 </script>
 </body>
 </html>

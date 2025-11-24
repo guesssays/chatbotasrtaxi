@@ -74,6 +74,7 @@ async function checkDriverInFleet(phone) {
   }
 
   const normalized = normalizePhone(phone);
+  console.log("checkDriverInFleet → normalized phone:", normalized);
 
   try {
     const res = await fetch(`${FLEET_API_URL}/v1/parks/driver-profiles/list`, {
@@ -103,6 +104,17 @@ async function checkDriverInFleet(phone) {
     const data = await res.json();
     const exists =
       Array.isArray(data.driver_profiles) && data.driver_profiles.length > 0;
+
+    console.log(
+      "Fleet API OK, exists =",
+      exists,
+      "profiles_count =",
+      Array.isArray(data.driver_profiles) ? data.driver_profiles.length : 0
+    );
+    console.log(
+      "Fleet API raw driver_profiles:",
+      JSON.stringify(data.driver_profiles, null, 2)
+    );
 
     return { exists, raw: data };
   } catch (e) {
@@ -233,12 +245,15 @@ exports.handler = async (event) => {
       const phone = contact.phone_number;
       const normalized = normalizePhone(phone);
 
+      console.log("Got contact from user:", from?.id, "phone:", phone, "normalized:", normalized);
+
       await sendTelegramMessage(
         chatId,
         `Спасибо! Номер <b>${normalized}</b> получен.\nПроверяю вас в базе Яндекс.Такси...`
       );
 
       const check = await checkDriverInFleet(normalized);
+      console.log("checkDriverInFleet result:", JSON.stringify(check, null, 2));
 
       if (check.error === "fleet_error" || check.error === "fleet_exception") {
         await sendTelegramMessage(
@@ -258,6 +273,8 @@ exports.handler = async (event) => {
       }
 
       if (check.exists) {
+        console.log("Driver EXISTS in fleet for phone", normalized);
+
         // водитель уже есть в базе
         await sendTelegramMessage(
           chatId,
@@ -274,6 +291,8 @@ exports.handler = async (event) => {
           }
         }
       } else {
+        console.log("Driver NOT found in fleet for phone", normalized);
+
         // водителя нет в базе → предлагаем онлайн-регистрацию
         const docsUrl = `https://asr-taxi-docs.netlify.app/?tg_id=${encodeURIComponent(
           chatId

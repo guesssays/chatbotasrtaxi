@@ -37,28 +37,29 @@
       max-width: 520px;
       background: var(--card-bg);
       border-radius: 24px;
-      padding: 24px 20px 28px;
+      padding: 26px 20px 30px;
       box-shadow: 0 24px 60px rgba(0,0,0,0.6);
     }
 
     .main-title {
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 24px;
+      font-weight: 800;
       text-align: center;
-      margin: 0 0 4px;
+      margin: 0 0 6px;
     }
 
     .main-subtitle {
-      font-size: 14px;
+      font-size: 15px;
       text-align: center;
       color: var(--muted);
-      margin: 0 0 20px;
+      margin: 0 0 22px;
+      line-height: 1.5;
     }
 
     /* ===== Прогресс по шагам регистрации ===== */
 
     .steps-widget {
-      margin-bottom: 20px;
+      margin-bottom: 22px;
     }
 
     .steps-header {
@@ -68,19 +69,21 @@
     }
 
     .steps-label {
-      font-size: 13px;
-      padding: 4px 10px;
+      font-size: 14px;
+      padding: 5px 12px;
       border-radius: 999px;
       background: rgba(15,23,42,0.9);
       border: 1px solid var(--border-soft);
+      font-weight: 600;
     }
 
     .steps-bar {
       position: relative;
-      height: 4px;
+      height: 5px;
       border-radius: 999px;
       background: rgba(255,255,255,0.08);
       overflow: hidden;
+      margin-top: 2px;
     }
 
     .steps-bar-fill {
@@ -95,11 +98,11 @@
     .steps-names {
       display: flex;
       justify-content: space-between;
-      margin-top: 8px;
+      margin-top: 10px;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.55);
     }
 
     .step-name {
@@ -123,19 +126,26 @@
     .doc-steps {
       display: none;
       text-align: center;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+      padding: 8px 10px;
+      border-radius: 16px;
+      background: rgba(15,23,42,0.85);
+      border: 1px solid var(--border-soft);
     }
 
     .doc-step-label {
-      font-size: 13px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.9);
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.95);
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
     }
 
     .doc-step-title {
-      font-size: 14px;
-      color: var(--muted);
-      margin-top: 3px;
+      font-size: 15px;
+      color: var(--accent1);
+      margin-top: 4px;
+      font-weight: 700;
     }
 
     /* ===== Экраны ===== */
@@ -150,33 +160,39 @@
     }
 
     .screen-title {
-      font-size: 18px;
-      font-weight: 600;
-      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 10px;
     }
 
     .screen-text {
-      font-size: 14px;
+      font-size: 15px;
       color: var(--muted);
-      margin: 0 0 18px;
-      line-height: 1.5;
+      margin: 0 0 20px;
+      line-height: 1.6;
+    }
+
+    .screen-text-strong {
+      font-weight: 600;
+      color: #e5e7eb;
     }
 
     .form-group {
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       text-align: left;
     }
 
     .field-label {
-      font-size: 13px;
-      margin-bottom: 6px;
+      font-size: 14px;
+      margin-bottom: 7px;
       display: block;
+      font-weight: 600;
     }
 
     .select,
     .input {
       width: 100%;
-      padding: 11px 14px;
+      padding: 12px 14px;
       border-radius: 999px;
       border: 1px solid var(--border-soft);
       background: #0b1120;
@@ -195,8 +211,54 @@
     }
 
     .field-hint {
-      margin-top: 4px;
-      font-size: 12px;
+      margin-top: 5px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .field-hint-strong {
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+
+    /* ===== Автодополнение по автомобилям ===== */
+
+    .autocomplete {
+      position: relative;
+    }
+
+    .suggestions {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      background: #020617;
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.6);
+      max-height: 230px;
+      overflow-y: auto;
+      font-size: 14px;
+      z-index: 20;
+      display: none;
+    }
+
+    .suggestion-item {
+      padding: 9px 14px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+
+    .suggestion-item:hover {
+      background: rgba(0,255,153,0.09);
+      color: #f9fafb;
+    }
+
+    .suggestion-empty {
+      padding: 9px 14px;
+      font-size: 13px;
       color: var(--muted);
     }
 
@@ -204,7 +266,7 @@
 
     .camera-container {
       position: relative;
-      margin: 10px auto 8px;
+      margin: 10px auto 10px;
       border-radius: 20px;
       overflow: hidden;
       background: #000;
@@ -239,16 +301,17 @@
     }
 
     .camera-hint {
-      font-size: 13px;
+      font-size: 14px;
       color: var(--muted);
       margin-bottom: 12px;
+      line-height: 1.5;
     }
 
     .status-text {
-      font-size: 12px;
+      font-size: 13px;
       color: var(--muted);
-      margin-top: 6px;
-      min-height: 16px;
+      margin-top: 8px;
+      min-height: 18px;
     }
 
     /* ===== Превью документа ===== */
@@ -268,9 +331,9 @@
     }
 
     .preview-hint {
-      font-size: 13px;
+      font-size: 14px;
       color: var(--muted);
-      margin-top: 8px;
+      margin-top: 9px;
     }
 
     /* ===== Кнопки ===== */
@@ -279,7 +342,7 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 18px;
+      margin-top: 20px;
     }
 
     .btn {
@@ -287,7 +350,7 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 12px 16px;
+      padding: 13px 16px;
       border-radius: 999px;
       border: none;
       width: 100%;
@@ -327,10 +390,11 @@
     }
 
     .note {
-      font-size: 12px;
-      opacity: 0.7;
-      margin-top: 6px;
+      font-size: 13px;
+      opacity: 0.8;
+      margin-top: 8px;
       white-space: pre-line;
+      line-height: 1.5;
     }
 
     .centered {
@@ -402,18 +466,21 @@
 
     @media (max-width: 380px) {
       .wrapper {
-        padding: 18px 14px 22px;
+        padding: 20px 14px 22px;
         border-radius: 20px;
       }
       .main-title {
-        font-size: 20px;
+        font-size: 22px;
       }
       .screen-title {
-        font-size: 17px;
+        font-size: 18px;
       }
       .btn {
         font-size: 14px;
-        padding: 11px 14px;
+        padding: 12px 14px;
+      }
+      .field-label {
+        font-size: 13px;
       }
     }
   </style>
@@ -421,7 +488,9 @@
 <body>
 <div class="wrapper">
   <h1 class="main-title">Подключение к ASR TAXI</h1>
-  <p class="main-subtitle">Загрузите документы, чтобы оператор мог быстрее подключить вас к парку.</p>
+  <p class="main-subtitle">
+    Загрузите <span class="screen-text-strong">В/У и техпаспорт</span>, чтобы оператор мог быстрее подключить вас к парку.
+  </p>
 
   <!-- Прогресс регистрации -->
   <div class="steps-widget">
@@ -444,12 +513,31 @@
     <div class="doc-step-title" id="docStepTitle">В/У — лицевая сторона</div>
   </div>
 
-  <!-- ЭКРАН 1: цвет + телефон -->
+  <!-- ЭКРАН 1: авто + цвет + телефон -->
   <div id="screenIntro" class="screen screen-active">
     <h2 class="screen-title">Укажите данные автомобиля</h2>
     <p class="screen-text">
-      Сначала выберите цвет автомобиля и номер телефона для связи. Эти данные увидит оператор парка.
+      <span class="screen-text-strong">Важно:</span> выберите реальную
+      <span class="screen-text-strong">модель</span> и <span class="screen-text-strong">цвет</span> автомобиля, а также
+      оставьте номер телефона для связи с оператором.
     </p>
+
+    <div class="form-group">
+      <label for="carInput" class="field-label">Модель автомобиля</label>
+      <div class="autocomplete">
+        <input
+          id="carInput"
+          class="input"
+          type="text"
+          autocomplete="off"
+          placeholder="Начните вводить (Camry, Nexia, Sonata...)"
+        />
+        <div id="carSuggestions" class="suggestions"></div>
+      </div>
+      <p class="field-hint" id="carHint">
+        Начните вводить <span class="field-hint-strong">полное название</span> авто и выберите вариант из подсказок ниже.
+      </p>
+    </div>
 
     <div class="form-group">
       <label for="colorSelect" class="field-label">Цвет автомобиля</label>
@@ -484,13 +572,12 @@
         placeholder="+998 90 123-45-67"
       />
       <p class="field-hint" id="phoneHint">
-        Укажите актуальный номер телефона для связи с оператором.
+        Укажите <span class="field-hint-strong">актуальный номер</span> телефона для связи с оператором.
       </p>
     </div>
 
     <div class="buttons-row">
       <button class="btn btn-primary" id="startDocsBtn">
-        <!-- Icon: Tabler arrow-right -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
             d="M5 12a1 1 0 0 1 1-1h9.586l-3.293-3.293a1 1 0 1 1 1.414-1.414l5 5a1.003 1.003 0 0 1 .21.326 1 1 0 0 1 0 .764 1.003 1.003 0 0 1-.21.326l-5 5a1 1 0 0 1-1.414-1.414L15.586 13H6a1 1 0 0 1-1-1Z" />
@@ -502,9 +589,9 @@
 
   <!-- ЭКРАН 2: камера (съёмка документа) -->
   <div id="screenCamera" class="screen">
-    <h2 class="screen-title">Сделайте фото документа</h2>
-    <p class="screen-text">
-      Разместите документ в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.
+    <h2 class="screen-title" id="screenCameraTitle">Сделайте фото документа</h2>
+    <p class="screen-text" id="screenCameraText">
+      Разместите <span class="screen-text-strong">нужный документ</span> в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.
     </p>
 
     <div class="camera-container">
@@ -512,12 +599,11 @@
       <div class="frame"></div>
     </div>
     <p class="camera-hint">
-      Документ должен быть полностью в кадре, без бликов и размытости.
+      Документ (В/У или техпаспорт) должен быть полностью в кадре, без бликов и размытости.
     </p>
 
     <div class="buttons-row">
       <button class="btn btn-primary" id="captureBtn">
-        <!-- Icon: Tabler camera -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
             d="M9 4a2 2 0 0 0-1.788 1.106L6.618 6H5a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-7a3 3 0 0 0-3-3h-1.618l-.594-1.894A2 2 0 0 0 15 4H9Zm3 4a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z" />
@@ -526,7 +612,6 @@
       </button>
 
       <button class="btn btn-secondary" id="galleryBtn">
-        <!-- Icon: Tabler photo -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
             d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v12h14V6H5Zm3 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-1 8 2.5-3 1.5 2 2.5-3 3.5 4H7Z" />
@@ -558,7 +643,6 @@
 
     <div class="buttons-row">
       <button class="btn btn-primary" id="confirmDocBtn">
-        <!-- Icon: Tabler check -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
             d="M9.707 16.293 5.414 12l1.414-1.414 2.879 2.879 7.879-7.879L19 7l-9.293 9.293a1 1 0 0 1-1.414 0Z" />
@@ -567,7 +651,6 @@
       </button>
 
       <button class="btn btn-secondary" id="retakeBtn">
-        <!-- Icon: Tabler refresh -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
             d="M4 4h5v2H6.414l1.293 1.293A7 7 0 1 1 5.05 17.95l1.414-1.414A5 5 0 1 0 9 7.101V10H7V4Zm13.95 2.05A7 7 0 0 1 18 19h-5v-2h2.586l-1.293-1.293A5 5 0 0 0 17 8.515V5h2v3.586l-1.05-1.536Z" />
@@ -619,6 +702,9 @@
   const colorHint = document.getElementById("colorHint");
   const phoneInput = document.getElementById("phoneInput");
   const phoneHint = document.getElementById("phoneHint");
+  const carInput = document.getElementById("carInput");
+  const carSuggestionsBox = document.getElementById("carSuggestions");
+  const carHint = document.getElementById("carHint");
 
   const screenIntro = document.getElementById("screenIntro");
   const screenCamera = document.getElementById("screenCamera");
@@ -646,6 +732,9 @@
   const loaderOverlay = document.getElementById("loaderOverlay");
   const loaderTextEl = document.getElementById("loaderText");
 
+  const screenCameraTitle = document.getElementById("screenCameraTitle");
+  const screenCameraText = document.getElementById("screenCameraText");
+
   const params = new URLSearchParams(location.search);
   const tgId = params.get("tg_id");
   const initialPhone = params.get("phone") || "";
@@ -656,9 +745,9 @@
 
   const MAIN_STEPS = ["Авто и контакт", "Документы", "Готово"];
   const DOC_STEPS = [
-    { id: "vu_front", title: "В/У — лицевая сторона" },
+    { id: "vu_front",  title: "В/У — лицевая сторона" },
     { id: "tech_front", title: "Техпаспорт — лицевая сторона" },
-    { id: "tech_back", title: "Техпаспорт — оборотная сторона" },
+    { id: "tech_back",  title: "Техпаспорт — оборотная сторона" },
   ];
 
   let currentMainStep = 0;
@@ -666,6 +755,10 @@
   let selectedColor = "";
   let storedPhone = initialPhone || "";
   let currentImageDataUrl = null;
+  let confirmedCarModel = "";
+  let carModels = [];
+  let normalizedCarModels = [];
+
   const collectedDocs = {};
 
   function setLoading(isLoading, text) {
@@ -711,13 +804,23 @@
     docStepLabel.textContent =
       "Документ " + (currentDocIndex + 1) + " из " + DOC_STEPS.length;
     docStepTitle.textContent = step.title;
+
+    // Обновляем заголовок и текст на экране камеры,
+    // чтобы ещё раз выделить название документа.
+    screenCameraTitle.textContent = "Сделайте фото: " + step.title;
+    screenCameraText.innerHTML =
+      'Разместите <span class="screen-text-strong">' +
+      step.title +
+      '</span> в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.';
   }
 
   colorSelect.addEventListener("change", () => {
     selectedColor = colorSelect.value;
     if (selectedColor) {
-      colorHint.textContent =
-        "Цвет выбран: " + selectedColor + ". Нажмите «Продолжить к документам».";
+      colorHint.innerHTML =
+        'Цвет выбран: <span class="field-hint-strong">' +
+        selectedColor +
+        "</span>. Нажмите «Продолжить к документам».";
     } else {
       colorHint.textContent =
         "Выберите тот же цвет, который будете указывать в анкете Яндекс.";
@@ -728,13 +831,15 @@
     const val = phoneInput.value.trim();
     storedPhone = val || initialPhone;
     if (val) {
-      phoneHint.textContent =
+      phoneHint.innerHTML =
         "Если номер изменился — оператор будет использовать именно этот номер.";
     } else {
-      phoneHint.textContent =
-        "Укажите актуальный номер телефона для связи с оператором.";
+      phoneHint.innerHTML =
+        'Укажите <span class="field-hint-strong">актуальный номер</span> телефона для связи с оператором.';
     }
   });
+
+  /* ===== Логика камеры ===== */
 
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -812,10 +917,1505 @@
     showScreen("preview");
   }
 
+  /* ===== Автомобили: автодополнение ===== */
+
+  // СЮДА нужно вставить твой список авто как есть между обратными кавычками.
+  // Можно скопировать блок из сообщения полностью.
+  const RAW_CAR_LIST = `
+
+Acura MDX	от 2004
+Acura RDX	от 2006
+Acura TLX	от 2014
+Acura TSX	от 2006
+Audi A1	от 2019
+Audi A2	не допускается
+Audi A3	от 2012
+Audi A4	от 2006
+Audi A5	от 2007
+Audi A6	от 2004
+Audi A7	от 2010
+Audi A8	от 2004
+Audi Q3	от 2012
+Audi Q5	от 2008
+Audi Q7	от 2005
+Audi S3	от 2012
+Audi S4	от 2006
+Audi S8	от 2004
+BAIC EU5	от 2015
+BAIC EX5	от 2019
+BAIC U5	от 2014
+Beijing EU7	от 2019
+BMW 1er	от 2012
+BMW 2er Active Tourer	от 2014
+BMW 2er Grand Tourer	от 2015
+BMW 3er	от 2006
+BMW 5er	от 2004
+BMW 7er	от 2004
+BMW i3	от 2019
+BMW X1	от 2012
+BMW X3	от 2006
+BMW X4	от 2014
+BMW X5	от 2004
+BMW X6	от 2007
+Brilliance H230	не допускается
+Brilliance H530	от 2011
+Brilliance M2 (BS4)	от 2006
+Brilliance V3	от 2019
+Brilliance V5	от 2012
+Buick Electra E5	от 2022
+Buick Excelle	от 2012
+Buick Velite 6	от 2019
+BYD Chazor	от 2022
+BYD E2	от 2019
+BYD Han	от 2020
+BYD Qin Plus	от 2018
+BYD Qin Pro	от 2018
+BYD Seagull	от 2023
+BYD Song Plus	от 2020
+BYD Tang	от 2015
+BYD Yuan	от 2019
+Cadillac SRX	от 2006
+Changan Alsvin	от 2019
+Changan Auchan A600 EV	от 2018
+Changan CS35	от 2019
+Changan CS35 Plus	от 2019
+Changan CS55	от 2017
+Changan CS75	от 2014
+Changan Eado	от 2013
+Changan New Van	от 2022
+Chery Amulet (A15)	от 2012
+Chery Arrizo 6 Pro	от 2023
+Chery Arrizo 7	от 2013
+Chery Bonus (A13)	не допускается
+Chery Bonus 3 (E3/A19)	не допускается
+Chery CrossEastar (B14)	от 2006
+Chery E5	от 2012
+Chery EQ5	от 2020
+Chery Fora (A21)	не допускается
+Chery IndiS (S18D)	не допускается
+Chery M11 (A3)	от 2012
+Chery QQ6 (S21)	не допускается
+Chery Tiggo (T11)	от 2012
+Chery Tiggo 2	от 2019
+Chery Tiggo 3	от 2014
+Chery Tiggo 4	от 2019
+Chery Tiggo 4 Pro	от 2020
+Chery Tiggo 5	от 2014
+Chery Tiggo 7	от 2016
+Chery Tiggo 7 Pro	от 2020
+Chery Tiggo 7 Pro Max	от 2022
+Chery Tiggo 8	от 2018
+Chery Tiggo 8 Pro	от 2021
+Chery Tiggo 8 Pro Max	от 2022
+Chery Very (A13)	не допускается
+Chevrolet Aveo	от 2019
+Chevrolet Blazer	от 2004
+Chevrolet Bolt	от 2019
+Chevrolet Captiva	от 2006
+Chevrolet Cobalt	от 2019
+Chevrolet Colorado	от 2012
+Chevrolet Cruze	от 2012
+Chevrolet Epica	от 2006
+Chevrolet Equinox	от 2006
+Chevrolet Evanda	от 2006
+Chevrolet Impala	от 2004
+Chevrolet Kalos	не допускается
+Chevrolet Lacetti	от 2012
+Chevrolet Lanos	не допускается
+Chevrolet Malibu	от 2006
+Chevrolet MATIZ	не допускается
+Chevrolet Menlo	от 2020
+Chevrolet Monza	от 2012
+Chevrolet Nexia	от 2019
+Chevrolet Nubira	не допускается
+Chevrolet Onix	от 2019
+Chevrolet Orlando	от 2012
+Chevrolet Sonic	от 2019
+Chevrolet Tahoe	от 2012
+Chevrolet Tracker	от 2019
+Chevrolet TrailBlazer	от 2012
+Chevrolet Traverse	от 2008
+Chevrolet Volt	от 2012
+Chrysler 300C	от 2004
+Chrysler Sebring	от 2006
+Chrysler Voyager	от 2012
+Citroen Berlingo	от 2012
+Citroen C3	от 2019
+Citroen C3 Picasso	от 2012
+Citroen C4	от 2012
+Citroen C4 Aircross	от 2012
+Citroen C4 Picasso	от 2012
+Citroen C5	от 2006
+Citroen C8	от 2012
+Citroen C-Crosser	от 2007
+Citroen C-Elysee	от 2019
+Citroen DS4	от 2012
+Citroen DS5	от 2012
+Citroen Jumpy	от 2012
+Citroen Nemo	от 2012
+Citroen SpaceTourer	от 2016
+Citroen Xantia	не допускается
+Citroen Xsara	не допускается
+Dacia Duster	от 2019
+Dacia Lodgy	от 2012
+Dacia Logan	от 2019
+Dacia Sandero	от 2019
+Daewoo Gentra	от 2015
+Daewoo Kalos	не допускается
+Daewoo Lacetti	не допускается
+Daewoo Lanos	не допускается
+Daewoo Leganza	от 2004
+Daewoo Magnus	от 2006
+Daewoo Nexia	не допускается
+Daewoo Nubira	не допускается
+Daewoo Sens	не допускается
+Daewoo Tacuma	от 2012
+Daewoo Winstorm	от 2006
+Daihatsu Boon	от 2019
+Daihatsu Materia	не допускается
+Daihatsu Move	от 2012
+Daihatsu Sirion	не допускается
+Datsun mi-DO	от 2019
+Datsun on-DO	от 2019
+Dodge Caliber	от 2006
+Dodge Caravan	от 2012
+Dodge Charger	от 2004
+Dodge Journey	от 2007
+Dodge Neon	от 2012
+Dodge Stratus	от 2006
+DongFeng 580	от 2017
+DongFeng A30	от 2014
+DongFeng Aeolus E70	от 2019
+DongFeng AX7	от 2015
+DongFeng E1	от 2020
+DongFeng H30 Cross	не допускается
+DongFeng S30	от 2013
+DongFeng S50 EV	от 2014
+Enovate ME7	от 2019
+Evolute I-joy	от 2022
+Evolute I-pro	от 2022
+EXEED LX	от 2019
+EXEED TXL	от 2019
+EXEED VX	от 2021
+FAW Bestune T55	от 2021
+FAW Bestune T77	от 2018
+FAW Besturn B50	от 2012
+FAW Besturn B70	от 2006
+FAW Besturn X40	от 2019
+FAW CA5041	не допускается
+FAW Oley	не допускается
+FAW V2	не допускается
+FAW V5	не допускается
+FAW Vita	не допускается
+FAW X80	от 2013
+Fiat Albea	не допускается
+Fiat Bravo	от 2012
+Fiat Croma	не допускается
+Fiat Doblo	от 2012
+Fiat Fiorino	от 2012
+Fiat Freemont	от 2012
+Fiat Linea	от 2012
+Fiat Multipla	не допускается
+Fiat Palio	не допускается
+Fiat Punto	не допускается
+Fiat Qubo	от 2012
+Fiat Scudo	от 2012
+Fiat Stilo	не допускается
+Fiat Tipo	от 2012
+Ford C-MAX	от 2012
+Ford EcoSport	от 2019
+Ford Escape	от 2012
+Ford Escort	не допускается
+Ford Explorer	от 2004
+Ford Festiva	не допускается
+Ford Fiesta	от 2019
+Ford Focus	от 2012
+Ford Focus (North America)	не допускается
+Ford Focus RS	от 2012
+Ford Fusion	не допускается
+Ford Fusion (North America)	от 2006
+Ford Galaxy	от 2012
+Ford Kuga	от 2012
+Ford Mondeo	от 2006
+Ford S-MAX	от 2012
+Ford Territory	от 2012
+GAC Aion S	от 2019
+GAC Aion V	от 2020
+GAC Aion Y	от 2021
+GAC GN8	от 2020
+Geely Atlas	от 2016
+Geely Atlas Pro	от 2021
+Geely CK (Otaka)	не допускается
+Geely Coolray	от 2019
+Geely Emgrand 7	от 2016
+Geely Emgrand EC7	от 2009
+Geely Emgrand EC8	от 2012
+Geely Emgrand GT	от 2015
+Geely Emgrand X7	от 2012
+Geely FC (Vision)	от 2006
+Geely GC6	не допускается
+Geely Geometry C	от 2020
+Geely LC (Panda) Cross	не допускается
+Geely MK	от 2012
+Geely MK Cross	не допускается
+Geely SC7	от 2012
+Geely Tugella	от 2019
+Geely TX4	от 2012
+Genesis G70	от 2017
+Genesis G80	от 2016
+Great Wall Coolbear	не допускается
+Great Wall Florid	не допускается
+Great Wall Hover	не допускается
+Great Wall Hover H3	от 2012
+Great Wall Hover H5	от 2012
+Great Wall Hover H6	от 2012
+Great Wall Hover M2	не допускается
+Great Wall Hover M4	не допускается
+Great Wall Safe	не допускается
+Great Wall Voleex C30	от 2012
+Haval F7	от 2019
+Haval F7x	от 2019
+Haval H2	от 2019
+Haval H6	от 2014
+Haval H8	от 2014
+Haval Jolion	от 2021
+Hawtai B21	от 2013
+Honda Accord	от 2006
+Honda Airwave	не допускается
+Honda Avancier	от 2006
+Honda Civic	от 2012
+Honda Crosstour	от 2009
+Honda CR-V	от 2012
+Honda Domani	не допускается
+Honda Elysion	от 2012
+Honda Fit	от 2019
+Honda Fit Aria	не допускается
+Honda Fit Shuttle	не допускается
+Honda Freed	от 2012
+Honda Grace	от 2019
+Honda HR-V	от 2018
+Honda Insight	от 2012
+Honda Inspire	от 2006
+Honda Integra	не допускается
+Honda Integra SJ	не допускается
+Honda Jazz	от 2019
+Honda Legend	от 2006
+Honda Logo	не допускается
+Honda M-NV	от 2020
+Honda Mobilio	от 2012
+Honda Odyssey	от 2012
+Honda Odyssey (North America)	от 2012
+Honda Orthia	не допускается
+Honda Partner	не допускается
+Honda Pilot	от 2004
+Honda Saber	не допускается
+Honda Shuttle	от 2019
+Honda Stepwgn	от 2012
+Honda Stream	от 2012
+Honda Torneo	не допускается
+Honda Vamos	от 2012
+Honda Vezel	от 2019
+Honda X-NV	от 2019
+Hongqi E-HS3	от 2018
+Hongqi E-QM5	от 2021
+Hongqi H5	от 2017
+Hyundai Accent	от 2019
+Hyundai Avante	от 2012
+Hyundai Click	не допускается
+Hyundai Creta	от 2019
+Hyundai Elantra	от 2012
+Hyundai Equus	от 2004
+Hyundai Genesis	от 2008
+Hyundai Getz	не допускается
+Hyundai Grand Starex	от 2012
+Hyundai Grandeur	от 2004
+Hyundai H-1	от 2012
+Hyundai i20	от 2019
+Hyundai i30	от 2012
+Hyundai i40	от 2011
+Hyundai IONIQ	от 2016
+Hyundai ix35	от 2012
+Hyundai ix55	от 2008
+Hyundai Lafesta	от 2018
+Hyundai Matrix	не допускается
+Hyundai Santa Fe	от 2006
+Hyundai Solaris	от 2019
+Hyundai Sonata	от 2006
+Hyundai Terracan	не допускается
+Hyundai Tucson	от 2012
+Hyundai Veloster	от 2019
+Hyundai Verna	от 2019
+Hyundai XG	от 2004
+Infiniti EX	от 2007
+Infiniti FX	от 2004
+Infiniti G	от 2006
+Infiniti Q30	от 2015
+Infiniti Q50	от 2013
+Infiniti Q70	от 2013
+Infiniti QX30	от 2015
+Infiniti QX50	от 2013
+Infiniti QX60	от 2013
+Infiniti QX70	от 2013
+Infiniti QX80	от 2013
+JAC iEV7S	от 2019
+JAC J5 (Heyue)	от 2014
+JAC J7	от 2020
+JAC J7 (Binyue)	от 2007
+JAC JS4	от 2020
+JAC S3	от 2014
+JAC S5 (Eagle)	от 2013
+Jaguar F-Pace	от 2016
+Jaguar S-Type	от 2004
+Jaguar XE	от 2015
+Jaguar XF	от 2007
+Jaguar XJ	от 2004
+Jaguar X-Type	от 2006
+Jeep Cherokee	от 2012
+Jeep Compass	от 2012
+Jeep Grand Cherokee	от 2012
+Jeep Liberty (Patriot)	от 2012
+Jetour Dashing	от 2022
+Jetour X70	от 2018
+Jetour X70 PLUS	от 2020
+Jetour X90 PLUS	от 2021
+Jetour X95	от 2019
+Jetour Х70	от 2018
+Kaiyi E5	от 2021
+Karry K60 EV	от 2016
+Kia Cadenza	от 2009
+Kia Carens	от 2012
+Kia Carnival	от 2012
+Kia Cee'd	от 2012
+Kia Cee'd SW	от 2012
+Kia Cerato	от 2012
+Kia Clarus	не допускается
+Kia Forte	от 2012
+Kia K3	от 2012
+Kia K5	от 2010
+Kia K7	от 2009
+Kia K8	от 2021
+Kia K900	от 2014
+Kia Lotze	от 2006
+Kia Magentis	от 2004
+Kia Mohave (Borrego)	от 2008
+Kia Niro	от 2016
+Kia Opirus	от 2004
+Kia Optima	от 2006
+Kia Pride	не допускается
+Kia ProCeed	от 2018
+Kia Quoris	от 2012
+Kia Ray	
+не допускается
+
+Kia Rio	от 2019
+Kia Sedona	от 2012
+Kia Seltos	от 2019
+Kia Sephia	не допускается
+Kia Shuma	не допускается
+Kia Sorento	от 2006
+Kia Soul	от 2019
+Kia Soul EV	от 2019
+Kia Spectra	не допускается
+Kia Sportage	от 2012
+Kia Stinger	от 2017
+Kia Venga	от 2012
+LADA (ВАЗ) Granta	от 2019
+LADA (ВАЗ) Largus	от 2012
+LADA (ВАЗ) Vesta	
+от 2019
+
+LADA (ВАЗ) XRAY	от 2019
+LADA (кроме указанных моделей)	не допускается
+Land Rover Discovery	от 2012
+Land Rover Discovery Sport	от 2014
+Land Rover Freelander	от 2012
+Land Rover Range Rover	от 2012
+Land Rover Range Rover Evoque	от 2012
+Land Rover Range Rover Sport	от 2012
+Land Rover Range Rover Velar	от 2017
+Leapmotor C11	от 2021
+Leapmotor T03	от 2020
+Levdeo i3	не допускается
+Lexus CT	от 2012
+Lexus ES	от 2004
+Lexus GS	от 2004
+Lexus GX	от 2012
+Lexus HS	от 2009
+Lexus IS	от 2006
+Lexus LS	от 2004
+Lexus LX	от 2012
+Lexus NX	от 2014
+Lexus RX	от 2004
+Lifan 620	от 2012
+Lifan Breez (520)	от 2012
+Lifan Cebrium (720)	от 2014
+Lifan Celliya (530)	не допускается
+Lifan Murman	от 2015
+Lifan Myway	от 2016
+Lifan Solano	от 2012
+Lifan X50	от 2019
+Lifan X60	от 2012
+Lifan X70	от 2017
+Mazda 2	от 2019
+Mazda 3	от 2012
+Mazda 3 MPS	от 2012
+Mazda 323	не допускается
+Mazda 5	от 2012
+Mazda 6	от 2006
+Mazda 6 MPS	от 2006
+Mazda 626	не допускается
+Mazda Atenza	от 2006
+Mazda Axela	от 2012
+Mazda Biante	от 2012
+Mazda Bongo	от 2012
+Mazda Capella	не допускается
+Mazda CX-5	от 2012
+Mazda CX-7	от 2006
+Mazda CX-9	от 2006
+Mazda Demio	от 2019
+Mazda Familia	от 2012
+Mazda Millenia	не допускается
+Mazda MPV	от 2012
+Mazda MX-6	не допускается
+Mazda Premacy	от 2012
+Mazda Protege	не допускается
+Mazda Tribute	не допускается
+Mazda Verisa	не допускается
+Mercedes-Benz A-klasse	от 2012
+Mercedes-Benz B-klasse	от 2012
+Mercedes-Benz Citan	от 2012
+Mercedes-Benz C-klasse	от 2006
+Mercedes-Benz C-klasse AMG	от 2006
+Mercedes-Benz CLA-klasse	от 2013
+Mercedes-Benz CLA-klasse AMG	от 2013
+Mercedes-Benz CLS-klasse	от 2004
+Mercedes-Benz CLS-klasse AMG	от 2005
+Mercedes-Benz E-klasse	от 2004
+Mercedes-Benz E-klasse AMG	от 2004
+Mercedes-Benz G-klasse	от 2012
+Mercedes-Benz G-klasse AMG	от 2012
+Mercedes-Benz GLA-klasse	от 2013
+Mercedes-Benz GLC	от 2015
+Mercedes-Benz GLC Coupe	от 2016
+Mercedes-Benz GLE	от 2015
+Mercedes-Benz GLK-klasse	от 2008
+Mercedes-Benz GL-klasse	от 2006
+Mercedes-Benz GLS-klasse	от 2015
+Mercedes-Benz Maybach S-klasse	от 2014
+Mercedes-Benz M-klasse	от 2004
+Mercedes-Benz M-klasse AMG	от 2004
+Mercedes-Benz R-klasse	от 2012
+Mercedes-Benz S-klasse	от 2004
+Mercedes-Benz S-klasse AMG	от 2004
+Mercedes-Benz SL-klasse	не допускается
+Mercedes-Benz Viano	от 2012
+Mercedes-Benz Vito	от 2012
+Mercedes-Benz V-klasse	от 2012
+MINI Countryman	от 2019
+Mitsubishi Airtrek	от 2006
+Mitsubishi ASX	от 2012
+Mitsubishi Attrage	от 2014
+Mitsubishi Carisma	не допускается
+Mitsubishi Colt	не допускается
+Mitsubishi Delica	от 2012
+Mitsubishi Delica D:2	от 2012
+Mitsubishi Diamante	от 2004
+Mitsubishi Eclipse Cross	от 2017
+Mitsubishi Galant	от 2006
+Mitsubishi Grandis	не допускается
+Mitsubishi Lancer	от 2012
+Mitsubishi Lancer Cargo	не допускается
+Mitsubishi Lancer Evolution	от 2012
+Mitsubishi Legnum	не допускается
+Mitsubishi Libero	не допускается
+Mitsubishi Mirage	от 2019
+Mitsubishi Montero	от 2012
+Mitsubishi Montero Sport	от 2012
+Mitsubishi Outlander	от 2006
+Mitsubishi Pajero	от 2012
+Mitsubishi Pajero Sport	от 2012
+Mitsubishi RVR	от 2012
+Mitsubishi Space Star	от 2019
+Mobilize Limo	от 2022
+Neta U Pro	от 2020
+Neta V	от 2020
+Nio EC6	от 2020
+Nissan AD	от 2012
+Nissan Almera	не допускается
+Nissan Almera Classic	от 2012
+Nissan Altima	от 2006
+Nissan Armada	от 2012
+Nissan Avenir	не допускается
+Nissan Bluebird Sylphy	от 2012
+Nissan Cefiro	от 2006
+Nissan Cube	от 2012
+Nissan Dualis	от 2012
+Nissan Elgrand	от 2012
+Nissan Expert	от 2006
+Nissan Fuga	от 2004
+Nissan Gloria	не допускается
+Nissan Juke	от 2019
+Nissan Lafesta	от 2012
+Nissan Latio	от 2012
+Nissan Laurel	не допускается
+Nissan Leaf	от 2019
+Nissan March	от 2019
+Nissan Maxima	от 2006
+Nissan Micra	от 2019
+Nissan Murano	от 2004
+Nissan Note	от 2019
+Nissan Pathfinder	от 2004
+Nissan Patrol	от 2012
+Nissan Presea	не допускается
+Nissan Primera	от 2006
+Nissan Pulsar	от 2012
+Nissan Qashqai	от 2012
+Nissan Qashqai+2	от 2012
+Nissan Quest	от 2012
+Nissan R'nessa	не допускается
+Nissan Rogue	от 2007
+Nissan Safari	от 2012
+Nissan Sentra	от 2012
+Nissan Serena	от 2012
+Nissan Skyline	от 2006
+Nissan Sunny	от 2012
+Nissan Teana	от 2006
+Nissan Terrano	от 2019
+Nissan Tiida	от 2012
+Nissan Vanette	от 2012
+Nissan Versa	от 2012
+Nissan Wingroad	от 2012
+Nissan X-Trail	от 2006
+Omoda C5	от 2022
+Omoda S5	от 2022
+Opel Antara	от 2012
+Opel Astra	от 2012
+Opel Astra OPC	от 2012
+Opel Combo	от 2012
+Opel Corsa	от 2019
+Opel Frontera	не допускается
+Opel Insignia	от 2008
+Opel Meriva	от 2012
+Opel Mokka	от 2019
+Opel Omega	от 2004
+Opel Signum	от 2004
+Opel Vectra	от 2006
+Opel Vectra OPC	от 2006
+Opel Vita	не допускается
+Opel Vivaro	от 2012
+Opel Zafira	от 2012
+Opel Zafira OPC	не допускается
+Peugeot 2008	от 2019
+Peugeot 206	не допускается
+Peugeot 207	не допускается
+Peugeot 208	от 2019
+Peugeot 3008	от 2012
+Peugeot 301	от 2019
+Peugeot 306	не допускается
+Peugeot 307	не допускается
+Peugeot 308	от 2012
+Peugeot 4007	от 2007
+Peugeot 4008	от 2012
+Peugeot 405	от 2012
+Peugeot 406	не допускается
+Peugeot 407	от 2006
+Peugeot 408	от 2012
+Peugeot 5008	от 2012
+Peugeot 508	от 2011
+Peugeot 607	от 2004
+Peugeot 807	от 2012
+Peugeot Expert	от 2012
+Peugeot Partner	от 2012
+Peugeot Traveller	от 2016
+Porsche Taycan	от 2019
+Ravon Gentra	от 2015
+Ravon Nexia R3	от 2019
+Ravon R4	от 2019
+Renault 19	не допускается
+Renault Arkana	от 2019
+Renault Clio	от 2019
+Renault Clio RS	от 2019
+Renault Dokker	от 2012
+Renault Duster	от 2019
+Renault Espace	от 2010
+Renault Fluence	от 2012
+Renault Kadjar	от 2015
+Renault Kangoo	от 2012
+Renault Kaptur	от 2019
+Renault Koleos	от 2008
+Renault Laguna	от 2006
+Renault Latitude	от 2010
+Renault Lodgy	от 2012
+Renault Logan	от 2019
+Renault Logan Stepway	от 2019
+Renault Megane	от 2012
+Renault Megane RS	от 2012
+Renault Modus	от 2012
+Renault Sandero	от 2019
+Renault Sandero RS	от 2019
+Renault Scenic	от 2012
+Renault Symbol	не допускается
+Renault Talisman	от 2015
+Renault Trafic	от 2012
+Renault Vel Satis	от 2004
+Rover 45	не допускается
+Saab 9-3	от 2006
+SEAT Alhambra	от 2012
+SEAT Altea	от 2012
+SEAT Cordoba	не допускается
+SEAT Ibiza	от 2019
+SEAT Leon	от 2012
+SEAT Toledo	от 2019
+Skoda Fabia	от 2019
+Skoda Karoq	от 2017
+Skoda Kodiaq	от 2016
+Skoda Octavia	от 2012
+Skoda Octavia RS	от 2012
+Skoda Rapid	от 2019
+Skoda Roomster	от 2012
+Skoda Superb	от 2006
+Skoda Yeti	не допускается
+Skywell ET5	от 2021
+SsangYong Actyon	от 2012
+SsangYong Kyron	от 2012
+SsangYong Nomad	от 2013
+SsangYong Rexton	от 2012
+SsangYong Rodius	от 2012
+SsangYong Stavic	от 2013
+SsangYong Tivoli	от 2019
+Subaru Forester	от 2006
+Subaru Impreza	от 2012
+Subaru Justy	от 2012
+Subaru Legacy	от 2006
+Subaru Outback	от 2006
+Subaru Stella	от 2012
+Subaru Trezia	не допускается
+Subaru Tribeca	от 2004
+Subaru XV	от 2012
+Suzuki Aerio	не допускается
+Suzuki Baleno	от 2012
+Suzuki Escudo	от 2019
+Suzuki Grand Vitara	от 2010
+Suzuki Ignis	от 2019
+Suzuki Kizashi	от 2009
+Suzuki Liana	не допускается
+Suzuki Solio	от 2012
+Suzuki Swift	от 2019
+Suzuki SX4	от 2019
+Suzuki Vitara	от 2019
+Suzuki XL7	от 2004
+SWM G01	от 2019
+Tesla Model 3	от 2017
+Tesla Model S	от 2012
+Tesla Model X	от 2015
+Tesla Model Y	от 2020
+Toyota 4Runner	от 2012
+Toyota Allion	от 2006
+Toyota Alphard	от 2012
+Toyota Aqua	от 2019
+Toyota Aurion	от 2006
+Toyota Auris	от 2012
+Toyota Avalon	от 2004
+Toyota Avensis	от 2006
+Toyota Belta	не допускается
+Toyota Brevis	от 2006
+Toyota Caldina	от 2006
+Toyota Camry	от 2006
+Toyota C-HR	от 2016
+Toyota Corolla	от 2008
+Toyota Corolla Axio	от 2008
+Toyota Corolla Fielder	от 2012
+Toyota Corolla Rumion	от 2012
+Toyota Crown	от 2006
+Toyota Crown Majesta	от 2004
+Toyota Duet	не допускается
+Toyota Echo	не допускается
+Toyota Esquire	от 2014
+Toyota Estima	от 2012
+Toyota Fortuner	от 2012
+Toyota Harrier	от 2006
+Toyota HiAce	от 2012
+Toyota Highlander	от 2004
+Toyota Hilux Surf	не допускается
+Toyota ISis	от 2012
+Toyota Ist	не допускается
+Toyota Kluger	от 2004
+Toyota Land Cruiser	от 2004
+Toyota Land Cruiser Prado	от 2004
+Toyota LiteAce	от 2012
+Toyota Mark X	от 2004
+Toyota Matrix	от 2012
+Toyota Noah	от 2012
+Toyota Opa	не допускается
+Toyota Platz	не допускается
+Toyota Premio	от 2012
+Toyota Previa	от 2012
+Toyota Prius	от 2012
+Toyota Prius Alpha	от 2012
+Toyota Prius c	от 2012
+Toyota Prius v (+)	от 2012
+Toyota Probox	от 2012
+Toyota Progres	от 2004
+Toyota Ractis	от 2012
+Toyota Raum	не допускается
+Toyota RAV 4	от 2012
+Toyota Rush	от 2019
+Toyota Sai	от 2009
+Toyota Sequoia	от 2012
+Toyota Sienna	от 2012
+Toyota Sienta	от 2012
+Toyota Succeed	от 2012
+Toyota TownAce	от 2012
+Toyota Urban Cruiser	от 2012
+Toyota Vanguard	от 2012
+Toyota Venza	от 2008
+Toyota Verso	от 2012
+Toyota Vios	от 2012
+Toyota Vitz	от 2019
+Toyota Voltz	не допускается
+Toyota Voxy	от 2012
+Toyota Wish	от 2012
+Toyota Yaris	от 2019
+Venucia D60	от 2017
+Venucia D60 EV	от 2017
+Volkswagen Bora	от 2012
+Volkswagen Caddy	от 2012
+Volkswagen Caravelle	от 2012
+Volkswagen e-Bora	от 2012
+Volkswagen Golf	от 2012
+Volkswagen Golf Plus	от 2012
+Volkswagen ID.3	от 2019
+Volkswagen ID.4	от 2020
+Volkswagen ID.6	от 2021
+Volkswagen Jetta	от 2012
+Volkswagen Lavida	от 2012
+Volkswagen Multivan	от 2012
+Volkswagen Parati	от 2012
+Volkswagen Passat	от 2006
+Volkswagen Passat CC	от 2008
+Volkswagen Phaeton	от 2004
+Volkswagen Pointer	не допускается
+Volkswagen Polo	от 2019
+Volkswagen Polo GTI	от 2019
+Volkswagen Sharan	от 2012
+Volkswagen Teramont	от 2017
+Volkswagen Tiguan	от 2007
+Volkswagen Touareg	от 2004
+Volkswagen Touran	от 2012
+Volkswagen Transporter	от 2012
+Volvo S40	от 2012
+Volvo S60	от 2006
+Volvo S60 Cross Country	от 2015
+Volvo S70	не допускается
+Volvo S80	от 2004
+Volvo S90	от 2004
+Volvo V40	от 2012
+Volvo V50	от 2006
+Volvo V60	от 2010
+Volvo V60 Cross Country	от 2015
+Volvo V70	от 2004
+Volvo V90	от 2004
+Volvo XC60	от 2008
+Volvo XC70	от 2006
+Volvo XC90	от 2004
+Voyah Free	от 2021
+Weltmeister E5	от 2021
+Weltmeister EX5	от 2018
+Xpeng G3	от 2018
+Xpeng P5	от 2021
+Xpeng P7	от 2020
+Zotye T600	от 2013
+Москвич 3	от 2022
+BAIC EU260	не допускается
+BAIC EU5	от 2018
+BAIC EX5	от 2019
+BYD Chazor	от 2022
+BYD Dolphin	от 2021
+BYD e2	от 2019
+BYD E6	от 2018
+BYD Han	от 2020
+Changan Shenlan SL03	от 2022
+Chery eQ5	от 2020
+Chevrolet Bolt	не допускается
+Chevrolet Bolt EUV	не допускается
+Chevrolet Volt	от 2018
+Everus VE-1	от 2018
+FAW Bestune NAT	от 2021
+GAC Aion S	от 2019
+GAC Aion S Plus	от 2021
+GAC GE3	от 2019
+Geely Geometry C	от 2020
+Honda e:NP1	от 2022
+Honda e:NS1	от 2022
+Hongqi E-HS9	от 2020
+Hozon Neta U	от 2020
+Hyundai IONIQ	от 2018
+Hyundai IONIQ 5	от 2021
+JAC iEV7S	не допускается
+JAC iEVS4	от 2019
+Kia EV6	от 2021
+Kia Soul EV	от 2019
+Livan 9	от 2022
+Nio ES8	от 2018
+Nissan Ariya	от 2020
+Nissan Leaf	не допускается
+Opel Ampera	не допускается
+Renault Samsung SM3	от 2018
+Renault ZOE	не допускается
+Roewe Ei5	от 2018
+Skoda Enyaq	от 2020
+Skywell ET5	от 2021
+Tesla Model 3	от 2017
+Tesla Model S	от 2012
+Tesla Model X	от 2015
+Tesla Model Y	от 2020
+Volkswagen ID.3	от 2019
+Volkswagen ID.4	от 2020
+Volkswagen ID.5	от 2021
+Volkswagen ID.6	от 2021
+Voyah Free	от 2021
+Weltmeister EX5	от 2018
+Weltmeister W6	от 2021
+Xpeng G3	от 2018
+Xpeng P7	от 2020
+BYD Qin Plus	от 2018
+BYD Song Plus	от 2020
+BYD Yuan	от 2021
+Audi A6	от 2010
+BAIC EU5	от 2018
+BAIC EX5	от 2019
+Beijing EU7	от 2019
+BMW X3	от 2012
+Buick Velite 6	не допускается
+BYD Chazor	от 2022
+BYD Dolphin	от 2021
+BYD E2	от 2019
+BYD E3	не допускается
+BYD F5	от 2018
+BYD Han	от 2020
+BYD Qin	от 2018
+BYD Qin Plus	от 2018
+BYD Qin Pro	от 2018
+BYD Seagull	не допускается
+BYD Song Plus	от 2020
+BYD Tang	от 2015
+BYD Yuan	от 2021
+Changan Alsvin	не допускается
+Changan Auchan A600 EV	не допускается
+Changan CS35	не допускается
+Changan CS55	от 2018
+Changan CS75	от 2014
+Changan Eado	от 2018
+Changan Eado Plus	от 2020
+Changan UNI-T	от 2020
+ChangFeng Leopaard CS9	не допускается
+Chery Arrizo 5	не допускается
+Chery Arrizo 6 Pro	от 2023
+Chery Arrizo 7	не допускается
+Chery eQ5	от 2020
+Chery eQ7	от 2023
+Chery Tiggo (T11)	не допускается
+Chery Tiggo 4 Pro	от 2020
+Chery Tiggo 7	от 2018
+Chery Tiggo 7 Plus	от 2021
+Chery Tiggo 7 Pro	от 2020
+Chery Tiggo 7 Pro Max	от 2022
+Chery Tiggo 8 Pro	от 2021
+Chery Tiggo 8 Pro Max	от 2022
+Chevrolet Aveo	не допускается
+Chevrolet Bolt	не допускается
+Chevrolet Captiva	
+от 2011
+
+Chevrolet Cobalt	не допускается
+Chevrolet Colorado	не допускается
+Chevrolet Cruze	от 2018
+Chevrolet Epica	не допускается
+Chevrolet Equinox	от 2012
+Chevrolet Impala	от 2010
+Chevrolet Lacetti	не допускается
+Chevrolet Malibu	от 2012
+Chevrolet Menlo	от 2020
+Chevrolet Monza	от 2018
+Chevrolet Nexia	не допускается
+Chevrolet Onix	не допускается
+Chevrolet Optra	не допускается
+Chevrolet Orlando	от 2018
+Chevrolet Tracker	от 2021
+Chevrolet TrailBlazer	не допускается
+Chevrolet Traverse	от 2010
+Daewoo Gentra	не допускается
+Daewoo Magnus	не допускается
+Daihatsu Boon	не допускается
+DFSK Seres 3	от 2020
+DongFeng 580	от 2017
+DongFeng A30	от 2018
+DongFeng A9	от 2016
+DongFeng Aeolus E70	не допускается
+DongFeng Aeolus Yixuan GS	от 2020
+DongFeng E1	не допускается
+DongFeng S50 EV	от 2018
+DongFeng Shine	от 2019
+DongFeng Shine Max	от 2023
+DongFeng T5 EVO	от 2020
+Enovate ME7	от 2020
+Everus VE-1	не допускается
+EXEED LX	от 2019
+FAW Bestune B70	от 2020
+FAW Bestune T55	от 2021
+FAW Bestune T77	от 2018
+FAW Besturn B70	от 2012
+Ford Focus	от 2018
+Ford Territory	от 2018
+GAC Aion S	от 2019
+GAC Aion V	от 2020
+GAC Aion Y	не допускается
+GAC GS5	от 2020
+Geely Emgrand EC7	не допускается
+Geely Emgrand GT	не допускается
+Geely Geometry C	от 2020
+Geely Geometry E	не допускается
+Haval H6	от 2018
+Haval Jolion	от 2021
+Haval M6	от 2018
+Honda Accord	от 2012
+Honda Crider	от 2018
+Honda CR-V	от 2018
+Honda e:NP1	от 2022
+Honda e:NS1	от 2022
+Honda M-NV	не допускается
+Honda Pilot	от 2010
+Honda X-NV	не допускается
+Hongqi E-HS3	от 2018
+Hongqi E-QM5	от 2021
+Hongqi H5	от 2017
+Hongqi HS5	от 2019
+Hycan A06	от 2022
+Hyundai Accent	не допускается
+Hyundai Avante	от 2018
+Hyundai Creta	от 2018
+Hyundai Elantra	от 2018
+Hyundai Equus	от 2010
+Hyundai Grand Starex	от 2018
+Hyundai Grandeur	от 2010
+Hyundai i30	от 2018
+Hyundai i40	от 2012
+Hyundai IONIQ	от 2018
+Hyundai ix55	от 2010
+Hyundai Mistra	от 2020
+Hyundai Santa Fe	от 2012
+Hyundai Solaris	не допускается
+Hyundai Sonata	от 2012
+Hyundai Tucson	от 2018
+Infiniti FX	от 2010
+JAC J7	от 2020
+JAC S5 (Eagle)	не допускается
+Jetour Dashing	от 2022
+Jetour X70	от 2018
+Jetour X70 PLUS	не допускается
+Jetour X90 PLUS	от 2021
+Jetour X95	от 2019
+Jetour Х70	от 2018
+Kaiyi E5	от 2021
+Kaiyi X3 Pro	от 2022
+Karry K60 EV	от 2018
+Kia Carnival	от 2018
+Kia Cerato	от 2018
+Kia Forte	от 2018
+Kia K3	от 2018
+Kia K5	от 2012
+Kia Mohave (Borrego)	от 2010
+Kia Optima	от 2012
+Kia Rio	не допускается
+Kia Seltos	не допускается
+Kia Sorento	от 2012
+Kia Soul	не допускается
+Kia Sportage	от 2018
+LADA (ВАЗ) Granta	не допускается
+LADA (ВАЗ) Largus	не допускается
+LADA (ВАЗ) XRAY	не допускается
+Land Rover Range Rover	от 2012
+Land Rover Range Rover Sport	от 2012
+Leapmotor C01	от 2022
+Leapmotor C11	от 2021
+Leapmotor T03	не допускается
+Lexus GS	от 2010
+Lexus LS	от 2010
+Mazda 3	от 2018
+Mazda 6	от 2012
+Mazda Atenza	от 2012
+Mercedes-Benz C-klasse	от 2012
+Mercedes-Benz E-klasse	от 2010
+Mercedes-Benz GLC	от 2015
+Mercedes-Benz S-klasse	от 2010
+Mitsubishi Airtrek	не допускается
+Mitsubishi Lancer	не допускается
+Mitsubishi Outlander	от 2012
+Mobilize Limo	от 2022
+Neta U Pro	от 2020
+Neta V	не допускается
+Nissan Almera Classic	не допускается
+Nissan Altima	от 2012
+Nissan Leaf	не допускается
+Nissan Maxima	от 2012
+Nissan Murano	от 2010
+Nissan Sentra	от 2018
+Nissan Sunny	не допускается
+Nissan Teana	от 2012
+Nissan Tiida	от 2018
+Omoda C5	от 2022
+Omoda S5	от 2022
+Opel Omega	не допускается
+Opel Zafira	не допускается
+Ora iQ	не допускается
+Ravon Gentra	не допускается
+Ravon Nexia R3	не допускается
+Ravon R4	не допускается
+Renault Arkana	от 2019
+Renault Duster	не допускается
+Renault Kaptur	не допускается
+Skoda Kodiaq	от 2016
+Skoda Octavia	от 2018
+Skoda Rapid	не допускается
+Skywell ET5	от 2021
+Skywell HT-i	от 2023
+Soueast DX8S	от 2022
+SsangYong Rexton	от 2018
+Suda SA01	не допускается
+SWM G01	от 2018
+Tesla Model 3	от 2017
+Tesla Model S	от 2012
+Tesla Model Y	от 2020
+Toyota Alphard	от 2018
+Toyota Avalon	от 2010
+Toyota Camry	от 2012
+Toyota C-HR	не допускается
+Toyota Corolla	от 2018
+Toyota Land Cruiser Prado	
+от 2012
+
+Toyota Premio	не допускается
+Toyota Prius	от 2018
+Toyota Venza	от 2012
+Toyota Vios	не допускается
+Toyota Voxy	от 2018
+Venucia D60	от 2018
+Venucia D60 EV	от 2018
+Volkswagen Bora	от 2018
+Volkswagen Caddy	не допускается
+Volkswagen e-Bora	от 2018
+Volkswagen ID.3	от 2019
+Volkswagen ID.4	от 2020
+Volkswagen ID.6	от 2021
+Volkswagen Lavida	от 2018
+Volkswagen Passat	от 2012
+Volkswagen Phaeton	от 2010
+Volkswagen Teramont	от 2017
+Voyah Free	от 2021
+Weltmeister E5	от 2021
+Weltmeister EX5	от 2018
+Weltmeister W6	от 2021
+Xpeng G3	от 2018
+Xpeng P5	от 2021
+Xpeng P7	от 2020
+Zeekr 001	от 2021
+Zeekr X	от 2023
+Acura MDX	от 2019
+Acura TLX	от 2021
+Audi A4	от 2021
+Audi A5	от 2021
+Audi A6	от 2019
+Audi A7	от 2019
+Audi A8	от 2018
+Audi Q5	от 2021
+Audi Q7	от 2019
+Audi S4	от 2021
+Audi S8	от 2019
+Beijing EU7	от 2021
+BMW 318i	от 2021
+BMW 3er	от 2021
+BMW 5er	от 2019
+BMW 7er	от 2015
+BMW X3	от 2021
+BMW X4	от 2021
+BMW X5	от 2019
+BMW X6	от 2019
+BYD Chazor	от 2022
+BYD Han	от 2020
+BYD Seal	от 2022
+BYD Song L	от 2023
+BYD Song Plus	от 2021
+BYD Song Pro	от 2021
+BYD Tang	от 2021
+Changan CS75	от 2021
+Changan Shenlan S7	от 2023
+Changan Shenlan SL03	от 2022
+Chery eQ5	от 2021
+Chery eQ7	от 2023
+Chery Tiggo 8	от 2021
+Chery Tiggo 8 Pro	от 2021
+Chery Tiggo 8 Pro Max	от 2022
+CheryExeed TXL	от 2021
+CheryExeed VX	от 2021
+Chevrolet Equinox	от 2021
+Chevrolet Impala	от 2019
+Chevrolet Malibu	от 2018
+Chevrolet Traverse	от 2015
+Chrysler 300C	от 2019
+Denza X	от 2019
+Dodge Journey	от 2019
+DongFeng 580	от 2021
+DongFeng A9	от 2019
+DongFeng Aeolus Haoji	от 2022
+DongFeng Shine Max	от 2023
+Enovate ME7	от 2021
+EXEED TXL	от 2021
+EXEED VX	от 2021
+FAW Bestune B70	от 2021
+FAW Bestune T99	от 2021
+Ford Mondeo	от 2021
+Forthing Yacht	от 2022
+GAC GS5	от 2021
+Genesis G70	от 2021
+Genesis G80	от 2019
+Genesis GV80	от 2020
+Haval Xiaolong Max	от 2023
+Honda Accord	от 2021
+Honda Avancier	от 2021
+Honda Inspire	от 2021
+Honda Legend	от 2021
+Honda Pilot	от 2019
+Hongqi E-HS9	от 2020
+Hongqi E-QM5	от 2021
+Hongqi H5	от 2021
+Hongqi H9	от 2020
+Hongqi HS5	от 2021
+Hongqi HS7	от 2019
+Hyundai Equus	от 2015
+Hyundai Grandeur	от 2019
+Hyundai Mistra	от 2021
+Hyundai Santa Fe	от 2021
+Hyundai Sonata	от 2021
+Infiniti Q50	от 2021
+Infiniti Q70	от 2019
+Infiniti QX50	от 2021
+Infiniti QX60	от 2019
+Jaguar F-Pace	от 2021
+Jaguar XE	от 2021
+Jaguar XF	от 2019
+Jaguar XJ	от 2015
+Jetour X90	от 2021
+Kia Cadenza	от 2019
+Kia Carnival	от 2021
+Kia K5	от 2021
+Kia K7	от 2019
+Kia K8	от 2021
+Kia K9	от 2019
+Kia K900	от 2015
+Kia Mohave (Borrego)	от 2019
+Kia Quoris	от 2015
+Kia Sorento	от 2021
+Kia Stinger	от 2021
+Land Rover Discovery Sport	от 2021
+Land Rover Range Rover Velar	от 2021
+Leapmotor C01	от 2022
+Leapmotor C10	от 2023
+Leapmotor C11	от 2021
+Lexus ES	от 2019
+Lexus GS	от 2019
+Lexus IS	от 2021
+Lexus LS	от 2015
+Lexus NX	от 2021
+Lexus RX	от 2019
+LiXiang L7	от 2023
+LiXiang L9	от 2022
+Mazda 6	от 2021
+Mazda Atenza	от 2021
+Mazda CX-9	от 2019
+Mercedes-Benz C-klasse	от 2021
+Mercedes-Benz C-klasse AMG	от 2021
+Mercedes-Benz CLS-klasse	от 2019
+Mercedes-Benz CLS-klasse AMG	от 2019
+Mercedes-Benz E-klasse	от 2019
+Mercedes-Benz E-klasse AMG	от 2019
+Mercedes-Benz GLC	от 2021
+Mercedes-Benz GLC Coupe	от 2021
+Mercedes-Benz GLE	от 2019
+Mercedes-Benz GL-klasse	от 2015
+Mercedes-Benz GLS-klasse	от 2015
+Mercedes-Benz Maybach S-klasse	от 2015
+Mercedes-Benz S-klasse	от 2015
+Mercedes-Benz S-klasse AMG	от 2015
+Mitsubishi Outlander	от 2021
+Mobilize Limo	от 2022
+Neta S	от 2022
+Nissan Altima	от 2021
+Nissan Fuga	от 2019
+Nissan Maxima	от 2021
+Nissan Murano	от 2019
+Nissan Rogue	от 2021
+Nissan Skyline	от 2021
+Nissan X-Trail	от 2021
+Opel Insignia	от 2021
+Peugeot 508	от 2021
+Porsche Taycan	от 2019
+Qiyuan A07	от 2023
+Renault Koleos	от 2021
+Renault Talisman	от 2021
+Skoda Kodiaq	от 2021
+Skoda Superb	от 2021
+Skywell ET5	от 2021
+Skywell HT-i	от 2023
+Skyworth EV6	от 2021
+Soueast DX8S	от 2022
+Subaru Outback	от 2021
+Tesla Model 3	от 2021
+Tesla Model S	от 2015
+Tesla Model X	от 2019
+Tesla Model Y	от 2021
+Toyota Avalon	от 2019
+Toyota Camry	от 2021
+Toyota Crown Majesta	от 2015
+Toyota Harrier	от 2021
+Toyota Highlander	от 2019
+Toyota Mark X	от 2019
+Toyota Venza	от 2021
+Volkswagen ID.6	от 2021
+Volkswagen Passat	от 2021
+Volkswagen Passat CC	от 2021
+Volkswagen Phaeton	от 2015
+Volkswagen Teramont	от 2019
+Volkswagen Touareg	от 2019
+Volvo S60	от 2021
+Volvo S90	от 2019
+Volvo V60	от 2021
+Volvo V60 Cross Country	от 2021
+Volvo V90	от 2019
+Volvo XC60	от 2021
+Volvo XC90	от 2019
+Voyah Free	от 2021
+Weltmeister W6	от 2021
+Wuling Xingguang	от 2023
+Xpeng P5	от 2021
+Xpeng P7	от 2021
+Zeekr 001	от 2021
+Zeekr 007	от 2023
+Zeekr 009	от 2022
+Zotye T600	от 2021
+Audi A8	от 2018
+BMW 7er	от 2019
+BYD Han	от 2020
+Genesis G80	от 2021
+Genesis GV80	от 2020
+Hongqi E-HS9	от 2020
+Hongqi E-QM5	не допускается (кроме машин 2024-2025 годов, которые были зарегистрированы* в сервисе не позднее 6 мая 2025)
+Hongqi H5	от 2022
+Hongqi H9	от 2020
+Hyundai Grandeur	от 2023
+Kia K8	от 2021
+Kia K9	от 2019
+Leapmotor C01	от 2022
+Leapmotor C16	от 2024
+LiXiang L7	от 2023
+LiXiang L8	от 2022
+LiXiang L9	от 2022
+Mercedes-Benz Maybach S-klasse	от 2017
+Mercedes-Benz S-klasse	от 2017
+Mercedes-Benz S-klasse AMG	от 2017
+Yipai 008	от 2024
+Zeekr 001	от 2021
+Zeekr 007	от 2023
+Zeekr 009	от 2022
+`.trim();
+  // В реальном коде вместо "..." вставь весь список строк, который ты прислал.
+
+  function normalizeForSearch(str) {
+    if (!str) return "";
+    const map = {
+      а: "a", б: "b", в: "v", г: "g", д: "d",
+      е: "e", ё: "e", ж: "zh", з: "z", и: "i",
+      й: "j", к: "k", л: "l", м: "m", н: "n",
+      о: "o", п: "p", р: "r", с: "s", т: "t",
+      у: "u", ф: "f", х: "h", ц: "c", ч: "ch",
+      ш: "sh", щ: "sch", ы: "y", э: "e", ю: "yu",
+      я: "ya",
+      ъ: "", ь: "",
+    };
+    const lower = str.toLowerCase();
+    let out = "";
+    for (let ch of lower) {
+      const code = ch.charCodeAt(0);
+      if (map[ch]) {
+        out += map[ch];
+      } else if (
+        (code >= 97 && code <= 122) || // a-z
+        (code >= 48 && code <= 57)     // 0-9
+      ) {
+        out += ch;
+      } else if (ch === " " || ch === "-" || ch === "_") {
+        out += " ";
+      }
+      // все остальное выкидываем
+    }
+    return out.replace(/\s+/g, " ").trim();
+  }
+
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    const al = a.length;
+    const bl = b.length;
+    if (al === 0) return bl;
+    if (bl === 0) return al;
+
+    const dp = new Array(bl + 1);
+    for (let j = 0; j <= bl; j++) dp[j] = j;
+
+    for (let i = 1; i <= al; i++) {
+      let prev = dp[0];
+      dp[0] = i;
+      for (let j = 1; j <= bl; j++) {
+        const tmp = dp[j];
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        dp[j] = Math.min(
+          dp[j] + 1,      // удаление
+          dp[j - 1] + 1,  // вставка
+          prev + cost     // замена
+        );
+        prev = tmp;
+      }
+    }
+    return dp[bl];
+  }
+
+  function buildCarModels() {
+    const set = new Set();
+    RAW_CAR_LIST.split(/\r?\n/).forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (/не допускается/i.test(trimmed)) return; // такие модели не показываем
+
+      // Берём часть до "от ХХХХ" или таба / двух пробелов
+      const name = trimmed.split(/\s{2,}|\t| от /i)[0].trim();
+      if (!name) return;
+      set.add(name);
+    });
+
+    carModels = Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+    normalizedCarModels = carModels.map(name => ({
+      name,
+      norm: normalizeForSearch(name),
+    }));
+  }
+
+  function updateCarSuggestions(value) {
+    const query = value.trim();
+    carSuggestionsBox.innerHTML = "";
+    carSuggestionsBox.style.display = "none";
+
+    if (!query || query.length < 2) {
+      confirmedCarModel = "";
+      return;
+    }
+
+    const normQuery = normalizeForSearch(query);
+    if (!normQuery) {
+      confirmedCarModel = "";
+      return;
+    }
+
+    const candidates = [];
+
+    for (const item of normalizedCarModels) {
+      const { name, norm } = item;
+      if (!norm) continue;
+
+      const included =
+        norm.includes(normQuery) || normQuery.includes(norm);
+
+      const dist = levenshtein(normQuery, norm);
+      const maxDist = Math.max(1, Math.round(normQuery.length / 3));
+
+      if (included || dist <= maxDist) {
+        candidates.push({
+          name,
+          dist,
+          included: included ? 0 : 1,
+        });
+      }
+    }
+
+    candidates.sort((a, b) => {
+      if (a.included !== b.included) return a.included - b.included;
+      if (a.dist !== b.dist) return a.dist - b.dist;
+      return a.name.localeCompare(b.name, "ru");
+    });
+
+    const top = candidates.slice(0, 12);
+
+    if (!top.length) {
+      confirmedCarModel = "";
+      const empty = document.createElement("div");
+      empty.className = "suggestion-empty";
+      empty.textContent = "Модель не найдена. Попробуйте ввести иначе (например, марку и модель).";
+      carSuggestionsBox.appendChild(empty);
+      carSuggestionsBox.style.display = "block";
+      carHint.textContent =
+        "Модель не найдена. Попробуйте другое написание (можно латиницей или кириллицей).";
+      return;
+    }
+
+    carSuggestionsBox.style.display = "block";
+    top.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "suggestion-item";
+      div.textContent = item.name;
+      div.addEventListener("click", () => {
+        carInput.value = item.name;
+        confirmedCarModel = item.name;
+        carSuggestionsBox.innerHTML = "";
+        carSuggestionsBox.style.display = "none";
+        carHint.innerHTML =
+          'Модель выбрана: <span class="field-hint-strong">' +
+          item.name +
+          "</span>.";
+      });
+      carSuggestionsBox.appendChild(div);
+    });
+  }
+
+  carInput.addEventListener("input", () => {
+    confirmedCarModel = "";
+    carHint.innerHTML =
+      'Начните вводить и <span class="field-hint-strong">обязательно выберите</span> модель из подсказок ниже.';
+    updateCarSuggestions(carInput.value);
+  });
+
+  carInput.addEventListener("focus", () => {
+    if (carInput.value.trim().length >= 2) {
+      updateCarSuggestions(carInput.value);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!carSuggestionsBox.contains(e.target) && e.target !== carInput) {
+      carSuggestionsBox.style.display = "none";
+    }
+  });
+
+  /* ===== Переходы ===== */
+
   // Переход с экрана 1 на этап документов
   startDocsBtn.addEventListener("click", () => {
     selectedColor = colorSelect.value;
     storedPhone = phoneInput.value.trim() || initialPhone;
+
+    if (!confirmedCarModel) {
+      carHint.innerHTML =
+        'Пожалуйста, <span class="field-hint-strong">выберите модель авто из списка подсказок</span>. Нельзя вводить своё название.';
+      carInput.focus();
+      updateCarSuggestions(carInput.value);
+      return;
+    }
 
     if (!selectedColor) {
       colorHint.textContent = "Пожалуйста, выберите цвет автомобиля.";
@@ -824,7 +2424,7 @@
     }
 
     if (!storedPhone) {
-      phoneHint.textContent =
+      phoneHint.innerHTML =
         "Пожалуйста, укажите номер телефона, чтобы оператор мог с вами связаться.";
       phoneInput.focus();
       return;
@@ -938,6 +2538,7 @@
           tg_id: tgId || "",
           phone: storedPhone,
           carColor: selectedColor,
+          carModel: confirmedCarModel,
         }),
       });
 
@@ -962,6 +2563,7 @@
   }
 
   // Инициализация
+  buildCarModels();
   setMainStep(0);
   phoneInput.dispatchEvent(new Event("input"));
 </script>

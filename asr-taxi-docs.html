@@ -325,7 +325,7 @@
       <button class="btn btn-secondary" id="galleryBtn">
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
-            d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293a1 1 0 0 1 1.414 1.414l-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
+            d="M12 3a1 1 0 0 1 1 1v8.586л2.293-2.293a1 1 0 0 1 1.414 1.414л-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414л2.293 2.293V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
         </svg>
         <span>Загрузить из галереи</span>
       </button>
@@ -333,7 +333,7 @@
       <button class="btn btn-primary" id="sendBtn" style="display:none;">
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
-            d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022л5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553л-1.447 3.349-1-2.667 1.98-.98Z"/>
+            d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047л3.08 7.696a1 1 0 0 0 .53.547л4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022л5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118л9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553л-1.447 3.349-1-2.667 1.98-.98Z"/>
         </svg>
         <span>Отправить документ</span>
       </button>
@@ -357,7 +357,7 @@
       Все 3 шага пройдены. Документы и данные переданы оператору ASR TAXI.
     </p>
     <p class="subtitle">
-      Можете закрыть эту страницу и вернуться в Telegram-бот. 
+      Можете закрыть эту страницу и вернуться в Telegram-бот.
       Если оператору что-то потребуется уточнить, он свяжется с вами по указанному номеру.
     </p>
     <div class="centered">
@@ -410,7 +410,6 @@
     userInfo.textContent = "";
   }
 
-  // шаги документов
   const DOC_STEPS = [
     { id: "vu_front", title: "В/У — лицевая сторона" },
     { id: "tech_front", title: "Техпаспорт — лицевая сторона" },
@@ -422,6 +421,9 @@
   let storedPhone = initialPhone || "";
   let currentImageDataUrl = null;
 
+  // сюда собираем все документы, чтобы потом отправить пачкой
+  const collectedDocs = {}; // key: step.id -> { image, title }
+
   function getCurrentStep() {
     return DOC_STEPS[currentStepIndex];
   }
@@ -432,7 +434,7 @@
       "Шаг " + (currentStepIndex + 1) + " из " + DOC_STEPS.length + ": " + step.title;
 
     const span = sendBtn.querySelector("span");
-    if (span) span.textContent = "Отправить: " + step.title;
+    if (span) span.textContent = "Сохранить: " + step.title;
   }
 
   colorSelect.addEventListener("change", () => {
@@ -519,7 +521,7 @@
 
     statusEl.textContent =
       "Проверьте, чтобы все данные на документе были хорошо видны.\n" +
-      "Если всё верно — нажмите «Отправить». Если нет — «Сделать другой снимок».";
+      "Если всё верно — нажмите «Сохранить документ». Если нет — «Сделать другой снимок».";
     preview.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -610,6 +612,7 @@
       "Сделайте новое фото или выберите другой файл для текущего шага.";
   });
 
+  // Сохранение текущего документа и переход к следующему шагу / отправка пачки
   sendBtn.addEventListener("click", async () => {
     if (!currentImageDataUrl) {
       statusEl.textContent = "Сначала сделайте фото или выберите файл.";
@@ -618,64 +621,90 @@
 
     const step = getCurrentStep();
     const confirmed = window.confirm(
-      "Отправить этот документ оператору?\n\n" + step.title
+      "Сохранить этот документ для отправки оператору?\n\n" + step.title
     );
     if (!confirmed) {
       statusEl.textContent =
-        "Отправка отменена. Вы можете переснять или выбрать другой файл.";
+        "Сохранение отменено. Вы можете переснять или выбрать другой файл.";
       return;
     }
 
-    statusEl.textContent = "Отправляем документ оператору...";
+    // кладём в локальное хранилище
+    collectedDocs[step.id] = {
+      image: currentImageDataUrl,
+      title: step.title,
+    };
+
+    if (currentStepIndex < DOC_STEPS.length - 1) {
+      // ещё есть шаги — просто переходим дальше, без отправки на сервер
+      currentStepIndex++;
+      updateStepUI();
+
+      statusEl.textContent =
+        "Документ сохранён. Теперь загрузите: " + getCurrentStep().title + ".";
+
+      currentImageDataUrl = null;
+      previewImg.src = "";
+      preview.style.display = "none";
+      sendBtn.style.display = "none";
+      retakeBtn.style.display = "none";
+      return;
+    }
+
+    // Это был последний шаг — отправляем ВСЁ разом на backend
+    statusEl.textContent = "Отправляем все документы оператору...";
+    sendBtn.style.display = "none";
+    retakeBtn.style.display = "none";
 
     try {
+      const imagesPayload = DOC_STEPS.map(stepDef => {
+        const stored = collectedDocs[stepDef.id];
+        if (!stored || !stored.image) return null;
+        return {
+          docType: stepDef.id,
+          docTitle: stepDef.title,
+          image: stored.image,
+        };
+      }).filter(Boolean);
+
+      if (!imagesPayload.length) {
+        statusEl.textContent =
+          "Не удалось собрать документы для отправки. Обновите страницу и попробуйте ещё раз.";
+        return;
+      }
+
       const res = await fetch("/.netlify/functions/upload-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image: currentImageDataUrl,
+          images: imagesPayload,   // весь набор документов
           tg_id: tgId || "",
           phone: storedPhone,
-          docType: step.id,        // vu_front / tech_front / tech_back
-          docTitle: step.title,    // человекочитаемое название
-          carColor: selectedColor, // выбранный цвет
+          carColor: selectedColor,
         }),
       });
 
       if (res.ok) {
-        if (currentStepIndex < DOC_STEPS.length - 1) {
-          currentStepIndex++;
-          updateStepUI();
-
-          statusEl.textContent =
-            "Документ отправлен оператору. Теперь загрузите: " +
-            getCurrentStep().title +
-            ".";
-
-          currentImageDataUrl = null;
-          previewImg.src = "";
-          preview.style.display = "none";
-          sendBtn.style.display = "none";
-          retakeBtn.style.display = "none";
-        } else {
-          // все шаги пройдены
-          stopCamera();
-          screen2.style.display = "none";
-          screen3.style.display = "block";
-        }
+        stopCamera();
+        screen2.style.display = "none";
+        screen3.style.display = "block";
       } else {
-        console.error("upload-doc error status:", res.status);
+        console.error("upload-doc (batch) error status:", res.status);
         statusEl.textContent =
-          "Не удалось отправить документ. Попробуйте ещё раз.";
+          "Не удалось отправить документы. Попробуйте ещё раз.";
+        sendBtn.style.display = "inline-flex";
+        retakeBtn.style.display = "inline-flex";
       }
     } catch (e) {
-      console.error("upload-doc exception:", e);
+      console.error("upload-doc (batch) exception:", e);
       statusEl.textContent =
-        "Ошибка при отправке документа. Проверьте интернет и попробуйте ещё раз.";
+        "Ошибка при отправке документов. Проверьте интернет и попробуйте ещё раз.";
+      sendBtn.style.display = "inline-flex";
+      retakeBtn.style.display = "inline-flex";
     }
   });
 
-  // начальное состояние для подсказок по номеру
+  // начальное состояние подсказки по номеру
   phoneInput.dispatchEvent(new Event("input"));
 </script>
 </body>

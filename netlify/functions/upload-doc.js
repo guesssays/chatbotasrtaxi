@@ -23,13 +23,13 @@ if (!OPENAI_API_KEY) {
 }
 
 /**
- * Отправка фото во все целевые чаты (операторы + лог-канал)
+ * Отправка ОДНОГО фото во все целевые чаты (операторы + лог-канал)
+ * (используется в одиночном режиме, для совместимости)
  */
 async function sendPhotoToTelegramTargets(buffer, caption) {
   if (!TELEGRAM_API) return;
 
   const targets = new Set();
-
   for (const id of ADMIN_CHAT_IDS) {
     if (id) targets.add(id);
   }
@@ -64,12 +64,65 @@ async function sendPhotoToTelegramTargets(buffer, caption) {
 }
 
 /**
+ * Отправка НЕСКОЛЬКИХ фото одним альбомом (sendMediaGroup)
+ * docs: [{ buffer, caption }, ...]
+ */
+async function sendDocsBatchToTelegramTargets(docs) {
+  if (!TELEGRAM_API) return;
+  if (!docs || !docs.length) return;
+
+  const targets = new Set();
+  for (const id of ADMIN_CHAT_IDS) {
+    if (id) targets.add(id);
+  }
+  if (LOG_CHAT_ID) {
+    targets.add(LOG_CHAT_ID);
+  }
+
+  for (const chatId of targets) {
+    try {
+      const formData = new FormData();
+      formData.append("chat_id", chatId);
+
+      const media = docs.map((doc, index) => {
+        const attachName = `file${index}`;
+        formData.append(
+          attachName,
+          new Blob([doc.buffer], { type: "image/jpeg" }),
+          `document_${index + 1}.jpg`
+        );
+        return {
+          type: "photo",
+          media: `attach://${attachName}`,
+          caption: doc.caption,
+        };
+      });
+
+      formData.append("media", JSON.stringify(media));
+
+      const res = await fetch(`${TELEGRAM_API}/sendMediaGroup`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("sendMediaGroup error:", res.status, errText);
+      }
+    } catch (e) {
+      console.error("sendDocsBatchToTelegramTargets exception:", e);
+    }
+  }
+}
+
+/**
  * Форматирование распознанных данных
  */
 function formatRecognizedData(docData) {
   if (!docData || typeof docData !== "object") return "";
 
   const LABELS = {
+    // В/У
     last_name: "Фамилия",
     first_name: "Имя",
     middle_name: "Отчество",
@@ -80,6 +133,7 @@ function formatRecognizedData(docData) {
     issue_date: "Дата выдачи ВУ",
     valid_to: "Действует до",
 
+    // Техпаспорт (лицевая)
     brand: "Марка",
     model: "Модель",
     color: "Цвет",
@@ -89,6 +143,11 @@ function formatRecognizedData(docData) {
     body_number: "Номер кузова",
     sts_number: "СТС",
 
+    // Техпаспорт (оборот)
+    back_side_has_important_data: "Есть ли важные данные на обороте",
+    back_text_raw: "Текст с оборота (как есть)",
+
+    // общее
     doc_type: "Тип документа (распознанный)",
   };
 
@@ -105,6 +164,7 @@ function formatRecognizedData(docData) {
 
 /**
  * Вызов OpenAI Vision
+ * imageDataUrl — строка вида data:image/jpeg;base64,....
  */
 async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   if (!OPENAI_API_KEY) return null;
@@ -114,6 +174,8 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
     const systemPrompt = `
 Ты помощник таксопарка ASR TAXI.
 Твоя задача — аккуратно считать данные с водительских документов Узбекистана.
+ТИП документа и СТОРОНА будут описаны в инструкции пользователя (например: "vu_front", "tech_front", "tech_back").
+Строго следуй этому описанию и НИКОГДА не придумывай данные, которых нет на изображении.
 Отвечай СТРОГО одним JSON-объектом без комментариев и текста вокруг.
 Если какое-то поле не видно или не читается, возвращай для него пустую строку.
 Используй кириллицу так же, как на документе.`;
@@ -140,14 +202,15 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   "valid_to": ""
 }
 
-Заполни поля по возможности. Если поле невозможно прочитать или его нет, оставь пустую строку.`;
-    } else if (docType === "tech_front" || docType === "tech_back") {
+Заполни поля по возможности. Если поле невозможно прочитать или его нет, оставь пустую строку.
+Ничего не выдумывай и не добавляй дополнительные поля.`;
+    } else if (docType === "tech_front") {
       userInstruction = `
-На изображении ТЕХПАСПОРТ/СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТО.
+На изображении ТЕХПАСПОРТ/СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТО (ЛИЦЕВАЯ СТОРОНА).
 Верни JSON строго в формате:
 
 {
-  "doc_type": "tech_passport",
+  "doc_type": "tech_passport_front",
   "brand": "",
   "model": "",
   "color": "",
@@ -158,7 +221,29 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   "sts_number": ""
 }
 
-Заполни максимум данных, которые видишь на этой стороне документа. Остальные поля оставь пустыми строками.`;
+Заполни ТОЛЬКО те поля, которые реально видишь на фото. Остальные поля оставь пустыми строками.
+НЕ ПРИДУМЫВАЙ значения, если их не видно или они обрезаны.`;
+    } else if (docType === "tech_back") {
+      userInstruction = `
+На изображении ТЕХПАСПОРТ/СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТО (ОБОРОТНАЯ СТОРОНА).
+Чаще всего здесь НЕТ марки, модели, VIN и гос. номера.
+Твоя задача — НИКОГДА не придумывать эти данные.
+
+Верни JSON строго в формате:
+
+{
+  "doc_type": "tech_passport_back",
+  "back_side_has_important_data": "",
+  "back_text_raw": ""
+}
+
+Где:
+- "back_side_has_important_data" — "да" или "нет" (есть ли на обороте важные записи: штампы, даты, отметки, доп. условия).
+- "back_text_raw" — весь читаемый текст с оборота (как есть, можно с переносами строк).
+
+Если на обороте нет ничего значимого кроме шаблонных печатей — всё равно верни JSON, но укажи
+"back_side_has_important_data": "нет" и оставь "back_text_raw" пустой строкой или с очень кратким пояснением.
+НЕ добавляй никаких других полей и не выдумывай значения.`;
     }
 
     const body = {
@@ -233,11 +318,109 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: "Bad JSON" };
     }
 
-    const { image, tg_id, phone, docType, docTitle, carColor } = payload || {};
+    const {
+      images,   // новый батч-формат: [{ image, docType, docTitle }, ...]
+      image,    // старый одиночный формат
+      tg_id,
+      phone,
+      docType,
+      docTitle,
+      carColor,
+    } = payload || {};
 
+    // ===== БАТЧ: сразу несколько документов =====
+    if (Array.isArray(images) && images.length) {
+      console.log("upload-doc: batch mode, images.length =", images.length);
+
+      const baseHeaderLines = [
+        "📄 Набор документов от водителя ASR TAXI",
+        phone ? `Телефон (из формы/ссылки): ${phone}` : null,
+        tg_id ? `Chat ID: ${tg_id}` : null,
+        carColor ? `Цвет авто (из формы): ${carColor}` : null,
+        `Всего документов: ${images.length}`,
+      ].filter(Boolean);
+
+      const docsForSend = [];
+
+      for (let i = 0; i < images.length; i++) {
+        const item = images[i] || {};
+        if (!item.image) continue;
+
+        let base64 = item.image;
+        let imageDataUrlForVision = item.image;
+
+        const m = /^data:image\/\w+;base64,/.exec(base64);
+        if (m) {
+          base64 = base64.replace(m[0], "");
+        } else {
+          imageDataUrlForVision = `data:image/jpeg;base64,${base64}`;
+        }
+
+        const buffer = Buffer.from(base64, "base64");
+
+        let recognizedBlock = "";
+        try {
+          const docData = await extractDocDataWithOpenAI(
+            imageDataUrlForVision,
+            item.docType
+          );
+          if (docData) {
+            const formatted = formatRecognizedData(docData);
+            if (formatted) {
+              recognizedBlock = formatted;
+            }
+          }
+        } catch (e) {
+          console.error("Doc OCR global error (batch item):", e);
+        }
+
+        const perDocLines = [];
+
+        // общий заголовок только у первого документа
+        if (i === 0) {
+          perDocLines.push(baseHeaderLines.join("\n"));
+          perDocLines.push("");
+        }
+
+        perDocLines.push(
+          `Документ ${i + 1}/${images.length}: ${
+            item.docTitle || "Без названия"
+          }`
+        );
+        perDocLines.push(
+          item.docType
+            ? `Тип документа (из формы): ${item.docType}`
+            : null
+        );
+
+        if (recognizedBlock) {
+          perDocLines.push("");
+          perDocLines.push("Распознанные данные с документа:");
+          perDocLines.push(recognizedBlock);
+        }
+
+        const caption = perDocLines.filter(Boolean).join("\n");
+
+        docsForSend.push({
+          buffer,
+          caption,
+        });
+      }
+
+      await sendDocsBatchToTelegramTargets(docsForSend);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ ok: true, mode: "batch" }),
+      };
+    }
+
+    // ===== ОДИНОЧНЫЙ документ (старый режим, на всякий случай) =====
     if (!image) {
       return { statusCode: 400, body: "No image" };
     }
+
+    console.log("upload-doc: single mode");
 
     let base64 = image;
     let imageDataUrlForVision = image;
@@ -264,7 +447,7 @@ exports.handler = async (event) => {
         }
       }
     } catch (e) {
-      console.error("Doc OCR global error:", e);
+      console.error("Doc OCR global error (single):", e);
     }
 
     const captionLines = [
@@ -290,7 +473,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ ok: true }),
+      body: JSON.stringify({ ok: true, mode: "single" }),
     };
   } catch (err) {
     console.error("upload-doc handler error:", err);

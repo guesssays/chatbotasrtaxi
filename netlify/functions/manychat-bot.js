@@ -400,7 +400,18 @@ https://t.me/AsrTaxiAdmin
 
 13. АВТО РЎЙХАТИ 
 
-
+Daewoo Gentra — Start: да; Comfort: 2015+
+Daewoo Kalos — Start: да
+Daewoo Lacetti — Start: да
+Daewoo Lanos — Start: да
+Daewoo Leganza — Start: да; Comfort: 2004+
+Daewoo Magnus — Start: да; Comfort: 2006+
+Daewoo Nexia — Start: да
+Daewoo Nubira — Start: да
+Daewoo Sens — Start: да
+Daewoo Tacuma — Start: да; Comfort: 2012+
+Daewoo Winstorm — Start: да; Comfort: 2006+
+Daewoo Tico — Delivery: да
 
 BYD Chazor — Start: да; Comfort: 2022+; Comfort+: 2022+; Electro: да
 BYD E2 — Start: да; Comfort: 2019+; Comfort+: да; Electro: да

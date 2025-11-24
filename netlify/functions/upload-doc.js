@@ -118,7 +118,7 @@ async function sendDocsBatchToTelegramTargets(docs) {
 }
 
 /**
- * Отправка текстового сообщения со сводкой по всем документам
+ * Отправка текстового сообщения операторам
  */
 async function sendTextToTelegramTargets(text) {
   if (!TELEGRAM_API || !text) return;
@@ -144,47 +144,6 @@ async function sendTextToTelegramTargets(text) {
       console.error("sendTextToTelegramTargets exception:", e);
     }
   }
-}
-
-/**
- * Форматирование распознанных данных
- * (только те поля, которые реально нужны оператору)
- */
-function formatRecognizedData(docData) {
-  if (!docData || typeof docData !== "object") return "";
-
-  const LABELS = {
-    // В/У (лицевая)
-    last_name: "1. Фамилия",
-    first_name: "2. Имя",
-    issue_date: "4a. Дата выдачи",
-    valid_to: "4b. Дата истечения срока",
-    pinfl: "4d. ПИНФЛ",
-    licence_series_number: "5. Серия В/У",
-
-    // Техпаспорт лицевая
-    plate_number: "1. Гос номер",
-    brand: "2. Марка",
-    color: "3. Цвет",
-
-    // Техпаспорт оборот
-    year: "9. Год выпуска",
-    body_number: "11. Номер кузова",
-    sts_series: "Серия тех паспорта",
-
-    // общее
-    doc_type: "Тип документа (распознанный)",
-  };
-
-  const lines = [];
-
-  for (const [key, value] of Object.entries(docData)) {
-    if (!value) continue;
-    const label = LABELS[key] || key;
-    lines.push(`${label}\n${value}`);
-  }
-
-  return lines.join("\n\n");
 }
 
 /**
@@ -354,6 +313,68 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   }
 }
 
+/**
+ * Сборка финального текста для операторов ТОЛЬКО с нужными полями
+ */
+function buildOperatorSummary({
+  phone,
+  tg_id,
+  carColor,
+  carModel,
+  vuData,
+  techFrontData,
+  techBackData,
+}) {
+  const vu = vuData || {};
+  const tf = techFrontData || {};
+  const tb = techBackData || {};
+
+  const lines = [
+    "📄 Набор документов от водителя ASR TAXI",
+    phone ? `Телефон: ${phone}` : "Телефон:",
+    tg_id ? `Chat ID: ${tg_id}` : "Chat ID:",
+    `Цвет авто (из формы): ${carColor || ""}`,
+    `Модель авто (из формы): ${carModel || ""}`,
+    "",
+    "Фамилия",
+    vu.last_name || "",
+    "",
+    "Имя",
+    vu.first_name || "",
+    "",
+    "Дата выдачи",
+    vu.issue_date || "",
+    "",
+    "Дата истечения срока",
+    vu.valid_to || "",
+    "",
+    "ПИНФЛ",
+    vu.pinfl || "",
+    "",
+    "Серия В/У",
+    vu.licence_series_number || "",
+    "",
+    "Авто:",
+    "",
+    "Гос номер",
+    tf.plate_number || "",
+    "",
+    "Марка",
+    tf.brand || "",
+    "",
+    "Цвет",
+    tf.color || "",
+    "",
+    "Номер кузова",
+    tb.body_number || "",
+    "",
+    "Серия тех паспорта",
+    tb.sts_series || "",
+  ];
+
+  return lines.join("\n");
+}
+
 exports.handler = async (event) => {
   console.log("=== upload-doc invoked ===");
 
@@ -389,17 +410,12 @@ exports.handler = async (event) => {
     if (Array.isArray(images) && images.length) {
       console.log("upload-doc: batch mode, images.length =", images.length);
 
-      const baseHeaderLines = [
-        "📄 Набор документов от водителя ASR TAXI",
-        phone ? `Телефон (из формы/ссылки): ${phone}` : null,
-        tg_id ? `Chat ID: ${tg_id}` : null,
-        carColor ? `Цвет авто (из формы): ${carColor}` : null,
-        carModel ? `Модель авто (из формы): ${carModel}` : null,
-        `Всего документов: ${images.length}`,
-      ].filter(Boolean);
-
       const docsForSend = [];
-      const logsTextLines = [...baseHeaderLines, ""];
+
+      // сюда собираем распознанные данные по типам документов
+      let vuData = null;         // В/У лицевая (vu_front)
+      let techFrontData = null;  // техпаспорт лицевая (tech_front)
+      let techBackData = null;   // техпаспорт оборот (tech_back)
 
       for (let i = 0; i < images.length; i++) {
         const item = images[i] || {};
@@ -417,16 +433,18 @@ exports.handler = async (event) => {
 
         const buffer = Buffer.from(base64, "base64");
 
-        let recognizedBlock = "";
         try {
           const docData = await extractDocDataWithOpenAI(
             imageDataUrlForVision,
             item.docType
           );
           if (docData) {
-            const formatted = formatRecognizedData(docData);
-            if (formatted) {
-              recognizedBlock = formatted;
+            if (item.docType === "vu_front") {
+              vuData = docData;
+            } else if (item.docType === "tech_front") {
+              techFrontData = docData;
+            } else if (item.docType === "tech_back") {
+              techBackData = docData;
             }
           }
         } catch (e) {
@@ -440,26 +458,22 @@ exports.handler = async (event) => {
           buffer,
           caption: shortCaption,
         });
-
-        // подробная инфа — в текстовом сообщении
-        logsTextLines.push(
-          `Документ ${i + 1}/${images.length}: ${item.docTitle || "Без названия"}`
-        );
-        if (item.docType) {
-          logsTextLines.push(`Тип документа (из формы): ${item.docType}`);
-        }
-        if (recognizedBlock) {
-          logsTextLines.push("");
-          logsTextLines.push("Распознанные данные с документа:");
-          logsTextLines.push(recognizedBlock);
-        }
-        logsTextLines.push(""); // пустая строка-разделитель
       }
 
       // отправляем сначала альбом
       await sendDocsBatchToTelegramTargets(docsForSend);
-      // затем — текст со всей сводкой
-      const fullText = logsTextLines.join("\n");
+
+      // затем — один текст со сводкой ТОЛЬКО по нужным полям
+      const fullText = buildOperatorSummary({
+        phone,
+        tg_id,
+        carColor,
+        carModel,
+        vuData,
+        techFrontData,
+        techBackData,
+      });
+
       await sendTextToTelegramTargets(fullText);
 
       return {
@@ -487,43 +501,41 @@ exports.handler = async (event) => {
 
     const buffer = Buffer.from(base64, "base64");
 
-    let recognizedBlock = "";
+    // для одиночного документа тоже стараемся собрать поля в ту же структуру
+    let vuData = null;
+    let techFrontData = null;
+    let techBackData = null;
+
     try {
       const docData = await extractDocDataWithOpenAI(
         imageDataUrlForVision,
         docType
       );
       if (docData) {
-        const formatted = formatRecognizedData(docData);
-        if (formatted) {
-          recognizedBlock = formatted;
+        if (docType === "vu_front") {
+          vuData = docData;
+        } else if (docType === "tech_front") {
+          techFrontData = docData;
+        } else if (docType === "tech_back") {
+          techBackData = docData;
         }
       }
     } catch (e) {
       console.error("Doc OCR global error (single):", e);
     }
 
-    const captionLines = [
-      "📄 Новый документ от водителя ASR TAXI",
-      phone ? `Телефон (из формы/ссылки): ${phone}` : null,
-      tg_id ? `Chat ID: ${tg_id}` : null,
-      carColor ? `Цвет авто (из формы): ${carColor}` : null,
-      carModel ? `Модель авто (из формы): ${carModel}` : null,
-      docTitle ? `Документ: ${docTitle}` : null,
-      docType ? `Тип документа (из формы): ${docType}` : "Тип документа: document",
-      "",
-      "Фото прикреплено выше.",
-    ].filter(Boolean);
+    const summaryText = buildOperatorSummary({
+      phone,
+      tg_id,
+      carColor,
+      carModel,
+      vuData,
+      techFrontData,
+      techBackData,
+    });
 
-    if (recognizedBlock) {
-      captionLines.push("");
-      captionLines.push("Распознанные данные с документа:");
-      captionLines.push(recognizedBlock);
-    }
-
-    const caption = captionLines.join("\n");
-
-    await sendPhotoToTelegramTargets(buffer, caption);
+    // здесь кладём сводку прямо в caption к фото
+    await sendPhotoToTelegramTargets(buffer, summaryText);
 
     return {
       statusCode: 200,

@@ -23,7 +23,7 @@ const FLEET_PARK_ID = process.env.FLEET_PARK_ID || "";     // id парка (б�
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
-if (! TELEGRAM_TOKEN) console.error("TG_BOT_TOKEN is not set");
+if (!TELEGRAM_TOKEN) console.error("TG_BOT_TOKEN is not set");
 
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ TELEGRAM =====
 
@@ -67,14 +67,15 @@ function normalizePhone(raw) {
 
 async function checkDriverInFleet(phone) {
   if (!FLEET_API_KEY || !FLEET_PARK_ID || !FLEET_CLIENT_ID) {
-    console.warn("FLEET_API_KEY, FLEET_CLIENT_ID или FLEET_PARK_ID не заданы — считаем, что водителя нет в базе");
+    console.warn(
+      "FLEET_API_KEY, FLEET_CLIENT_ID или FLEET_PARK_ID не заданы — считаем, что водителя нет в базе"
+    );
     return { exists: false, raw: null };
   }
 
   const normalized = normalizePhone(phone);
 
   try {
-    // !!! при необходимости сверь эндпоинт/тело с актуальной документацией Яндекс Флит !!!
     const res = await fetch(`${FLEET_API_URL}/v1/parks/driver-profiles/list`, {
       method: "POST",
       headers: {
@@ -114,6 +115,7 @@ async function checkDriverInFleet(phone) {
 
 exports.handler = async (event) => {
   console.log("=== telegram-asr-bot (registration) invoked ===");
+  console.log("Method:", event.httpMethod);
 
   try {
     if (event.httpMethod === "OPTIONS") {
@@ -124,10 +126,14 @@ exports.handler = async (event) => {
       return { statusCode: 405, body: "Method not allowed" };
     }
 
-    // проверка секрета вебхука
+    // проверка секрета вебхука (мягкая)
     if (WEBHOOK_SECRET) {
-      const incoming = event.headers["x-telegram-bot-api-secret-token"];
-      if (incoming !== WEBHOOK_SECRET) {
+      const incoming =
+        event.headers["x-telegram-bot-api-secret-token"] ||
+        event.headers["X-Telegram-Bot-Api-Secret-Token"];
+      if (!incoming) {
+        console.warn("Telegram request без secret_token header");
+      } else if (incoming !== WEBHOOK_SECRET) {
         console.warn("Bad webhook secret:", incoming);
         return { statusCode: 403, body: "Forbidden" };
       }
@@ -148,6 +154,8 @@ exports.handler = async (event) => {
       const cb = update.callback_query;
       const data = cb.data || "";
       const chatId = cb.message?.chat?.id;
+
+      console.log("Callback data:", data, "from chat", chatId);
 
       if (data === "start_registration" && chatId) {
         // отправляем клавиатуру с отправкой контакта

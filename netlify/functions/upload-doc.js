@@ -22,13 +22,8 @@ if (!OPENAI_API_KEY) {
   );
 }
 
-/**
- * Отправка ОДНОГО фото во все целевые чаты (операторы + лог-канал)
- * (используется в одиночном режиме, для совместимости)
- */
-async function sendPhotoToTelegramTargets(buffer, caption) {
-  if (!TELEGRAM_API) return;
-
+// ===== общая функция получения списка чатов-целей =====
+function getTargets() {
   const targets = new Set();
   for (const id of ADMIN_CHAT_IDS) {
     if (id) targets.add(id);
@@ -36,6 +31,16 @@ async function sendPhotoToTelegramTargets(buffer, caption) {
   if (LOG_CHAT_ID) {
     targets.add(LOG_CHAT_ID);
   }
+  return Array.from(targets);
+}
+
+/**
+ * Отправка ОДНОГО фото (старый режим, на всякий случай)
+ */
+async function sendPhotoToTelegramTargets(buffer, caption) {
+  if (!TELEGRAM_API) return;
+
+  const targets = getTargets();
 
   for (const chatId of targets) {
     try {
@@ -46,7 +51,9 @@ async function sendPhotoToTelegramTargets(buffer, caption) {
         new Blob([buffer], { type: "image/jpeg" }),
         "document.jpg"
       );
-      formData.append("caption", caption);
+      if (caption) {
+        formData.append("caption", caption);
+      }
 
       const res = await fetch(`${TELEGRAM_API}/sendPhoto`, {
         method: "POST",
@@ -71,13 +78,7 @@ async function sendDocsBatchToTelegramTargets(docs) {
   if (!TELEGRAM_API) return;
   if (!docs || !docs.length) return;
 
-  const targets = new Set();
-  for (const id of ADMIN_CHAT_IDS) {
-    if (id) targets.add(id);
-  }
-  if (LOG_CHAT_ID) {
-    targets.add(LOG_CHAT_ID);
-  }
+  const targets = getTargets();
 
   for (const chatId of targets) {
     try {
@@ -94,7 +95,9 @@ async function sendDocsBatchToTelegramTargets(docs) {
         return {
           type: "photo",
           media: `attach://${attachName}`,
-          caption: doc.caption,
+          // оставляем очень короткий caption,
+          // вся "длинная" инфа придёт отдельным текстом
+          caption: doc.caption || "",
         };
       });
 
@@ -111,6 +114,35 @@ async function sendDocsBatchToTelegramTargets(docs) {
       }
     } catch (e) {
       console.error("sendDocsBatchToTelegramTargets exception:", e);
+    }
+  }
+}
+
+/**
+ * Отправка текстового сообщения со сводкой по всем документам
+ */
+async function sendTextToTelegramTargets(text) {
+  if (!TELEGRAM_API || !text) return;
+
+  const targets = getTargets();
+
+  for (const chatId of targets) {
+    try {
+      const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("sendMessage error:", res.status, errText);
+      }
+    } catch (e) {
+      console.error("sendTextToTelegramTargets exception:", e);
     }
   }
 }
@@ -320,7 +352,7 @@ exports.handler = async (event) => {
 
     const {
       images,   // новый батч-формат: [{ image, docType, docTitle }, ...]
-      image,    // старый одиночный формат
+      image,    // старый одиночный формат (на всякий случай)
       tg_id,
       phone,
       docType,
@@ -341,6 +373,7 @@ exports.handler = async (event) => {
       ].filter(Boolean);
 
       const docsForSend = [];
+      const logsTextLines = [...baseHeaderLines, ""];
 
       for (let i = 0; i < images.length; i++) {
         const item = images[i] || {};
@@ -374,40 +407,34 @@ exports.handler = async (event) => {
           console.error("Doc OCR global error (batch item):", e);
         }
 
-        const perDocLines = [];
-
-        // общий заголовок только у первого документа
-        if (i === 0) {
-          perDocLines.push(baseHeaderLines.join("\n"));
-          perDocLines.push("");
-        }
-
-        perDocLines.push(
-          `Документ ${i + 1}/${images.length}: ${
-            item.docTitle || "Без названия"
-          }`
-        );
-        perDocLines.push(
-          item.docType
-            ? `Тип документа (из формы): ${item.docType}`
-            : null
-        );
-
-        if (recognizedBlock) {
-          perDocLines.push("");
-          perDocLines.push("Распознанные данные с документа:");
-          perDocLines.push(recognizedBlock);
-        }
-
-        const caption = perDocLines.filter(Boolean).join("\n");
+        // короткий caption прямо на фото
+        const shortCaption = `Документ ${i + 1}/${images.length}`;
 
         docsForSend.push({
           buffer,
-          caption,
+          caption: shortCaption,
         });
+
+        // подробная инфа — в текстовом сообщении
+        logsTextLines.push(
+          `Документ ${i + 1}/${images.length}: ${item.docTitle || "Без названия"}`
+        );
+        if (item.docType) {
+          logsTextLines.push(`Тип документа (из формы): ${item.docType}`);
+        }
+        if (recognizedBlock) {
+          logsTextLines.push("");
+          logsTextLines.push("Распознанные данные с документа:");
+          logsTextLines.push(recognizedBlock);
+        }
+        logsTextLines.push(""); // пустая строка-разделитель
       }
 
+      // отправляем сначала альбом
       await sendDocsBatchToTelegramTargets(docsForSend);
+      // затем — текст со всей сводкой
+      const fullText = logsTextLines.join("\n");
+      await sendTextToTelegramTargets(fullText);
 
       return {
         statusCode: 200,
@@ -415,7 +442,7 @@ exports.handler = async (event) => {
       };
     }
 
-    // ===== ОДИНОЧНЫЙ документ (старый режим, на всякий случай) =====
+    // ===== ОДИНОЧНЫЙ документ (старый режим) =====
     if (!image) {
       return { statusCode: 400, body: "No image" };
     }

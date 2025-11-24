@@ -7,6 +7,7 @@
   <style>
     :root {
       --bg: #050608;
+      --card-bg: #070b10;
       --fg: #f5f5f5;
       --accent1: #00ff99;
       --accent2: #00b3ff;
@@ -20,83 +21,195 @@
 
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: radial-gradient(circle at top, #111827 0, #050608 55%);
       color: var(--fg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", sans-serif;
     }
 
     .wrapper {
       width: 100%;
       max-width: 520px;
-      margin: 0 auto;
-      padding: 16px 16px 32px;
+      background: var(--card-bg);
+      border-radius: 24px;
+      padding: 24px 20px 28px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
     }
 
-    h1 {
-      font-size: 20px;
-      margin: 4px 0 8px;
+    .main-title {
+      font-size: 22px;
+      font-weight: 700;
+      text-align: center;
+      margin: 0 0 4px;
     }
 
-    .subtitle {
-      font-size: 13px;
+    .main-subtitle {
+      font-size: 14px;
+      text-align: center;
       color: var(--muted);
+      margin: 0 0 20px;
+    }
+
+    /* ===== Прогресс по шагам регистрации ===== */
+
+    .steps-widget {
+      margin-bottom: 20px;
+    }
+
+    .steps-header {
+      display: flex;
+      justify-content: center;
       margin-bottom: 8px;
-      line-height: 1.4;
     }
 
-    .info {
+    .steps-label {
       font-size: 13px;
-      margin-bottom: 4px;
-      opacity: 0.9;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid var(--border-soft);
     }
 
-    .color-step,
-    .phone-step {
-      margin: 12px 0 10px;
+    .steps-bar {
+      position: relative;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
     }
 
-    .color-label,
-    .phone-label {
+    .steps-bar-fill {
+      position: absolute;
+      inset: 0;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent1), var(--accent2));
+      transition: width 0.25s ease;
+    }
+
+    .steps-names {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .step-name {
+      flex: 1;
+      text-align: center;
+      padding: 0 4px;
+      transition: color 0.2s ease;
+    }
+
+    .step-name--active {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .step-name--done {
+      color: var(--accent1);
+    }
+
+    /* ===== Шаги по документам (1 из 3) ===== */
+
+    .doc-steps {
+      display: none;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .doc-step-label {
       font-size: 13px;
-      margin-bottom: 4px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+    }
+
+    .doc-step-title {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* ===== Экраны ===== */
+
+    .screen {
+      display: none;
+      text-align: center;
+    }
+
+    .screen-active {
       display: block;
     }
 
-    .color-select,
-    .phone-input {
+    .screen-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+
+    .screen-text {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 0 0 18px;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    .field-label {
+      font-size: 13px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .select,
+    .input {
       width: 100%;
-      padding: 10px 12px;
+      padding: 11px 14px;
       border-radius: 999px;
       border: 1px solid var(--border-soft);
-      background: #11141a;
+      background: #0b1120;
       color: var(--fg);
-      font-size: 14px;
+      font-size: 15px;
       outline: none;
       appearance: none;
       -webkit-appearance: none;
       -moz-appearance: none;
     }
 
-    .color-select:focus,
-    .phone-input:focus {
+    .select:focus,
+    .input:focus {
       border-color: var(--accent1);
       box-shadow: 0 0 0 1px rgba(0,255,153,0.3);
     }
 
-    .color-hint,
-    .phone-hint {
+    .field-hint {
       margin-top: 4px;
       font-size: 12px;
       color: var(--muted);
     }
 
+    /* ===== Камера ===== */
+
     .camera-container {
       position: relative;
-      margin-top: 12px;
-      border-radius: 16px;
+      margin: 10px auto 8px;
+      border-radius: 20px;
       overflow: hidden;
       background: #000;
       width: 100%;
+      max-width: 440px;
       aspect-ratio: 3/4;
     }
 
@@ -119,24 +232,54 @@
       top: 10%;
       left: 8%;
       right: 8%;
-      bottom: 38%;
+      bottom: 30%;
       border: 3px solid var(--accent1);
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,255,153,0.8);
+      border-radius: 12px;
+      box-shadow: 0 0 16px rgba(0,255,153,0.9);
     }
 
-    .hint-under-frame {
-      margin-top: 6px;
+    .camera-hint {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .status-text {
       font-size: 12px;
       color: var(--muted);
-      line-height: 1.4;
+      margin-top: 6px;
+      min-height: 16px;
     }
+
+    /* ===== Превью документа ===== */
+
+    .preview-img-wrapper {
+      margin: 10px auto 8px;
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      overflow: hidden;
+      background: #000;
+      max-width: 440px;
+    }
+
+    .preview-img-wrapper img {
+      width: 100%;
+      display: block;
+    }
+
+    .preview-hint {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    /* ===== Кнопки ===== */
 
     .buttons-row {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 16px;
+      margin-top: 18px;
     }
 
     .btn {
@@ -147,21 +290,21 @@
       padding: 12px 16px;
       border-radius: 999px;
       border: none;
+      width: 100%;
       font-size: 15px;
       font-weight: 600;
-      width: 100%;
       cursor: pointer;
-      transition: transform 0.08s ease, opacity 0.08s ease, box-shadow 0.15s ease;
+      transition: transform 0.08s ease, opacity 0.08s ease, box-shadow 0.16s ease;
     }
 
     .btn-primary {
       background: linear-gradient(135deg, var(--accent1), var(--accent2));
       color: #050608;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.45);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.55);
     }
 
     .btn-secondary {
-      background: #11141a;
+      background: #0b1120;
       color: var(--fg);
       border: 1px solid var(--border-soft);
     }
@@ -183,23 +326,6 @@
       flex-shrink: 0;
     }
 
-    #preview {
-      margin-top: 18px;
-      display: none;
-    }
-
-    #preview img {
-      max-width: 100%;
-      border-radius: 12px;
-      border: 1px solid var(--border-soft);
-      display: block;
-    }
-
-    .preview-title {
-      font-size: 14px;
-      margin-bottom: 8px;
-    }
-
     .note {
       font-size: 12px;
       opacity: 0.7;
@@ -207,16 +333,12 @@
       white-space: pre-line;
     }
 
-    #status {
-      margin-top: 10px;
-    }
-
     .centered {
       text-align: center;
     }
 
     .link-btn {
-      margin-top: 16px;
+      margin-top: 18px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -228,37 +350,110 @@
       font-size: 14px;
     }
 
-    @media (max-width: 360px) {
-      h1 {
-        font-size: 18px;
+    /* ===== Экран загрузки ===== */
+
+    .loader-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5,6,8,0.92);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      backdrop-filter: blur(4px);
+    }
+
+    .loader-card {
+      width: 100%;
+      max-width: 260px;
+      background: #020617;
+      border-radius: 20px;
+      padding: 18px 18px 20px;
+      text-align: center;
+      border: 1px solid rgba(148,163,184,0.3);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.8);
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto 12px;
+      border-radius: 999px;
+      border: 3px solid rgba(148,163,184,0.3);
+      border-top-color: var(--accent1);
+      animation: spin 0.9s linear infinite;
+    }
+
+    .loader-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+
+    .loader-text {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 380px) {
+      .wrapper {
+        padding: 18px 14px 22px;
+        border-radius: 20px;
       }
-      .subtitle,
-      .info {
-        font-size: 12px;
+      .main-title {
+        font-size: 20px;
+      }
+      .screen-title {
+        font-size: 17px;
       }
       .btn {
         font-size: 14px;
-        padding: 10px 12px;
+        padding: 11px 14px;
       }
     }
   </style>
 </head>
 <body>
 <div class="wrapper">
-  <p class="info" id="userInfo"></p>
-  <h1>Загрузка документов</h1>
+  <h1 class="main-title">Подключение к ASR TAXI</h1>
+  <p class="main-subtitle">Загрузите документы, чтобы оператор мог быстрее подключить вас к парку.</p>
+
+  <!-- Прогресс регистрации -->
+  <div class="steps-widget">
+    <div class="steps-header">
+      <span class="steps-label" id="stepsLabel">Шаг 1 из 3</span>
+    </div>
+    <div class="steps-bar">
+      <div class="steps-bar-fill" id="stepsBarFill"></div>
+    </div>
+    <div class="steps-names">
+      <div class="step-name step-name--active" data-step="0">Авто и контакт</div>
+      <div class="step-name" data-step="1">Документы</div>
+      <div class="step-name" data-step="2">Готово</div>
+    </div>
+  </div>
+
+  <!-- Шаги по документам -->
+  <div class="doc-steps" id="docStepsBox">
+    <div class="doc-step-label" id="docStepLabel">Документ 1 из 3</div>
+    <div class="doc-step-title" id="docStepTitle">В/У — лицевая сторона</div>
+  </div>
 
   <!-- ЭКРАН 1: цвет + телефон -->
-  <div id="screen1">
-    <p class="subtitle">
-      1 шаг из 3. Сначала выберите цвет автомобиля и укажите номер телефона.
-      Это нужно оператору, чтобы правильно оформить машину и при необходимости
-      повторно отправить вам ссылку.
+  <div id="screenIntro" class="screen screen-active">
+    <h2 class="screen-title">Укажите данные автомобиля</h2>
+    <p class="screen-text">
+      Сначала выберите цвет автомобиля и номер телефона для связи. Эти данные увидит оператор парка.
     </p>
 
-    <div class="color-step">
-      <label for="colorSelect" class="color-label">Цвет автомобиля</label>
-      <select id="colorSelect" class="color-select">
+    <div class="form-group">
+      <label for="colorSelect" class="field-label">Цвет автомобиля</label>
+      <select id="colorSelect" class="select">
         <option value="">Выберите цвет из списка</option>
         <option value="Жёлтый">Жёлтый</option>
         <option value="Белый">Белый</option>
@@ -274,91 +469,122 @@
         <option value="Фиолетовый">Фиолетовый</option>
         <option value="Бежевый">Бежевый</option>
       </select>
-      <p class="color-hint" id="colorHint">
+      <p class="field-hint" id="colorHint">
         Выберите тот же цвет, который будете указывать в анкете Яндекс.
       </p>
     </div>
 
-    <div class="phone-step">
-      <label for="phoneInput" class="phone-label">Номер телефона</label>
+    <div class="form-group">
+      <label for="phoneInput" class="field-label">Номер телефона</label>
       <input
         id="phoneInput"
-        class="phone-input"
+        class="input"
         type="tel"
         inputmode="tel"
         placeholder="+998 90 123-45-67"
       />
-      <p class="phone-hint" id="phoneHint">
-        Укажите актуальный номер. Он попадёт оператору, чтобы при необходимости
-        он смог отправить вам ссылку повторно.
+      <p class="field-hint" id="phoneHint">
+        Укажите актуальный номер телефона для связи с оператором.
       </p>
     </div>
 
-    <div class="buttons-row" style="margin-top: 20px;">
+    <div class="buttons-row">
       <button class="btn btn-primary" id="startDocsBtn">
-        Перейти к загрузке документов
+        <!-- Icon: Tabler arrow-right -->
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M5 12a1 1 0 0 1 1-1h9.586l-3.293-3.293a1 1 0 1 1 1.414-1.414l5 5a1.003 1.003 0 0 1 .21.326 1 1 0 0 1 0 .764 1.003 1.003 0 0 1-.21.326l-5 5a1 1 0 0 1-1.414-1.414L15.586 13H6a1 1 0 0 1-1-1Z" />
+        </svg>
+        <span>Продолжить к документам</span>
       </button>
     </div>
   </div>
 
-  <!-- ЭКРАН 2: загрузка документов -->
-  <div id="screen2" style="display:none;">
-    <p class="info" id="stepInfo"></p>
+  <!-- ЭКРАН 2: камера (съёмка документа) -->
+  <div id="screenCamera" class="screen">
+    <h2 class="screen-title">Сделайте фото документа</h2>
+    <p class="screen-text">
+      Разместите документ в рамке и сделайте чёткое фото. Можно также выбрать готовое фото из галереи.
+    </p>
 
     <div class="camera-container">
       <video id="video" autoplay playsinline muted></video>
       <div class="frame"></div>
     </div>
-    <p class="hint-under-frame">
-      Разместите документ ровно в рамке, чтобы все данные были хорошо видны.
+    <p class="camera-hint">
+      Документ должен быть полностью в кадре, без бликов и размытости.
     </p>
 
     <div class="buttons-row">
       <button class="btn btn-primary" id="captureBtn">
+        <!-- Icon: Tabler camera -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
-            d="M9 3a2 2 0 0 0-1.789 1.106L6.618 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-1.618l-.593-1.894A2 2 0 0 0 15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z"/>
+            d="M9 4a2 2 0 0 0-1.788 1.106L6.618 6H5a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-7a3 3 0 0 0-3-3h-1.618l-.594-1.894A2 2 0 0 0 15 4H9Zm3 4a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z" />
         </svg>
-        <span>Сделать фото документа</span>
+        <span>Сделать фото</span>
       </button>
 
       <button class="btn btn-secondary" id="galleryBtn">
+        <!-- Icon: Tabler photo -->
         <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path fill="currentColor"
-            d="M12 3a1 1 0 0 1 1 1v8.586л2.293-2.293a1 1 0 0 1 1.414 1.414л-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414л2.293 2.293V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
+            d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v12h14V6H5Zm3 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-1 8 2.5-3 1.5 2 2.5-3 3.5 4H7Z" />
         </svg>
-        <span>Загрузить из галереи</span>
+        <span>Выбрать из галереи</span>
       </button>
 
-      <button class="btn btn-primary" id="sendBtn" style="display:none;">
-        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="currentColor"
-            d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047л3.08 7.696a1 1 0 0 0 .53.547л4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022л5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118л9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553л-1.447 3.349-1-2.667 1.98-.98Z"/>
-        </svg>
-        <span>Отправить документ</span>
-      </button>
-
-      <button class="btn btn-ghost" id="retakeBtn" style="display:none;">
-        <span>Сделать другой снимок</span>
+      <button class="btn btn-ghost" id="backToIntroBtn">
+        <span>Вернуться назад</span>
       </button>
     </div>
 
-    <p id="status" class="note"></p>
+    <p class="status-text" id="cameraStatus"></p>
+  </div>
 
-    <div id="preview">
-      <p class="preview-title">Предварительный просмотр документа:</p>
+  <!-- ЭКРАН 3: подтверждение фото -->
+  <div id="screenPreview" class="screen">
+    <h2 class="screen-title">Проверьте фото документа</h2>
+    <p class="screen-text">
+      Убедитесь, что все данные читаются. Если что-то не видно — сделайте другое фото.
+    </p>
+
+    <div class="preview-img-wrapper">
       <img id="previewImg" alt="Предпросмотр документа" />
+    </div>
+    <p class="preview-hint">
+      Документ не должен быть обрезан, размытый или с бликами.
+    </p>
+
+    <div class="buttons-row">
+      <button class="btn btn-primary" id="confirmDocBtn">
+        <!-- Icon: Tabler check -->
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M9.707 16.293 5.414 12l1.414-1.414 2.879 2.879 7.879-7.879L19 7l-9.293 9.293a1 1 0 0 1-1.414 0Z" />
+        </svg>
+        <span>Подтвердить и сохранить</span>
+      </button>
+
+      <button class="btn btn-secondary" id="retakeBtn">
+        <!-- Icon: Tabler refresh -->
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M4 4h5v2H6.414l1.293 1.293A7 7 0 1 1 5.05 17.95l1.414-1.414A5 5 0 1 0 9 7.101V10H7V4Zm13.95 2.05A7 7 0 0 1 18 19h-5v-2h2.586l-1.293-1.293A5 5 0 0 0 17 8.515V5h2v3.586l-1.05-1.536Z" />
+        </svg>
+        <span>Сделать другое фото</span>
+      </button>
     </div>
   </div>
 
-  <!-- ЭКРАН 3: всё готово -->
-  <div id="screen3" style="display:none;">
-    <p class="subtitle">
-      Все 3 шага пройдены. Документы и данные переданы оператору ASR TAXI.
+  <!-- ЭКРАН 4: всё готово -->
+  <div id="screenDone" class="screen">
+    <h2 class="screen-title">Документы отправлены оператору</h2>
+    <p class="screen-text">
+      Все фотографии успешно загружены. Оператор ASR TAXI проверит документы и свяжется с вами по указанному номеру.
     </p>
-    <p class="subtitle">
-      Можете закрыть эту страницу и вернуться в Telegram-бот.
-      Если оператору что-то потребуется уточнить, он свяжется с вами по указанному номеру.
+    <p class="note">
+      Если потребуется что-то уточнить или дослать, оператор напишет вам в Telegram.
     </p>
     <div class="centered">
       <a
@@ -373,75 +599,125 @@
   </div>
 </div>
 
+<!-- Экран загрузки -->
+<div class="loader-overlay" id="loaderOverlay">
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <p class="loader-title">Идёт обработка…</p>
+    <p class="loader-text" id="loaderText">Пожалуйста, не закрывайте страницу.</p>
+  </div>
+</div>
+
 <input type="file" id="fileInput" accept="image/*" style="display:none;" />
 <canvas id="canvas" style="display:none;"></canvas>
 
 <script>
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
-  const captureBtn = document.getElementById("captureBtn");
-  const galleryBtn = document.getElementById("galleryBtn");
-  const sendBtn = document.getElementById("sendBtn");
-  const retakeBtn = document.getElementById("retakeBtn");
-  const preview = document.getElementById("preview");
-  const previewImg = document.getElementById("previewImg");
-  const userInfo = document.getElementById("userInfo");
-  const statusEl = document.getElementById("status");
-  const fileInput = document.getElementById("fileInput");
+
   const colorSelect = document.getElementById("colorSelect");
   const colorHint = document.getElementById("colorHint");
-  const stepInfo = document.getElementById("stepInfo");
   const phoneInput = document.getElementById("phoneInput");
   const phoneHint = document.getElementById("phoneHint");
 
-  const screen1 = document.getElementById("screen1");
-  const screen2 = document.getElementById("screen2");
-  const screen3 = document.getElementById("screen3");
+  const screenIntro = document.getElementById("screenIntro");
+  const screenCamera = document.getElementById("screenCamera");
+  const screenPreview = document.getElementById("screenPreview");
+  const screenDone = document.getElementById("screenDone");
+
+  const docStepsBox = document.getElementById("docStepsBox");
+  const docStepLabel = document.getElementById("docStepLabel");
+  const docStepTitle = document.getElementById("docStepTitle");
+
+  const stepsLabel = document.getElementById("stepsLabel");
+  const stepsBarFill = document.getElementById("stepsBarFill");
+  const stepNameElems = Array.from(document.querySelectorAll(".step-name"));
+
   const startDocsBtn = document.getElementById("startDocsBtn");
+  const captureBtn = document.getElementById("captureBtn");
+  const galleryBtn = document.getElementById("galleryBtn");
+  const backToIntroBtn = document.getElementById("backToIntroBtn");
+  const previewImg = document.getElementById("previewImg");
+  const confirmDocBtn = document.getElementById("confirmDocBtn");
+  const retakeBtn = document.getElementById("retakeBtn");
+  const cameraStatus = document.getElementById("cameraStatus");
+  const fileInput = document.getElementById("fileInput");
+
+  const loaderOverlay = document.getElementById("loaderOverlay");
+  const loaderTextEl = document.getElementById("loaderText");
 
   const params = new URLSearchParams(location.search);
   const tgId = params.get("tg_id");
   const initialPhone = params.get("phone") || "";
 
   if (initialPhone) {
-    userInfo.textContent = "Номер для связи (из ссылки): " + initialPhone;
     phoneInput.value = initialPhone;
-  } else {
-    userInfo.textContent = "";
   }
 
+  const MAIN_STEPS = ["Авто и контакт", "Документы", "Готово"];
   const DOC_STEPS = [
     { id: "vu_front", title: "В/У — лицевая сторона" },
     { id: "tech_front", title: "Техпаспорт — лицевая сторона" },
     { id: "tech_back", title: "Техпаспорт — оборотная сторона" },
   ];
 
-  let currentStepIndex = 0;
+  let currentMainStep = 0;
+  let currentDocIndex = 0;
   let selectedColor = "";
   let storedPhone = initialPhone || "";
   let currentImageDataUrl = null;
+  const collectedDocs = {};
 
-  // сюда собираем все документы, чтобы потом отправить пачкой
-  const collectedDocs = {}; // key: step.id -> { image, title }
-
-  function getCurrentStep() {
-    return DOC_STEPS[currentStepIndex];
+  function setLoading(isLoading, text) {
+    if (isLoading) {
+      if (text) loaderTextEl.textContent = text;
+      loaderOverlay.style.display = "flex";
+    } else {
+      loaderOverlay.style.display = "none";
+    }
   }
 
-  function updateStepUI() {
-    const step = getCurrentStep();
-    stepInfo.textContent =
-      "Шаг " + (currentStepIndex + 1) + " из " + DOC_STEPS.length + ": " + step.title;
+  function setMainStep(index) {
+    currentMainStep = index;
+    stepsLabel.textContent = `Шаг ${index + 1} из ${MAIN_STEPS.length}`;
+    const percent = (index / (MAIN_STEPS.length - 1)) * 100;
+    stepsBarFill.style.width = percent + "%";
 
-    const span = sendBtn.querySelector("span");
-    if (span) span.textContent = "Сохранить: " + step.title;
+    stepNameElems.forEach((el, i) => {
+      el.classList.remove("step-name--active", "step-name--done");
+      if (i < index) {
+        el.classList.add("step-name--done");
+      } else if (i === index) {
+        el.classList.add("step-name--active");
+      }
+    });
+  }
+
+  function showScreen(name) {
+    screenIntro.classList.remove("screen-active");
+    screenCamera.classList.remove("screen-active");
+    screenPreview.classList.remove("screen-active");
+    screenDone.classList.remove("screen-active");
+
+    if (name === "intro") screenIntro.classList.add("screen-active");
+    if (name === "camera") screenCamera.classList.add("screen-active");
+    if (name === "preview") screenPreview.classList.add("screen-active");
+    if (name === "done") screenDone.classList.add("screen-active");
+  }
+
+  function updateDocStepUI() {
+    const step = DOC_STEPS[currentDocIndex];
+    docStepsBox.style.display = "block";
+    docStepLabel.textContent =
+      "Документ " + (currentDocIndex + 1) + " из " + DOC_STEPS.length;
+    docStepTitle.textContent = step.title;
   }
 
   colorSelect.addEventListener("change", () => {
     selectedColor = colorSelect.value;
     if (selectedColor) {
       colorHint.textContent =
-        "Цвет выбран: " + selectedColor + ". Нажмите «Перейти к загрузке документов».";
+        "Цвет выбран: " + selectedColor + ". Нажмите «Продолжить к документам».";
     } else {
       colorHint.textContent =
         "Выберите тот же цвет, который будете указывать в анкете Яндекс.";
@@ -454,24 +730,20 @@
     if (val) {
       phoneHint.textContent =
         "Если номер изменился — оператор будет использовать именно этот номер.";
-    } else if (initialPhone) {
-      phoneHint.textContent =
-        "Можно оставить номер из ссылки или ввести другой актуальный номер.";
     } else {
       phoneHint.textContent =
-        "Укажите актуальный номер телефона. Он нужен оператору для связи и повторной отправки ссылки.";
+        "Укажите актуальный номер телефона для связи с оператором.";
     }
   });
 
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      statusEl.textContent =
+      cameraStatus.textContent =
         "Камера недоступна в этом браузере. Используйте загрузку из галереи.";
-      console.warn("mediaDevices.getUserMedia is not supported");
       return;
     }
 
-    statusEl.textContent = "Запрашиваем доступ к камере...";
+    setLoading(true, "Открываем камеру…");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -485,19 +757,19 @@
       if (playPromise && typeof playPromise.then === "function") {
         playPromise.catch(err => {
           console.error("video.play() error:", err);
-          statusEl.textContent = "Не удалось запустить камеру: " + err.name;
+          cameraStatus.textContent = "Не удалось запустить камеру: " + err.name;
         });
-      } else {
-        statusEl.textContent = "Камера запущена. Наведите документ в рамку.";
       }
 
       video.onloadedmetadata = () => {
-        statusEl.textContent = "Камера запущена. Наведите документ в рамку.";
+        setLoading(false);
+        cameraStatus.textContent = "Камера запущена. Наведите документ в рамку.";
       };
     } catch (e) {
       console.error("Camera error:", e);
-      statusEl.textContent =
-        "Не удалось получить доступ к камере. Вы можете загрузить фото из галереи.";
+      setLoading(false);
+      cameraStatus.textContent =
+        "Не удалось получить доступ к камере. Разрешите доступ или используйте галерею.";
       alert(
         "Не удалось получить доступ к камере. Разрешите доступ в браузере или используйте галерею."
       );
@@ -512,30 +784,17 @@
     }
   }
 
-  function showPreview(dataUrl) {
-    currentImageDataUrl = dataUrl;
-    previewImg.src = dataUrl;
-    preview.style.display = "block";
-    sendBtn.style.display = "inline-flex";
-    retakeBtn.style.display = "inline-flex";
-
-    statusEl.textContent =
-      "Проверьте, чтобы все данные на документе были хорошо видны.\n" +
-      "Если всё верно — нажмите «Сохранить документ». Если нет — «Сделать другой снимок».";
-    preview.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   function captureFromCamera() {
     if (!video || !video.srcObject) {
-      statusEl.textContent =
+      cameraStatus.textContent =
         "Камера не запущена. Обновите страницу или используйте галерею.";
       return;
     }
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-    let width = vw || 1280;
-    let height = vh || 720;
+    const width = vw || 1280;
+    const height = vh || 720;
 
     canvas.width = width;
     canvas.height = height;
@@ -547,7 +806,13 @@
     showPreview(dataUrl);
   }
 
-  // Переход с экрана 1 на экран 2
+  function showPreview(dataUrl) {
+    currentImageDataUrl = dataUrl;
+    previewImg.src = dataUrl;
+    showScreen("preview");
+  }
+
+  // Переход с экрана 1 на этап документов
   startDocsBtn.addEventListener("click", () => {
     selectedColor = colorSelect.value;
     storedPhone = phoneInput.value.trim() || initialPhone;
@@ -565,14 +830,15 @@
       return;
     }
 
-    screen1.style.display = "none";
-    screen2.style.display = "block";
-
-    currentStepIndex = 0;
-    updateStepUI();
+    setMainStep(1);
+    currentDocIndex = 0;
+    updateDocStepUI();
+    cameraStatus.textContent = "";
+    showScreen("camera");
     startCamera();
   });
 
+  // Кнопки камеры
   captureBtn.addEventListener("click", () => {
     captureFromCamera();
   });
@@ -581,12 +847,19 @@
     fileInput.click();
   });
 
+  backToIntroBtn.addEventListener("click", () => {
+    stopCamera();
+    docStepsBox.style.display = "none";
+    setMainStep(0);
+    showScreen("intro");
+  });
+
   fileInput.addEventListener("change", () => {
     const file = fileInput.files && fileInput.files[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      statusEl.textContent = "Пожалуйста, выберите изображение документа.";
+      cameraStatus.textContent = "Пожалуйста, выберите изображение документа.";
       return;
     }
 
@@ -596,115 +869,100 @@
       showPreview(dataUrl);
     };
     reader.onerror = () => {
-      statusEl.textContent =
+      cameraStatus.textContent =
         "Не удалось прочитать файл. Попробуйте ещё раз.";
     };
     reader.readAsDataURL(file);
   });
 
+  // Превью: сделать другое фото
   retakeBtn.addEventListener("click", () => {
     currentImageDataUrl = null;
     previewImg.src = "";
-    preview.style.display = "none";
-    sendBtn.style.display = "none";
-    retakeBtn.style.display = "none";
-    statusEl.textContent =
-      "Сделайте новое фото или выберите другой файл для текущего шага.";
+    showScreen("camera");
   });
 
-  // Сохранение текущего документа и переход к следующему шагу / отправка пачки
-  sendBtn.addEventListener("click", async () => {
+  // Превью: подтвердить документ
+  confirmDocBtn.addEventListener("click", async () => {
     if (!currentImageDataUrl) {
-      statusEl.textContent = "Сначала сделайте фото или выберите файл.";
+      alert("Сначала сделайте фото документа.");
       return;
     }
 
-    const step = getCurrentStep();
-    const confirmed = window.confirm(
-      "Сохранить этот документ для отправки оператору?\n\n" + step.title
-    );
-    if (!confirmed) {
-      statusEl.textContent =
-        "Сохранение отменено. Вы можете переснять или выбрать другой файл.";
-      return;
-    }
-
-    // кладём в локальное хранилище
+    const step = DOC_STEPS[currentDocIndex];
     collectedDocs[step.id] = {
       image: currentImageDataUrl,
       title: step.title,
     };
 
-    if (currentStepIndex < DOC_STEPS.length - 1) {
-      // ещё есть шаги — просто переходим дальше, без отправки на сервер
-      currentStepIndex++;
-      updateStepUI();
-
-      statusEl.textContent =
-        "Документ сохранён. Теперь загрузите: " + getCurrentStep().title + ".";
-
+    if (currentDocIndex < DOC_STEPS.length - 1) {
+      // Переходим к следующему документу
+      currentDocIndex++;
+      updateDocStepUI();
       currentImageDataUrl = null;
       previewImg.src = "";
-      preview.style.display = "none";
-      sendBtn.style.display = "none";
-      retakeBtn.style.display = "none";
+      showScreen("camera");
+      cameraStatus.textContent =
+        "Камера запущена. Наведите следующий документ в рамку.";
       return;
     }
 
-    // Это был последний шаг — отправляем ВСЁ разом на backend
-    statusEl.textContent = "Отправляем все документы оператору...";
-    sendBtn.style.display = "none";
-    retakeBtn.style.display = "none";
+    // Последний документ — отправляем всё разом
+    await sendAllDocs();
+  });
+
+  async function sendAllDocs() {
+    const imagesPayload = DOC_STEPS.map(stepDef => {
+      const stored = collectedDocs[stepDef.id];
+      if (!stored || !stored.image) return null;
+      return {
+        docType: stepDef.id,
+        docTitle: stepDef.title,
+        image: stored.image,
+      };
+    }).filter(Boolean);
+
+    if (!imagesPayload.length) {
+      alert("Не удалось собрать документы для отправки. Попробуйте ещё раз.");
+      return;
+    }
+
+    setLoading(true, "Отправляем документы оператору…");
 
     try {
-      const imagesPayload = DOC_STEPS.map(stepDef => {
-        const stored = collectedDocs[stepDef.id];
-        if (!stored || !stored.image) return null;
-        return {
-          docType: stepDef.id,
-          docTitle: stepDef.title,
-          image: stored.image,
-        };
-      }).filter(Boolean);
-
-      if (!imagesPayload.length) {
-        statusEl.textContent =
-          "Не удалось собрать документы для отправки. Обновите страницу и попробуйте ещё раз.";
-        return;
-      }
-
       const res = await fetch("/.netlify/functions/upload-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          images: imagesPayload,   // весь набор документов
+          images: imagesPayload,
           tg_id: tgId || "",
           phone: storedPhone,
           carColor: selectedColor,
         }),
       });
 
+      setLoading(false);
+
       if (res.ok) {
         stopCamera();
-        screen2.style.display = "none";
-        screen3.style.display = "block";
+        setMainStep(2);
+        docStepsBox.style.display = "none";
+        showScreen("done");
       } else {
         console.error("upload-doc (batch) error status:", res.status);
-        statusEl.textContent =
-          "Не удалось отправить документы. Попробуйте ещё раз.";
-        sendBtn.style.display = "inline-flex";
-        retakeBtn.style.display = "inline-flex";
+        alert("Не удалось отправить документы. Попробуйте ещё раз.");
+        showScreen("preview");
       }
     } catch (e) {
+      setLoading(false);
       console.error("upload-doc (batch) exception:", e);
-      statusEl.textContent =
-        "Ошибка при отправке документов. Проверьте интернет и попробуйте ещё раз.";
-      sendBtn.style.display = "inline-flex";
-      retakeBtn.style.display = "inline-flex";
+      alert("Ошибка при отправке документов. Проверьте интернет и попробуйте ещё раз.");
+      showScreen("preview");
     }
-  });
+  }
 
-  // начальное состояние подсказки по номеру
+  // Инициализация
+  setMainStep(0);
   phoneInput.dispatchEvent(new Event("input"));
 </script>
 </body>

@@ -28,6 +28,8 @@ if (!TELEGRAM_TOKEN) console.error("TG_BOT_TOKEN is not set");
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ TELEGRAM =====
 
 async function sendTelegramMessage(chatId, text, replyMarkup) {
+  if (!chatId) return;
+
   const body = {
     chat_id: chatId,
     text,
@@ -35,32 +37,40 @@ async function sendTelegramMessage(chatId, text, replyMarkup) {
   };
   if (replyMarkup) body.reply_markup = replyMarkup;
 
-  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("Telegram sendMessage error:", res.status, errText);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Telegram sendMessage error:", res.status, errText);
+    }
+  } catch (e) {
+    console.error("Telegram sendMessage exception:", e);
   }
+}
+
+// отдельный хелпер для лог-чата
+async function sendLog(text) {
+  if (!LOG_CHAT_ID) return;
+  return sendTelegramMessage(LOG_CHAT_ID, text);
 }
 
 // ===== ПРОВЕРКА ВОДИТЕЛЯ В ЯНДЕКС ФЛИТ =====
 
 function normalizePhone(raw) {
   if (!raw) return "";
-  // убираем все, кроме цифр
   let digits = raw.replace(/[^\d]/g, "");
-  // если начинается на 8 и длина 11 → превращаем в +7 ...
+
   if (digits.length === 11 && digits[0] === "8") {
     digits = "7" + digits.slice(1);
   }
   if (digits.length === 11 && digits[0] === "7") {
     return `+${digits}`;
   }
-  // если уже с плюсом +998... и т.п., обычно Telegram так и даёт
   if (raw.startsWith("+")) return raw;
   return `+${digits}`;
 }
@@ -70,7 +80,7 @@ async function checkDriverInFleet(phone) {
     console.warn(
       "FLEET_API_KEY, FLEET_CLIENT_ID или FLEET_PARK_ID не заданы — считаем, что водителя нет в базе"
     );
-    return { exists: false, raw: null };
+    return { exists: false, profile: null, raw: null };
   }
 
   const normalized = normalizePhone(phone);
@@ -91,35 +101,57 @@ async function checkDriverInFleet(phone) {
             phone: { value: normalized },
           },
         },
-        limit: 1,
+        limit: 50,   // немного побольше, вдруг фильтр по телефону не срабатывает
       }),
     });
 
     if (!res.ok) {
       const errText = await res.text();
       console.error("Fleet API error:", res.status, errText);
-      return { exists: false, error: "fleet_error" };
+      return { exists: false, profile: null, error: "fleet_error" };
     }
 
     const data = await res.json();
-    const exists =
-      Array.isArray(data.driver_profiles) && data.driver_profiles.length > 0;
+    const profiles = Array.isArray(data.driver_profiles) ? data.driver_profiles : [];
+
+    // ДОП. ПРОВЕРКА: реально ли среди профилей есть наш номер
+    let foundProfile = null;
+
+    for (const p of profiles) {
+      const apiPhones = (p.driver_profile?.phones || []).map(normalizePhone);
+      if (apiPhones.includes(normalized)) {
+        foundProfile = p;
+        break;
+      }
+    }
+
+    const exists = !!foundProfile;
 
     console.log(
-      "Fleet API OK, exists =",
-      exists,
-      "profiles_count =",
-      Array.isArray(data.driver_profiles) ? data.driver_profiles.length : 0
+      "Fleet API OK, exists =", exists,
+      "profiles_count =", profiles.length
     );
-    console.log(
-      "Fleet API raw driver_profiles:",
-      JSON.stringify(data.driver_profiles, null, 2)
+    if (foundProfile) {
+      console.log(
+        "Fleet API raw driver_profile for phone:",
+        JSON.stringify(foundProfile, null, 2)
+      );
+    }
+
+    await sendLog(
+      `🔍 Проверка в Fleet\n` +
+      `Телефон: <b>${normalized}</b>\n` +
+      `Найден в базе: <b>${exists ? "ДА" : "НЕТ"}</b>` +
+      (foundProfile
+        ? `\nИмя: <b>${foundProfile.driver_profile?.last_name || ""} ${foundProfile.driver_profile?.first_name || ""}</b>\n` +
+          `Авто: <b>${foundProfile.car?.brand || "—"} ${foundProfile.car?.model || "—"}</b> (${foundProfile.car?.number || "—"})`
+        : "")
     );
 
-    return { exists, raw: data };
+    return { exists, profile: foundProfile, raw: data };
   } catch (e) {
     console.error("Fleet API exception:", e);
-    return { exists: false, error: "fleet_exception" };
+    return { exists: false, profile: null, error: "fleet_exception" };
   }
 }
 
@@ -170,7 +202,6 @@ exports.handler = async (event) => {
       console.log("Callback data:", data, "from chat", chatId);
 
       if (data === "start_registration" && chatId) {
-        // отправляем клавиатуру с отправкой контакта
         const replyMarkup = {
           keyboard: [
             [{ text: "📱 Отправить номер телефона", request_contact: true }],
@@ -186,7 +217,6 @@ exports.handler = async (event) => {
         );
       }
 
-      // обязательно ответить на callback, чтобы Telegram убрал "часики"
       await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -233,7 +263,6 @@ exports.handler = async (event) => {
       const contact = msg.contact;
       const from = msg.from;
 
-      // гарантируем, что водитель не шлёт чужой контакт
       if (contact.user_id && from && contact.user_id !== from.id) {
         await sendTelegramMessage(
           chatId,
@@ -245,22 +274,35 @@ exports.handler = async (event) => {
       const phone = contact.phone_number;
       const normalized = normalizePhone(phone);
 
-      console.log("Got contact from user:", from?.id, "phone:", phone, "normalized:", normalized);
+      console.log(
+        "Got contact from user:",
+        from?.id,
+        "phone:",
+        phone,
+        "normalized:",
+        normalized
+      );
 
       await sendTelegramMessage(
         chatId,
         `Спасибо! Номер <b>${normalized}</b> получен.\nПроверяю вас в базе Яндекс.Такси...`
       );
 
+      await sendLog(
+        `📲 Новый контакт от водителя\n` +
+        `Chat ID: <code>${chatId}</code>\n` +
+        `Телефон (сырой): <code>${phone}</code>\n` +
+        `Телефон (норм.): <b>${normalized}</b>`
+      );
+
       const check = await checkDriverInFleet(normalized);
-      console.log("checkDriverInFleet result:", JSON.stringify(check, null, 2));
 
       if (check.error === "fleet_error" || check.error === "fleet_exception") {
         await sendTelegramMessage(
           chatId,
           "Сейчас не получается проверить данные в базе Яндекс.Такси. Я передам ваш номер оператору, он свяжется с вами вручную."
         );
-        // можно отправить алерт операторам
+
         if (ADMIN_CHAT_IDS.length) {
           for (const adminId of ADMIN_CHAT_IDS) {
             await sendTelegramMessage(
@@ -273,27 +315,38 @@ exports.handler = async (event) => {
       }
 
       if (check.exists) {
-        console.log("Driver EXISTS in fleet for phone", normalized);
-
-        // водитель уже есть в базе
         await sendTelegramMessage(
           chatId,
           "Вы уже есть в базе Яндекс.Такси. ✅\nОператор проверит данные и напишет вам по подключению."
         );
 
-        // алерт операторам
+        const p = check.profile || {};
+        const dp = p.driver_profile || {};
+        const car = p.car || {};
+
+        const shortInfo =
+          `ФИО: <b>${dp.last_name || ""} ${dp.first_name || ""}</b>\n` +
+          (car.brand || car.model || car.number
+            ? `Авто: <b>${car.brand || "—"} ${car.model || "—"}</b> (${car.number || "—"})\n`
+            : "") +
+          `Статус: <code>${p.current_status?.status || "unknown"}</code>`;
+
         if (ADMIN_CHAT_IDS.length) {
           for (const adminId of ADMIN_CHAT_IDS) {
             await sendTelegramMessage(
               adminId,
-              `✅ Водитель найден в базе.\nChat ID: <code>${chatId}</code>\nТелефон: <b>${normalized}</b>`
+              `✅ Водитель найден в базе.\nChat ID: <code>${chatId}</code>\nТелефон: <b>${normalized}</b>\n${shortInfo}`
             );
           }
         }
-      } else {
-        console.log("Driver NOT found in fleet for phone", normalized);
 
-        // водителя нет в базе → предлагаем онлайн-регистрацию
+        await sendLog(
+          `✅ Результат проверки\n` +
+          `Chat ID: <code>${chatId}</code>\n` +
+          `Телефон: <b>${normalized}</b>\n` +
+          shortInfo
+        );
+      } else {
         const docsUrl = `https://asr-taxi-docs.netlify.app/?tg_id=${encodeURIComponent(
           chatId
         )}&phone=${encodeURIComponent(normalized)}`;
@@ -311,6 +364,13 @@ exports.handler = async (event) => {
             );
           }
         }
+
+        await sendLog(
+          `🆕 Водитель не найден в Fleet\n` +
+          `Chat ID: <code>${chatId}</code>\n` +
+          `Телефон: <b>${normalized}</b>\n` +
+          `Ссылка для загрузки документов: ${docsUrl}`
+        );
       }
 
       return { statusCode: 200, body: "Contact processed" };
@@ -325,6 +385,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   } catch (err) {
     console.error("telegram-asr-bot handler error:", err);
+    await sendLog(`🔥 Ошибка в handler telegram-asr-bot:\n<code>${String(err)}</code>`);
     return { statusCode: 500, body: "Internal error" };
   }
 };

@@ -50,6 +50,46 @@
       opacity: 0.9;
     }
 
+    .color-step,
+    .phone-step {
+      margin: 12px 0 10px;
+    }
+
+    .color-label,
+    .phone-label {
+      font-size: 13px;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .color-select,
+    .phone-input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: #11141a;
+      color: var(--fg);
+      font-size: 14px;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+
+    .color-select:focus,
+    .phone-input:focus {
+      border-color: var(--accent1);
+      box-shadow: 0 0 0 1px rgba(0,255,153,0.3);
+    }
+
+    .color-hint,
+    .phone-hint {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
     .camera-container {
       position: relative;
       margin-top: 12px;
@@ -57,7 +97,6 @@
       overflow: hidden;
       background: #000;
       width: 100%;
-      /* соотношение сторон близкое к документу */
       aspect-ratio: 3/4;
     }
 
@@ -68,7 +107,6 @@
       background: #000;
     }
 
-    /* рамка-оверлей без затемнения */
     .frame {
       position: absolute;
       inset: 0;
@@ -173,7 +211,6 @@
       margin-top: 10px;
     }
 
-    /* адаптация под очень маленькие экраны */
     @media (max-width: 360px) {
       h1 {
         font-size: 18px;
@@ -194,9 +231,50 @@
   <p class="info" id="userInfo"></p>
   <h1>Загрузка документов</h1>
   <p class="subtitle">
-    Сфотографируйте документ или выберите файл из галереи. После снимка вы увидите
-    предварительный просмотр и сможете подтвердить отправку.
+    Сначала выберите цвет автомобиля и укажите номер телефона, затем по очереди загрузите:
+    В/У (лицевая сторона) и техпаспорт (лицо и оборот). После каждого шага
+    будет предварительный просмотр и подтверждение отправки.
   </p>
+
+  <div class="color-step">
+    <label for="colorSelect" class="color-label">Цвет автомобиля</label>
+    <select id="colorSelect" class="color-select">
+      <option value="">Выберите цвет из списка</option>
+      <option value="Жёлтый">Жёлтый</option>
+      <option value="Белый">Белый</option>
+      <option value="Чёрный">Чёрный</option>
+      <option value="Серый">Серый</option>
+      <option value="Красный">Красный</option>
+      <option value="Синий">Синий</option>
+      <option value="Голубой">Голубой</option>
+      <option value="Коричневый">Коричневый</option>
+      <option value="Зелёный">Зелёный</option>
+      <option value="Розовый">Розовый</option>
+      <option value="Оранжевый">Оранжевый</option>
+      <option value="Фиолетовый">Фиолетовый</option>
+      <option value="Бежевый">Бежевый</option>
+    </select>
+    <p class="color-hint" id="colorHint">
+      Выберите тот же цвет, который будете указывать в анкете Яндекс.
+    </p>
+  </div>
+
+  <div class="phone-step">
+    <label for="phoneInput" class="phone-label">Номер телефона</label>
+    <input
+      id="phoneInput"
+      class="phone-input"
+      type="tel"
+      inputmode="tel"
+      placeholder="+998 90 123-45-67"
+    />
+    <p class="phone-hint" id="phoneHint">
+      Укажите актуальный номер телефона. Он попадёт оператору, чтобы при необходимости
+      он мог связаться с вами и отправить ссылку повторно.
+    </p>
+  </div>
+
+  <p class="info" id="stepInfo"></p>
 
   <div class="camera-container">
     <video id="video" autoplay playsinline muted></video>
@@ -208,7 +286,6 @@
 
   <div class="buttons-row">
     <button class="btn btn-primary" id="captureBtn">
-      <!-- Иконка камеры -->
       <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path fill="currentColor"
           d="M9 3a2 2 0 0 0-1.789 1.106L6.618 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-1.618l-.593-1.894A2 2 0 0 0 15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z"/>
@@ -217,7 +294,6 @@
     </button>
 
     <button class="btn btn-secondary" id="galleryBtn">
-      <!-- Иконка загрузки -->
       <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path fill="currentColor"
           d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293a1 1 0 0 1 1.414 1.414l-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
@@ -226,10 +302,9 @@
     </button>
 
     <button class="btn btn-primary" id="sendBtn" style="display:none;">
-      <!-- Иконка отправки -->
       <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path fill="currentColor"
-          d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022l5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553l-1.447 3.349-1-2.667 1.98-0.98Z"/>
+          d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022l5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553l-1.447 3.349-1-2.667 1.98-.98Z"/>
       </svg>
       <span>Отправить документ</span>
     </button>
@@ -247,9 +322,7 @@
   </div>
 </div>
 
-<!-- скрытый инпут для выбора файла -->
 <input type="file" id="fileInput" accept="image/*" style="display:none;" />
-
 <canvas id="canvas" style="display:none;"></canvas>
 
 <script>
@@ -264,22 +337,81 @@
   const userInfo = document.getElementById("userInfo");
   const statusEl = document.getElementById("status");
   const fileInput = document.getElementById("fileInput");
+  const colorSelect = document.getElementById("colorSelect");
+  const colorHint = document.getElementById("colorHint");
+  const stepInfo = document.getElementById("stepInfo");
+  const phoneInput = document.getElementById("phoneInput");
+  const phoneHint = document.getElementById("phoneHint");
 
   const params = new URLSearchParams(location.search);
   const tgId = params.get("tg_id");
-  const phone = params.get("phone");
+  const initialPhone = params.get("phone") || "";
 
-  if (phone) {
-    userInfo.textContent = "Номер для связи: " + phone;
+  if (initialPhone) {
+    userInfo.textContent = "Номер для связи (из ссылки): " + initialPhone;
+    phoneInput.value = initialPhone;
   } else {
     userInfo.textContent = "";
   }
 
+  // шаги документов
+  const DOC_STEPS = [
+    { id: "vu_front", title: "В/У — лицевая сторона" },
+    { id: "tech_front", title: "Техпаспорт — лицевая сторона" },
+    { id: "tech_back", title: "Техпаспорт — оборотная сторона" },
+  ];
+
+  let currentStepIndex = 0;
+  let selectedColor = "";
   let currentImageDataUrl = null;
+
+  function getCurrentStep() {
+    return DOC_STEPS[currentStepIndex];
+  }
+
+  function updateStepUI() {
+    const step = getCurrentStep();
+    stepInfo.textContent =
+      "Шаг " +
+      (currentStepIndex + 1) +
+      " из " +
+      DOC_STEPS.length +
+      ": " +
+      step.title;
+
+    const span = sendBtn.querySelector("span");
+    if (span) span.textContent = "Отправить: " + step.title;
+  }
+
+  colorSelect.addEventListener("change", () => {
+    selectedColor = colorSelect.value;
+    if (selectedColor) {
+      colorHint.textContent =
+        "Цвет выбран: " + selectedColor + ". Теперь можно загружать документы.";
+    } else {
+      colorHint.textContent =
+        "Выберите тот же цвет, который будете указывать в анкете Яндекс.";
+    }
+  });
+
+  phoneInput.addEventListener("input", () => {
+    const val = phoneInput.value.trim();
+    if (val) {
+      phoneHint.textContent =
+        "Если номер изменился — оператор будет использовать именно этот номер.";
+    } else if (initialPhone) {
+      phoneHint.textContent =
+        "Можно оставить номер из ссылки или ввести другой актуальный номер.";
+    } else {
+      phoneHint.textContent =
+        "Укажите актуальный номер телефона. Он нужен оператору для связи и повторной отправки ссылки.";
+    }
+  });
 
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      statusEl.textContent = "Камера недоступна в этом браузере. Используйте загрузку из галереи.";
+      statusEl.textContent =
+        "Камера недоступна в этом браузере. Используйте загрузку из галереи.";
       console.warn("mediaDevices.getUserMedia is not supported");
       return;
     }
@@ -305,14 +437,15 @@
       }
 
       video.onloadedmetadata = () => {
-        console.log("video metadata:", video.videoWidth, video.videoHeight);
         statusEl.textContent = "Камера запущена. Наведите документ в рамку.";
       };
     } catch (e) {
       console.error("Camera error:", e);
       statusEl.textContent =
         "Не удалось получить доступ к камере. Вы можете загрузить фото из галереи.";
-      alert("Не удалось получить доступ к камере. Разрешите доступ в браузере или используйте галерею.");
+      alert(
+        "Не удалось получить доступ к камере. Разрешите доступ в браузере или используйте галерею."
+      );
     }
   }
 
@@ -325,21 +458,19 @@
 
     statusEl.textContent =
       "Проверьте, чтобы все данные на документе были хорошо видны.\n" +
-      "Если всё верно — нажмите «Отправить документ». Если нет — «Сделать другой снимок».";
-    // немного прокручиваем к превью
+      "Если всё верно — нажмите «Отправить». Если нет — «Сделать другой снимок».";
     preview.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function captureFromCamera() {
     if (!video.srcObject) {
-      statusEl.textContent = "Камера не запущена. Обновите страницу или используйте галерею.";
+      statusEl.textContent =
+        "Камера не запущена. Обновите страницу или используйте галерею.";
       return;
     }
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-
-    // сохраняем максимальное доступное разрешение от камеры
     let width = vw || 1280;
     let height = vh || 720;
 
@@ -349,7 +480,6 @@
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, width, height);
 
-    // качество максимально близко к оригиналу
     const dataUrl = canvas.toDataURL("image/jpeg", 0.98);
     showPreview(dataUrl);
   }
@@ -377,7 +507,8 @@
       showPreview(dataUrl);
     };
     reader.onerror = () => {
-      statusEl.textContent = "Не удалось прочитать файл. Попробуйте ещё раз.";
+      statusEl.textContent =
+        "Не удалось прочитать файл. Попробуйте ещё раз.";
     };
     reader.readAsDataURL(file);
   });
@@ -388,7 +519,8 @@
     preview.style.display = "none";
     sendBtn.style.display = "none";
     retakeBtn.style.display = "none";
-    statusEl.textContent = "Сделайте новое фото или выберите другой файл.";
+    statusEl.textContent =
+      "Сделайте новое фото или выберите другой файл для текущего шага.";
   });
 
   sendBtn.addEventListener("click", async () => {
@@ -397,9 +529,28 @@
       return;
     }
 
-    const confirmed = window.confirm("Отправить это фото документа оператору?");
+    if (!selectedColor) {
+      statusEl.textContent =
+        "Сначала выберите цвет автомобиля в списке выше.";
+      colorSelect.focus();
+      return;
+    }
+
+    const phoneValue = phoneInput.value.trim() || initialPhone;
+    if (!phoneValue) {
+      statusEl.textContent =
+        "Пожалуйста, укажите номер телефона, чтобы оператор мог с вами связаться.";
+      phoneInput.focus();
+      return;
+    }
+
+    const step = getCurrentStep();
+    const confirmed = window.confirm(
+      "Отправить этот документ оператору?\n\n" + step.title
+    );
     if (!confirmed) {
-      statusEl.textContent = "Отправка отменена. Вы можете переснять или выбрать другой файл.";
+      statusEl.textContent =
+        "Отправка отменена. Вы можете переснять или выбрать другой файл.";
       return;
     }
 
@@ -412,23 +563,47 @@
         body: JSON.stringify({
           image: currentImageDataUrl,
           tg_id: tgId || "",
-          phone: phone || "",
-          docType: "document"
+          phone: phoneValue,        // номер из инпута (или из ссылки, если юзер не менял)
+          docType: step.id,         // vu_front / tech_front / tech_back
+          docTitle: step.title,     // человекочитаемое название
+          carColor: selectedColor,  // выбранный цвет
         }),
       });
 
       if (res.ok) {
-        statusEl.textContent = "Документ отправлен оператору. Ожидайте обратную связь.";
+        if (currentStepIndex < DOC_STEPS.length - 1) {
+          currentStepIndex++;
+          updateStepUI();
+
+          statusEl.textContent =
+            "Документ отправлен оператору. Теперь загрузите: " +
+            getCurrentStep().title +
+            ".";
+
+          currentImageDataUrl = null;
+          previewImg.src = "";
+          preview.style.display = "none";
+          sendBtn.style.display = "none";
+          retakeBtn.style.display = "none";
+        } else {
+          statusEl.textContent =
+            "Все документы и данные отправлены оператору. Ожидайте обратную связь.";
+          sendBtn.style.display = "none";
+          retakeBtn.style.display = "none";
+        }
       } else {
         console.error("upload-doc error status:", res.status);
-        statusEl.textContent = "Не удалось отправить документ. Попробуйте ещё раз.";
+        statusEl.textContent =
+          "Не удалось отправить документ. Попробуйте ещё раз.";
       }
     } catch (e) {
       console.error("upload-doc exception:", e);
-      statusEl.textContent = "Ошибка при отправке документа. Проверьте интернет и попробуйте ещё раз.";
+      statusEl.textContent =
+        "Ошибка при отправке документа. Проверьте интернет и попробуйте ещё раз.";
     }
   });
 
+  updateStepUI();
   window.addEventListener("load", startCamera);
 </script>
 </body>

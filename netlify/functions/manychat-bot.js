@@ -412,6 +412,8 @@ Daewoo Sens — Start: да
 Daewoo Tacuma — Start: да; Comfort: 2012+
 Daewoo Winstorm — Start: да; Comfort: 2006+
 Daewoo Tico — Delivery: да
+Daewoo Matiz — Start: да
+Chevrolet Matiz — Start: да
 
 BYD Chazor — Start: да; Comfort: 2022+; Comfort+: 2022+; Electro: да
 BYD E2 — Start: да; Comfort: 2019+; Comfort+: да; Electro: да

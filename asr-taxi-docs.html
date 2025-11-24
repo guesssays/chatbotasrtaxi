@@ -211,6 +211,23 @@
       margin-top: 10px;
     }
 
+    .centered {
+      text-align: center;
+    }
+
+    .link-btn {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      color: var(--fg);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
     @media (max-width: 360px) {
       h1 {
         font-size: 18px;
@@ -230,95 +247,129 @@
 <div class="wrapper">
   <p class="info" id="userInfo"></p>
   <h1>Загрузка документов</h1>
-  <p class="subtitle">
-    Сначала выберите цвет автомобиля и укажите номер телефона, затем по очереди загрузите:
-    В/У (лицевая сторона) и техпаспорт (лицо и оборот). После каждого шага
-    будет предварительный просмотр и подтверждение отправки.
-  </p>
 
-  <div class="color-step">
-    <label for="colorSelect" class="color-label">Цвет автомобиля</label>
-    <select id="colorSelect" class="color-select">
-      <option value="">Выберите цвет из списка</option>
-      <option value="Жёлтый">Жёлтый</option>
-      <option value="Белый">Белый</option>
-      <option value="Чёрный">Чёрный</option>
-      <option value="Серый">Серый</option>
-      <option value="Красный">Красный</option>
-      <option value="Синий">Синий</option>
-      <option value="Голубой">Голубой</option>
-      <option value="Коричневый">Коричневый</option>
-      <option value="Зелёный">Зелёный</option>
-      <option value="Розовый">Розовый</option>
-      <option value="Оранжевый">Оранжевый</option>
-      <option value="Фиолетовый">Фиолетовый</option>
-      <option value="Бежевый">Бежевый</option>
-    </select>
-    <p class="color-hint" id="colorHint">
-      Выберите тот же цвет, который будете указывать в анкете Яндекс.
+  <!-- ЭКРАН 1: цвет + телефон -->
+  <div id="screen1">
+    <p class="subtitle">
+      1 шаг из 3. Сначала выберите цвет автомобиля и укажите номер телефона.
+      Это нужно оператору, чтобы правильно оформить машину и при необходимости
+      повторно отправить вам ссылку.
     </p>
+
+    <div class="color-step">
+      <label for="colorSelect" class="color-label">Цвет автомобиля</label>
+      <select id="colorSelect" class="color-select">
+        <option value="">Выберите цвет из списка</option>
+        <option value="Жёлтый">Жёлтый</option>
+        <option value="Белый">Белый</option>
+        <option value="Чёрный">Чёрный</option>
+        <option value="Серый">Серый</option>
+        <option value="Красный">Красный</option>
+        <option value="Синий">Синий</option>
+        <option value="Голубой">Голубой</option>
+        <option value="Коричневый">Коричневый</option>
+        <option value="Зелёный">Зелёный</option>
+        <option value="Розовый">Розовый</option>
+        <option value="Оранжевый">Оранжевый</option>
+        <option value="Фиолетовый">Фиолетовый</option>
+        <option value="Бежевый">Бежевый</option>
+      </select>
+      <p class="color-hint" id="colorHint">
+        Выберите тот же цвет, который будете указывать в анкете Яндекс.
+      </p>
+    </div>
+
+    <div class="phone-step">
+      <label for="phoneInput" class="phone-label">Номер телефона</label>
+      <input
+        id="phoneInput"
+        class="phone-input"
+        type="tel"
+        inputmode="tel"
+        placeholder="+998 90 123-45-67"
+      />
+      <p class="phone-hint" id="phoneHint">
+        Укажите актуальный номер. Он попадёт оператору, чтобы при необходимости
+        он смог отправить вам ссылку повторно.
+      </p>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" id="startDocsBtn">
+        Перейти к загрузке документов
+      </button>
+    </div>
   </div>
 
-  <div class="phone-step">
-    <label for="phoneInput" class="phone-label">Номер телефона</label>
-    <input
-      id="phoneInput"
-      class="phone-input"
-      type="tel"
-      inputmode="tel"
-      placeholder="+998 90 123-45-67"
-    />
-    <p class="phone-hint" id="phoneHint">
-      Укажите актуальный номер телефона. Он попадёт оператору, чтобы при необходимости
-      он мог связаться с вами и отправить ссылку повторно.
+  <!-- ЭКРАН 2: загрузка документов -->
+  <div id="screen2" style="display:none;">
+    <p class="info" id="stepInfo"></p>
+
+    <div class="camera-container">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="frame"></div>
+    </div>
+    <p class="hint-under-frame">
+      Разместите документ ровно в рамке, чтобы все данные были хорошо видны.
     </p>
+
+    <div class="buttons-row">
+      <button class="btn btn-primary" id="captureBtn">
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M9 3a2 2 0 0 0-1.789 1.106L6.618 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-1.618l-.593-1.894A2 2 0 0 0 15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z"/>
+        </svg>
+        <span>Сделать фото документа</span>
+      </button>
+
+      <button class="btn btn-secondary" id="galleryBtn">
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293a1 1 0 0 1 1.414 1.414l-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
+        </svg>
+        <span>Загрузить из галереи</span>
+      </button>
+
+      <button class="btn btn-primary" id="sendBtn" style="display:none;">
+        <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor"
+            d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022л5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553л-1.447 3.349-1-2.667 1.98-.98Z"/>
+        </svg>
+        <span>Отправить документ</span>
+      </button>
+
+      <button class="btn btn-ghost" id="retakeBtn" style="display:none;">
+        <span>Сделать другой снимок</span>
+      </button>
+    </div>
+
+    <p id="status" class="note"></p>
+
+    <div id="preview">
+      <p class="preview-title">Предварительный просмотр документа:</p>
+      <img id="previewImg" alt="Предпросмотр документа" />
+    </div>
   </div>
 
-  <p class="info" id="stepInfo"></p>
-
-  <div class="camera-container">
-    <video id="video" autoplay playsinline muted></video>
-    <div class="frame"></div>
-  </div>
-  <p class="hint-under-frame">
-    Разместите документ ровно в рамке, чтобы все данные были хорошо видны.
-  </p>
-
-  <div class="buttons-row">
-    <button class="btn btn-primary" id="captureBtn">
-      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor"
-          d="M9 3a2 2 0 0 0-1.789 1.106L6.618 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-1.618l-.593-1.894A2 2 0 0 0 15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 .001 6.001A3 3 0 0 0 12 10Z"/>
-      </svg>
-      <span>Сделать фото документа</span>
-    </button>
-
-    <button class="btn btn-secondary" id="galleryBtn">
-      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor"
-          d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293a1 1 0 0 1 1.414 1.414l-4.004 4.004a1 1 0 0 1-1.414 0L7.293 11.707a1 1 0 0 1 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-1a1 1 0 0 1 1-1Z"/>
-      </svg>
-      <span>Загрузить из галереи</span>
-    </button>
-
-    <button class="btn btn-primary" id="sendBtn" style="display:none;">
-      <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor"
-          d="M3.172 4.222c-.657-.263-1.31.39-1.047 1.047l3.08 7.696a1 1 0 0 0 .53.547l4.326 1.866 1.866 4.326a1 1 0 0 0 1.847-.022l5.657-14.142a1 1 0 0 0-1.29-1.29L3.172 4.222Zm4.79 7.42L5.21 7.118l9.325 3.873-4.573 1.976a1 1 0 0 0-.553.553l-1.447 3.349-1-2.667 1.98-.98Z"/>
-      </svg>
-      <span>Отправить документ</span>
-    </button>
-
-    <button class="btn btn-ghost" id="retakeBtn" style="display:none;">
-      <span>Сделать другой снимок</span>
-    </button>
-  </div>
-
-  <p id="status" class="note"></p>
-
-  <div id="preview">
-    <p class="preview-title">Предварительный просмотр документа:</p>
-    <img id="previewImg" alt="Предпросмотр документа" />
+  <!-- ЭКРАН 3: всё готово -->
+  <div id="screen3" style="display:none;">
+    <p class="subtitle">
+      Все 3 шага пройдены. Документы и данные переданы оператору ASR TAXI.
+    </p>
+    <p class="subtitle">
+      Можете закрыть эту страницу и вернуться в Telegram-бот. 
+      Если оператору что-то потребуется уточнить, он свяжется с вами по указанному номеру.
+    </p>
+    <div class="centered">
+      <a
+        class="link-btn"
+        href="https://t.me/AsrTaxiLeadBot"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Открыть бот ASR TAXI
+      </a>
+    </div>
   </div>
 </div>
 
@@ -343,6 +394,11 @@
   const phoneInput = document.getElementById("phoneInput");
   const phoneHint = document.getElementById("phoneHint");
 
+  const screen1 = document.getElementById("screen1");
+  const screen2 = document.getElementById("screen2");
+  const screen3 = document.getElementById("screen3");
+  const startDocsBtn = document.getElementById("startDocsBtn");
+
   const params = new URLSearchParams(location.search);
   const tgId = params.get("tg_id");
   const initialPhone = params.get("phone") || "";
@@ -363,6 +419,7 @@
 
   let currentStepIndex = 0;
   let selectedColor = "";
+  let storedPhone = initialPhone || "";
   let currentImageDataUrl = null;
 
   function getCurrentStep() {
@@ -372,12 +429,7 @@
   function updateStepUI() {
     const step = getCurrentStep();
     stepInfo.textContent =
-      "Шаг " +
-      (currentStepIndex + 1) +
-      " из " +
-      DOC_STEPS.length +
-      ": " +
-      step.title;
+      "Шаг " + (currentStepIndex + 1) + " из " + DOC_STEPS.length + ": " + step.title;
 
     const span = sendBtn.querySelector("span");
     if (span) span.textContent = "Отправить: " + step.title;
@@ -387,7 +439,7 @@
     selectedColor = colorSelect.value;
     if (selectedColor) {
       colorHint.textContent =
-        "Цвет выбран: " + selectedColor + ". Теперь можно загружать документы.";
+        "Цвет выбран: " + selectedColor + ". Нажмите «Перейти к загрузке документов».";
     } else {
       colorHint.textContent =
         "Выберите тот же цвет, который будете указывать в анкете Яндекс.";
@@ -396,6 +448,7 @@
 
   phoneInput.addEventListener("input", () => {
     const val = phoneInput.value.trim();
+    storedPhone = val || initialPhone;
     if (val) {
       phoneHint.textContent =
         "Если номер изменился — оператор будет использовать именно этот номер.";
@@ -449,6 +502,14 @@
     }
   }
 
+  function stopCamera() {
+    if (video && video.srcObject) {
+      const tracks = video.srcObject.getTracks();
+      tracks.forEach(t => t.stop());
+      video.srcObject = null;
+    }
+  }
+
   function showPreview(dataUrl) {
     currentImageDataUrl = dataUrl;
     previewImg.src = dataUrl;
@@ -463,7 +524,7 @@
   }
 
   function captureFromCamera() {
-    if (!video.srcObject) {
+    if (!video || !video.srcObject) {
       statusEl.textContent =
         "Камера не запущена. Обновите страницу или используйте галерею.";
       return;
@@ -483,6 +544,32 @@
     const dataUrl = canvas.toDataURL("image/jpeg", 0.98);
     showPreview(dataUrl);
   }
+
+  // Переход с экрана 1 на экран 2
+  startDocsBtn.addEventListener("click", () => {
+    selectedColor = colorSelect.value;
+    storedPhone = phoneInput.value.trim() || initialPhone;
+
+    if (!selectedColor) {
+      colorHint.textContent = "Пожалуйста, выберите цвет автомобиля.";
+      colorSelect.focus();
+      return;
+    }
+
+    if (!storedPhone) {
+      phoneHint.textContent =
+        "Пожалуйста, укажите номер телефона, чтобы оператор мог с вами связаться.";
+      phoneInput.focus();
+      return;
+    }
+
+    screen1.style.display = "none";
+    screen2.style.display = "block";
+
+    currentStepIndex = 0;
+    updateStepUI();
+    startCamera();
+  });
 
   captureBtn.addEventListener("click", () => {
     captureFromCamera();
@@ -529,21 +616,6 @@
       return;
     }
 
-    if (!selectedColor) {
-      statusEl.textContent =
-        "Сначала выберите цвет автомобиля в списке выше.";
-      colorSelect.focus();
-      return;
-    }
-
-    const phoneValue = phoneInput.value.trim() || initialPhone;
-    if (!phoneValue) {
-      statusEl.textContent =
-        "Пожалуйста, укажите номер телефона, чтобы оператор мог с вами связаться.";
-      phoneInput.focus();
-      return;
-    }
-
     const step = getCurrentStep();
     const confirmed = window.confirm(
       "Отправить этот документ оператору?\n\n" + step.title
@@ -563,10 +635,10 @@
         body: JSON.stringify({
           image: currentImageDataUrl,
           tg_id: tgId || "",
-          phone: phoneValue,        // номер из инпута (или из ссылки, если юзер не менял)
-          docType: step.id,         // vu_front / tech_front / tech_back
-          docTitle: step.title,     // человекочитаемое название
-          carColor: selectedColor,  // выбранный цвет
+          phone: storedPhone,
+          docType: step.id,        // vu_front / tech_front / tech_back
+          docTitle: step.title,    // человекочитаемое название
+          carColor: selectedColor, // выбранный цвет
         }),
       });
 
@@ -586,10 +658,10 @@
           sendBtn.style.display = "none";
           retakeBtn.style.display = "none";
         } else {
-          statusEl.textContent =
-            "Все документы и данные отправлены оператору. Ожидайте обратную связь.";
-          sendBtn.style.display = "none";
-          retakeBtn.style.display = "none";
+          // все шаги пройдены
+          stopCamera();
+          screen2.style.display = "none";
+          screen3.style.display = "block";
         }
       } else {
         console.error("upload-doc error status:", res.status);
@@ -603,8 +675,8 @@
     }
   });
 
-  updateStepUI();
-  window.addEventListener("load", startCamera);
+  // начальное состояние для подсказок по номеру
+  phoneInput.dispatchEvent(new Event("input"));
 </script>
 </body>
 </html>

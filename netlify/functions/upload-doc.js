@@ -30,11 +30,9 @@ async function sendPhotoToTelegramTargets(buffer, caption) {
 
   const targets = new Set();
 
-  // всем операторам
   for (const id of ADMIN_CHAT_IDS) {
     if (id) targets.add(id);
   }
-  // и в лог-канал, если указан
   if (LOG_CHAT_ID) {
     targets.add(LOG_CHAT_ID);
   }
@@ -66,13 +64,12 @@ async function sendPhotoToTelegramTargets(buffer, caption) {
 }
 
 /**
- * Форматирование распознанных данных в удобный блок для оператора
+ * Форматирование распознанных данных
  */
 function formatRecognizedData(docData) {
   if (!docData || typeof docData !== "object") return "";
 
   const LABELS = {
-    // В/У
     last_name: "Фамилия",
     first_name: "Имя",
     middle_name: "Отчество",
@@ -83,7 +80,6 @@ function formatRecognizedData(docData) {
     issue_date: "Дата выдачи ВУ",
     valid_to: "Действует до",
 
-    // Техпаспорт
     brand: "Марка",
     model: "Модель",
     color: "Цвет",
@@ -93,7 +89,6 @@ function formatRecognizedData(docData) {
     body_number: "Номер кузова",
     sts_number: "СТС",
 
-    // общее
     doc_type: "Тип документа (распознанный)",
   };
 
@@ -109,8 +104,7 @@ function formatRecognizedData(docData) {
 }
 
 /**
- * Вызов OpenAI для распознавания документа по картинке
- * imageDataUrl — строка вида data:image/jpeg;base64,....
+ * Вызов OpenAI Vision
  */
 async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   if (!OPENAI_API_KEY) return null;
@@ -128,7 +122,6 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 На изображении один документ водителя.
 Аккуратно прочитай все видимые поля и верни JSON.`;
 
-    // Небольшая специализация по типу документа
     if (docType === "vu_front") {
       userInstruction = `
 На изображении ВОДИТЕЛЬСКОЕ УДОСТОВЕРЕНИЕ (лицевая сторона).
@@ -180,9 +173,7 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
             { type: "text", text: userInstruction },
             {
               type: "image_url",
-              image_url: {
-                url: imageDataUrl,
-              },
+              image_url: { url: imageDataUrl },
             },
           ],
         },
@@ -210,6 +201,7 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 
     try {
       const parsed = JSON.parse(content);
+      console.log("Recognized doc data:", parsed);
       return parsed;
     } catch (e) {
       console.error("OpenAI vision JSON parse error:", e, content);
@@ -241,30 +233,24 @@ exports.handler = async (event) => {
       return { statusCode: 400, body: "Bad JSON" };
     }
 
-    // phone сюда теперь прилетает из инпута на странице (если есть),
-    // либо из query-параметра, если пользователь инпут не менял
     const { image, tg_id, phone, docType, docTitle, carColor } = payload || {};
 
     if (!image) {
       return { statusCode: 400, body: "No image" };
     }
 
-    // image — либо dataURL ("data:image/jpeg;base64,..."), либо чистый base64
     let base64 = image;
     let imageDataUrlForVision = image;
 
     const m = /^data:image\/\w+;base64,/.exec(base64);
     if (m) {
-      // если уже dataURL — режем префикс для буфера, но оставляем полную строку для OpenAI
       base64 = base64.replace(m[0], "");
     } else {
-      // если пришёл просто base64 — собираем dataURL для OpenAI
       imageDataUrlForVision = `data:image/jpeg;base64,${base64}`;
     }
 
     const buffer = Buffer.from(base64, "base64");
 
-    // === Распознавание документа через OpenAI (если есть ключ) ===
     let recognizedBlock = "";
     try {
       const docData = await extractDocDataWithOpenAI(
@@ -281,7 +267,6 @@ exports.handler = async (event) => {
       console.error("Doc OCR global error:", e);
     }
 
-    // === Формируем подпись к фото для операторов ===
     const captionLines = [
       "📄 Новый документ от водителя ASR TAXI",
       phone ? `Телефон (из формы/ссылки): ${phone}` : null,

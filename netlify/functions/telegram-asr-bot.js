@@ -10,16 +10,19 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
-// ====== НАСТРОЙКИ ЯНДЕКС ФЛИТ API (СТАВИМ СВОИ ДАННЫЕ В .env) ======
-// Пример .env:
-// FLEET_API_URL=https://fleet-api.taxi.yandex.net
-// FLEET_CLIENT_ID=taxi/park/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// FLEET_PARK_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// FLEET_API_KEY=QBzdZ... (секретный ключ)
-const FLEET_API_URL = process.env.FLEET_API_URL || "https://fleet-api.taxi.yandex.net";
+// ===== БАЗОВЫЙ URL СТРАНИЦЫ ЗАГРУЗКИ ДОКОВ =====
+// Либо задаём через переменную окружения DOCS_BASE_URL,
+// либо используем текущий Netlify-домен проекта.
+const DOCS_BASE_URL =
+  process.env.DOCS_BASE_URL ||
+  "https://asrchatbotmany.netlify.app/asr-taxi-docs.html";
+
+// ====== НАСТРОЙКИ ЯНДЕКС ФЛИТ API ======
+const FLEET_API_URL =
+  process.env.FLEET_API_URL || "https://fleet-api.taxi.yandex.net";
 const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || ""; // X-Client-ID (taxi/park/...)
-const FLEET_API_KEY = process.env.FLEET_API_KEY || "";     // X-API-Key
-const FLEET_PARK_ID = process.env.FLEET_PARK_ID || "";     // id парка (без taxi/park/)
+const FLEET_API_KEY = process.env.FLEET_API_KEY || ""; // X-API-Key
+const FLEET_PARK_ID = process.env.FLEET_PARK_ID || ""; // id парка (без taxi/park/)
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
@@ -53,7 +56,6 @@ async function sendTelegramMessage(chatId, text, replyMarkup) {
   }
 }
 
-// отдельный хелпер для лог-чата
 async function sendLog(text) {
   if (!LOG_CHAT_ID) return;
   return sendTelegramMessage(LOG_CHAT_ID, text);
@@ -91,17 +93,17 @@ async function checkDriverInFleet(phone) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Client-ID": FLEET_CLIENT_ID, // taxi/park/...
+        "X-Client-ID": FLEET_CLIENT_ID,
         "X-API-Key": FLEET_API_KEY,
       },
       body: JSON.stringify({
         query: {
-          park: { id: FLEET_PARK_ID }, // только id парка
+          park: { id: FLEET_PARK_ID },
           driver_profile: {
             phone: { value: normalized },
           },
         },
-        limit: 50,   // немного побольше, вдруг фильтр по телефону не срабатывает
+        limit: 50,
       }),
     });
 
@@ -112,9 +114,10 @@ async function checkDriverInFleet(phone) {
     }
 
     const data = await res.json();
-    const profiles = Array.isArray(data.driver_profiles) ? data.driver_profiles : [];
+    const profiles = Array.isArray(data.driver_profiles)
+      ? data.driver_profiles
+      : [];
 
-    // ДОП. ПРОВЕРКА: реально ли среди профилей есть наш номер
     let foundProfile = null;
 
     for (const p of profiles) {
@@ -128,8 +131,10 @@ async function checkDriverInFleet(phone) {
     const exists = !!foundProfile;
 
     console.log(
-      "Fleet API OK, exists =", exists,
-      "profiles_count =", profiles.length
+      "Fleet API OK, exists =",
+      exists,
+      "profiles_count =",
+      profiles.length
     );
     if (foundProfile) {
       console.log(
@@ -140,12 +145,16 @@ async function checkDriverInFleet(phone) {
 
     await sendLog(
       `🔍 Проверка в Fleet\n` +
-      `Телефон: <b>${normalized}</b>\n` +
-      `Найден в базе: <b>${exists ? "ДА" : "НЕТ"}</b>` +
-      (foundProfile
-        ? `\nИмя: <b>${foundProfile.driver_profile?.last_name || ""} ${foundProfile.driver_profile?.first_name || ""}</b>\n` +
-          `Авто: <b>${foundProfile.car?.brand || "—"} ${foundProfile.car?.model || "—"}</b> (${foundProfile.car?.number || "—"})`
-        : "")
+        `Телефон: <b>${normalized}</b>\n` +
+        `Найден в базе: <b>${exists ? "ДА" : "НЕТ"}</b>` +
+        (foundProfile
+          ? `\nИмя: <b>${foundProfile.driver_profile?.last_name || ""} ${
+              foundProfile.driver_profile?.first_name || ""
+            }</b>\n` +
+            `Авто: <b>${foundProfile.car?.brand || "—"} ${
+              foundProfile.car?.model || "—"
+            }</b> (${foundProfile.car?.number || "—"})`
+          : "")
     );
 
     return { exists, profile: foundProfile, raw: data };
@@ -170,7 +179,6 @@ exports.handler = async (event) => {
       return { statusCode: 405, body: "Method not allowed" };
     }
 
-    // проверка секрета вебхука (мягкая)
     if (WEBHOOK_SECRET) {
       const incoming =
         event.headers["x-telegram-bot-api-secret-token"] ||
@@ -258,7 +266,7 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // 2) Водитель отправил контакт (номер телефона)
+    // 2) Водитель отправил контакт
     if (hasContact) {
       const contact = msg.contact;
       const from = msg.from;
@@ -290,9 +298,9 @@ exports.handler = async (event) => {
 
       await sendLog(
         `📲 Новый контакт от водителя\n` +
-        `Chat ID: <code>${chatId}</code>\n` +
-        `Телефон (сырой): <code>${phone}</code>\n` +
-        `Телефон (норм.): <b>${normalized}</b>`
+          `Chat ID: <code>${chatId}</code>\n` +
+          `Телефон (сырой): <code>${phone}</code>\n` +
+          `Телефон (норм.): <b>${normalized}</b>`
       );
 
       const check = await checkDriverInFleet(normalized);
@@ -327,7 +335,9 @@ exports.handler = async (event) => {
         const shortInfo =
           `ФИО: <b>${dp.last_name || ""} ${dp.first_name || ""}</b>\n` +
           (car.brand || car.model || car.number
-            ? `Авто: <b>${car.brand || "—"} ${car.model || "—"}</b> (${car.number || "—"})\n`
+            ? `Авто: <b>${car.brand || "—"} ${car.model || "—"}</b> (${
+                car.number || "—"
+              })\n`
             : "") +
           `Статус: <code>${p.current_status?.status || "unknown"}</code>`;
 
@@ -342,14 +352,16 @@ exports.handler = async (event) => {
 
         await sendLog(
           `✅ Результат проверки\n` +
-          `Chat ID: <code>${chatId}</code>\n` +
-          `Телефон: <b>${normalized}</b>\n` +
-          shortInfo
+            `Chat ID: <code>${chatId}</code>\n` +
+            `Телефон: <b>${normalized}</b>\n` +
+            shortInfo
         );
       } else {
-        const docsUrl = `https://asr-taxi-docs.netlify.app/?tg_id=${encodeURIComponent(
+        const docsUrl = `${DOCS_BASE_URL}?tg_id=${encodeURIComponent(
           chatId
         )}&phone=${encodeURIComponent(normalized)}`;
+
+        console.log("Docs URL for driver:", docsUrl);
 
         await sendTelegramMessage(
           chatId,
@@ -367,16 +379,16 @@ exports.handler = async (event) => {
 
         await sendLog(
           `🆕 Водитель не найден в Fleet\n` +
-          `Chat ID: <code>${chatId}</code>\n` +
-          `Телефон: <b>${normalized}</b>\n` +
-          `Ссылка для загрузки документов: ${docsUrl}`
+            `Chat ID: <code>${chatId}</code>\n` +
+            `Телефон: <b>${normalized}</b>\n` +
+            `Ссылка для загрузки документов: ${docsUrl}`
         );
       }
 
       return { statusCode: 200, body: "Contact processed" };
     }
 
-    // 3) Всё остальное — короткий ответ
+    // 3) Всё остальное
     await sendTelegramMessage(
       chatId,
       "Сейчас этот бот отвечает только за регистрацию водителей.\nНажмите /start, чтобы начать регистрацию."
@@ -385,7 +397,9 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   } catch (err) {
     console.error("telegram-asr-bot handler error:", err);
-    await sendLog(`🔥 Ошибка в handler telegram-asr-bot:\n<code>${String(err)}</code>`);
+    await sendLog(
+      `🔥 Ошибка в handler telegram-asr-bot:\n<code>${String(err)}</code>`
+    );
     return { statusCode: 500, body: "Internal error" };
   }
 };

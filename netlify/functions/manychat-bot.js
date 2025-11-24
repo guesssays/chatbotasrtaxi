@@ -488,42 +488,6 @@ UZ:
 
 Ниже идёт САМА ТАБЛИЦА АВТОМОБИЛЕЙ. Её НЕ меняем и НЕ сокращаем — используем как базу для определения тарифа:
 
-Audi A1 — Start: да; Comfort: 2019+
-Audi A2 — Start: да
-Audi A3 — Start: да; Comfort: 2012+
-Audi A4 — Start: да; Comfort: 2006+
-Audi A5 — Start: да; Comfort: 2007+
-Audi A6 — Start: да; Comfort: 2004+; Comfort+: 2010+; Business: 2019+; Premier: 2018+
-Audi A7 — Start: да; Comfort: 2010+; Comfort+: 2019+
-Audi A8 — Start: да; Comfort: 2004+; Comfort+: 2018+; Business: 2018+; Premier: 2018+
-Audi Q3 — Start: да; Comfort: 2012+
-Audi Q5 — Start: да; Comfort: 2008+; Comfort+: 2021+
-Audi Q7 — Start: да; Comfort: 2005+; Comfort+: 2019+
-Audi S3 — Start: да; Comfort: 2012+
-Audi S4 — Start: да; Comfort: 2006+; Comfort+: 2021+
-Audi S8 — Start: да; Comfort: 2004+; Comfort+: 2019+
-
-BAIC EU5 — Start: да; Comfort: 2015+; Comfort+: 2018+; Electro: да
-BAIC EX5 — Start: да; Comfort: 2019+; Comfort+: 2019+; Electro: да
-BAIC U5 — Start: да; Comfort: 2014+
-Beijing EU7 — Start: да; Comfort: 2019+; Comfort+: 2019+
-
-BMW 1er — Start: да; Comfort: 2012+
-BMW 2er Active Tourer — Start: да; Comfort: 2014+
-BMW 2er Grand Tourer — Start: да; Comfort: 2015+
-BMW 3er — Start: да; Comfort: 2006+; Comfort+: 2021+; Business: 2021+
-BMW 5er — Start: да; Comfort: 2004+; Comfort+: 2019+
-BMW 7er — Start: да; Comfort: 2004+; Comfort+: 2015+; Business: 2015+; Premier: 2019+
-BMW X1 — Start: да; Comfort: 2012+
-BMW X3 — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
-BMW X4 — Start: да; Comfort: 2014+; Business: 2021+
-BMW X5 — Start: да; Comfort: 2004+; Comfort+: 2019+; Business: 2019+
-BMW X6 — Start: да; Comfort: 2007+; Comfort+: 2019+; Business: 2019+
-
-Buick Electra E5 — Start: да; Comfort: 2022+
-Buick Excelle — Start: да; Comfort: 2012+
-Buick Velite 6 — Start: да; Comfort: 2019+
-
 BYD Chazor — Start: да; Comfort: 2022+; Comfort+: 2022+; Electro: да
 BYD E2 — Start: да; Comfort: 2019+; Comfort+: да; Electro: да
 BYD Han — Start: да; Comfort: 2020+; Comfort+: да; Electro: да; Business: 2020+; Premier: 2020+
@@ -534,15 +498,6 @@ BYD Song Plus — Start: да; Comfort: 2020+; Comfort+: 2020+
 BYD Tang — Start: да; Comfort: 2015+; Comfort+: 2015+
 BYD Yuan — Start: да; Comfort: 2019+; Comfort+: 2021+
 
-Changan Alsvin — Start: да; Comfort: 2019+
-Changan A600 EV — Start: да
-Changan CS35 — Start: да; Comfort: 2019+
-Changan CS35 Plus — Start: да; Comfort: 2019+
-Changan CS55 — Start: да; Comfort: 2017+; Comfort+: 2018+
-Changan CS75 — Start: да; Comfort: 2014+; Business: 2021+
-Changan Eado — Start: да; Comfort: 2013+; Comfort+: 2018+
-Changan UNI-T — Start: да; Comfort+: 2020+
-Changan New Van — Start: да
 
 Chery Arrizo 6 Pro — Start: да; Comfort: 2023+; Comfort+: 2023+
 Chery Arrizo 7 — Start: да; Comfort: 2013+
@@ -558,72 +513,35 @@ Chery Tiggo 8 Pro — Start: да; Comfort+: 2021+; Business: 2021+
 Chery Tiggo 8 Pro Max — Start: да; Comfort+: 2022+
 Chery EQ5 — Start: да; Comfort: 2020+; Comfort+: 2020+; Electro: да
 Chery eQ7 — Start: да; Comfort+: 2023+; Electro: да
-Chevrolet Aveo (узб. 2019+) — Start: да; Comfort: 2019+
-Chevrolet Blazer — Start: да; Comfort: 2004+
-Chevrolet Bolt — Start: да; Comfort: 2019+; Electro: да
 Chevrolet Captiva — Start: да; Comfort: 2006+; Comfort+: 2011+
 Chevrolet Cobalt — Start: да; Comfort: 2019+
-Chevrolet Colorado — Start: да; Comfort: 2012+
-Chevrolet Cruze — Start: да; Comfort: 2012+; Comfort+: 2018+
 Chevrolet Epica — Start: да; Comfort: 2006+
 Chevrolet Equinox — Start: да; Comfort: 2006+; Comfort+: 2012+
-Chevrolet Evanda — Start: да; Comfort: 2006+
-Chevrolet Impala — Start: да; Comfort: 2004+; Comfort+: 2010+; Business: 2019+
 Chevrolet Lacetti (узб.) — Start: да; Comfort: 2012+
 Chevrolet Malibu — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2018+
-Chevrolet Menlo — Start: да; Comfort: 2020+; Comfort+: да; Electro: да
 Chevrolet Monza — Start: да; Comfort: 2012+; Comfort+: 2018+
 Chevrolet Nexia (узб. 2019+) — Start: да; Comfort: 2019+
 Chevrolet Onix — Start: да; Comfort: 2019+
 Chevrolet Orlando — Start: да; Comfort: 2012+; Comfort+: 2018+
-Chevrolet Sonic — Start: да; Comfort: 2019+
-Chevrolet Tahoe — Start: да; Comfort: 2012+
 Chevrolet Tracker — Start: да; Comfort: 2019+; Comfort+: 2021+
-Chevrolet TrailBlazer — Start: да; Comfort: 2012+
-Chevrolet Traverse — Start: да; Comfort: 2008+; Comfort+: 2010+
-Chevrolet Volt — Start: да; Comfort: 2012+; Comfort+: 2018+; Electro: да
-
-Damas — Start: нет; Comfort: нет; Delivery: да; Cargo: да
+Damas — Start: нет; Comfort: нет; Delivery: да (доставка); Cargo: да
 Labo — Delivery: да; Cargo: да
 Gazel — Cargo: да
-
-Dodge Caliber — Start: да; Comfort: 2006+
-Dodge Caravan — Start: да; Comfort: 2012+
-Dodge Charger — Start: да; Comfort: 2004+
-Dodge Journey — Start: да; Comfort: 2007+; Business: 2019+
-
 DongFeng 580 — Start: да; Comfort: 2017+; Comfort+: нет; Business: 2021+
 DongFeng Aeolus E70 — Start: да; Comfort: 2019+
 DongFeng AX7 — Start: да; Comfort: 2015+
 DongFeng E1 — Start: да; Electro: да
 DongFeng S50 EV — Start: да; Comfort: 2014+; Electro: да
-
 EXEED LX — Start: да; Comfort: 2019+
 EXEED TXL — Start: да; Comfort+: 2019+; Business: 2021+
 EXEED VX — Start: да; Comfort+: 2021+; Business: 2021+
-
 FAW Bestune T55 — Start: да; Comfort: 2021+
 FAW Bestune T77 — Start: да; Comfort: 2018+
 FAW Besturn B50 — Start: да; Comfort: 2012+
-
-Ford C-MAX — Start: да; Comfort: 2012+
-Ford EcoSport — Start: да; Comfort: 2019+
-Ford Escape — Start: да; Comfort: 2012+
-Ford Explorer — Start: да; Comfort: 2004+
-Ford Fiesta — Start: да; Comfort: 2019+
-Ford Focus — Start: да; Comfort: 2012+; Comfort+: 2018+
-Ford Fusion (US) — Start: да; Comfort: 2006+
-Ford Galaxy — Start: да; Comfort: 2012+
-Ford Kuga — Start: да; Comfort: 2012+
-Ford Mondeo — Start: да; Comfort+: 2021+; Business: 2021+
-Ford S-MAX — Start: да; Comfort: 2012+
-Ford Territory — Start: да; Comfort+: 2018+
-
 GAC Aion S — Start: да; Comfort: 2019+; Comfort+: 2019+; Electro: да
 GAC Aion V — Start: да; Comfort+: 2020+; Electro: да
 GAC Aion Y — Start: да; Comfort: 2021+
 GAC GS5 — Start: да; Comfort+: 2020+; Business: 2021+
-
 Geely Atlas — Start: да; Comfort: 2016+
 Geely Atlas Pro — Start: да; Comfort: 2021+
 Geely Coolray — Start: да; Comfort: 2019+
@@ -633,89 +551,30 @@ Geely Emgrand GT — Start: да; Comfort: 2015+
 Geely Geometry C — Start: да; Comfort: 2020+; Comfort+: 2020+; Electro: да
 Geely Tugella — Start: да; Comfort: 2019+; Comfort+: 2019+
 Geely TX4 — Start: да; Comfort: 2012+
-
 Honda Accord — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
-Honda Civic — Start: да; Comfort: 2012+
-Honda CR-V — Start: да; Comfort: 2012+; Comfort+: 2018+
-Honda Fit — Start: да; Comfort: 2019+
-Honda Freed — Start: да; Comfort: 2012+
-Honda HR-V — Start: да; Comfort: 2018+
 Honda Insight — Start: да; Comfort: 2012+
-Honda Odyssey — Start: да; Comfort: 2012+
-Honda Pilot — Start: да; Comfort+: 2010+; Business: 2019+
-Honda Shuttle — Start: да; Comfort: 2019+
-Honda StepWgn — Start: да; Comfort: 2012+
-Honda Vezel — Start: да; Comfort: 2019+
-
 Hyundai Accent — Start: да; Comfort: 2019+
 Hyundai Avante — Start: да; Comfort: 2012+; Comfort+: 2018+
-Hyundai Creta — Start: да; Comfort: 2019+; Comfort+: 2018+
 Hyundai Elantra — Start: да; Comfort: 2012+; Comfort+: 2018+
-Hyundai Equus — Start: да; Comfort: 2004+; Comfort+: 2010+; Business: 2015+; Premier: 2015+
-Hyundai Getz — Start: да
-Hyundai Grandeur — Start: да; Comfort+: 2010+; Business: 2019+; Premier: 2023+
-Hyundai Ioniq (электро) — Start: да; Comfort: 2018+; Comfort+: да; Electro: да
-Hyundai i30 — Start: да; Comfort: 2012+; Comfort+: 2018+
-Hyundai i40 — Start: да; Comfort: 2011+; Comfort+: 2012+
 Hyundai Santa Fe — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
 Hyundai Sonata — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
 Hyundai Tucson — Start: да; Comfort: 2012+; Comfort+: 2018+
-
-Infiniti EX — Start: да; Comfort: 2007+
-Infiniti FX — Start: да; Comfort: 2004+; Comfort+: 2010+
-Infiniti G — Start: да; Comfort: 2006+
-Infiniti Q30 — Start: да; Comfort: 2015+
-Infiniti Q50 — Start: да; Comfort: 2013+; Business: 2021+
-Infiniti Q70 — Start: да; Comfort: 2013+; Business: 2019+
-Infiniti QX30 — Start: да; Comfort: 2015+
-Infiniti QX50 — Start: да; Comfort: 2013+; Business: 2021+
-Infiniti QX60 — Start: да; Comfort: 2013+; Business: 2019+
-Infiniti QX70 — Start: да; Comfort: 2013+
-Infiniti QX80 — Start: да; Comfort: 2013+
-
 JAC iEV7S — Start: да; Electro: да
 JAC J5 — Start: да; Comfort: 2014+
 JAC J7 — Start: да; Comfort+: 2020+
 JAC JS4 — Start: да; Comfort: 2020+
 JAC S3 — Start: да; Comfort: 2014+
 JAC S5 — Start: да; Comfort: 2013+
-
-Jaguar F-Pace — Start: да; Comfort: 2016+; Business: 2021+
-Jaguar S-Type — Start: да; Comfort: 2004+
-Jaguar XE — Start: да; Comfort+: 2015+; Business: 2021+
-Jaguar XF — Start: да; Comfort: 2007+; Comfort+: 2019+
-Jaguar XJ — Start: да; Comfort: 2004+; Comfort+: 2015+; Business: 2015+
-
-Jeep Cherokee — Start: да; Comfort: 2012+
-Jeep Compass — Start: да; Comfort: 2012+
-Jeep Grand Cherokee — Start: да; Comfort: 2012+
-Jeep Patriot/Liberty — Start: да; Comfort: 2012+
-Jeep Wrangler — Start: да
-
 Jetour Dashing — Start: да; Comfort+: 2022+
 Jetour X70 — Start: да; Comfort: 2018+
 Jetour X70 PLUS — Start: да; Comfort+: 2020+
 Jetour X90 PLUS — Start: да; Comfort+: 2021+
 Jetour X95 — Start: да; Comfort: 2019+
-
-Kaiyi E5 — Start: да; Comfort+: 2021+
-Kaiyi X3 Pro — Start: да; Comfort+: 2022+
-
-Karry K60 EV — Start: да; Comfort+: 2018+; Electro: да
-
-Kia Cadenza — Start: да; Comfort: 2009+; Business: 2019+
-Kia Carens — Start: да; Comfort: 2012+
 Kia Carnival — Start: да; Comfort: 2012+; Comfort+: 2018+; Business: 2021+
-Kia Ceed — Start: да; Comfort: 2012+
-Kia Cerato — Start: да; Comfort: 2012+; Comfort+: 2018+
-Kia Forte — Start: да; Comfort: 2012+; Comfort+: 2018+
-Kia K3 — Start: да; Comfort: 2012+; Comfort+: 2018+
 Kia K5 — Start: да; Comfort: 2010+; Comfort+: 2012+; Business: 2021+
 Kia K7 — Start: да; Comfort: 2009+; Business: 2019+
 Kia K8 — Start: да; Comfort+: 2021+; Premier: 2021+
 Kia K900/Quoris — Start: да; Comfort+: 2012+; Business: 2015+; Premier: да
-Kia Mohave — Start: да; Comfort: 2008+; Comfort+: 2010+
-Kia Niro — Start: да; Comfort: 2016+; Electro: да
 Kia Optima — Start: да; Comfort: 2006+; Comfort+: 2012+
 Kia Rio — Start: да; Comfort: 2019+
 Kia Seltos — Start: да; Comfort: 2019+; Comfort+: 2019+
@@ -725,286 +584,28 @@ Kia Soul EV — Start: да; Comfort: 2019+; Electro: да
 Kia Sportage — Start: да; Comfort: 2012+; Comfort+: 2018+
 Kia Stinger — Start: да; Comfort+: 2017+; Business: 2021+
 Kia Venga — Start: да; Comfort: 2012+
-
 LADA Granta — Start: да; Comfort: 2019+
 LADA Largus — Start: да; Comfort: 2012+
 LADA Vesta — Start: да; Comfort: 2019+
 Ravon Gentra — Start: да; Comfort: 2015+
 Ravon Nexia R3 — Start: да; Comfort: 2019+
 Ravon R4 — Start: да; Comfort: 2019+
-
-Land Rover Discovery — Start: да; Comfort: 2012+
-Discovery Sport — Start: да; Comfort: 2014+; Business: 2021+
-Freelander — Start: да; Comfort: 2012+
-Range Rover — Start: да; Comfort: 2012+; Comfort+: 2012+; Business: 2012+; Premier: да
-Range Rover Evoque — Start: да; Comfort: 2012+
-Range Rover Sport — Start: да; Comfort: 2012+; Business: 2012+
-
 Leapmotor C01 — Start: да; Comfort+: 2022+; Business: 2022+; Electro: да
 Leapmotor C10 — Start: да; Business: 2023+; Electro: да
 Leapmotor C11 — Start: да; Comfort+: 2021+; Business: 2021+; Electro: да
 Leapmotor T03 — Start: да; Electro: да
-
-Lexus CT — Start: да; Comfort: 2012+
-Lexus ES — Start: да; Comfort+: 2010+; Business: 2019+; Premier: да
-Lexus GS — Start: да; Comfort+: 2010+; Business: 2019+
-Lexus GX — Start: да; Comfort: 2012+
-Lexus HS — Start: да; Comfort: 2009+
-Lexus IS — Start: да; Comfort+: 2006+; Business: 2021+
-Lexus LS — Start: да; Comfort+: 2004+; Business: 2015+; Premier: да
-Lexus LX — Start: да; Comfort: 2012+; Business: 2015+
-Lexus NX — Start: да; Comfort+: 2014+; Business: 2021+
-Lexus RX — Start: да; Comfort+: 2004+; Business: 2019+
-
-Mazda 2 — Start: да; Comfort: 2019+
-Mazda 3 — Start: да; Comfort: 2012+; Comfort+: 2018+
-Mazda 5 — Start: да; Comfort: 2012+
-Mazda 6 — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
-Mazda Atenza — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
-Mazda CX-5 — Start: да; Comfort: 2012+
-Mazda CX-7 — Start: да; Comfort: 2006+
-Mazda CX-9 — Start: да; Comfort+: 2006+; Business: 2019+
-Mazda Demio — Start: да; Comfort: 2019+
-
-Mercedes A-class — Start: да; Comfort: 2012+
-Mercedes B-class — Start: да; Comfort: 2012+
-Mercedes C-class — Start: да; Comfort+: 2012+; Business: 2021+
-Mercedes E-class — Start: да; Comfort+: 2004+; Business: 2019+
-Mercedes S-class — Start: да; Comfort+: 2004+; Business: 2015+; Premier: 2017+
-Mercedes GLC — Start: да; Comfort+: 2015+; Business: 2021+
-Mercedes GLE — Start: да; Comfort+: 2015+; Business: 2019+
-Mercedes GLA — Start: да; Comfort: 2013+
-Mercedes GLS — Start: да; Comfort+: 2015+; Business: 2015+
-Mercedes M-class — Start: да; Comfort+: 2004+
-Mercedes Vito/Viano/V-class — Start: да; Comfort: 2012+
-
-Nissan AD — Start: да; Comfort: 2012+
-Nissan Almera Classic — Start: да; Comfort: 2012+
-Nissan Altima — Start: да; Comfort+: 2012+; Business: 2021+
-Nissan Armada — Start: да; Comfort: 2012+
-Nissan Bluebird Sylphy — Start: да; Comfort: 2012+
-Nissan Cube — Start: да; Comfort: 2012+
-Nissan Juke — Start: да; Comfort: 2019+
-Nissan Leaf — Start: да; Comfort: 2019+; Electro: да
-Nissan March — Start: да; Comfort: 2019+
-Nissan Maxima — Start: да; Comfort+: 2012+; Business: 2021+
-Nissan Micra — Start: да; Comfort: 2019+
-Nissan Murano — Start: да; Comfort+: 2004+; Business: 2019+
-Nissan Note — Start: да; Comfort: 2019+
-Nissan Pathfinder — Start: да; Comfort: 2004+
-Nissan Patrol — Start: да; Comfort: 2012+; Business: 2019+
-Nissan Qashqai — Start: да; Comfort: 2012+
-Nissan Quest — Start: да; Comfort: 2012+
-Nissan Rogue — Start: да; Comfort: 2007+; Business: 2021+
-Nissan Sentra — Start: да; Comfort: 2012+
-Nissan Skyline — Start: да; Comfort+: 2006+; Business: 2021+
-Nissan Sunny — Start: да; Comfort: 2012+
-Nissan Teana — Start: да; Comfort: 2006+; Comfort+: 2012+
-Nissan Terrano — Start: да; Comfort: 2019+
-Nissan Tiida — Start: да; Comfort: 2012+
-Nissan X-Trail — Start: да; Comfort: 2006+; Business: 2021+
-
-Opel Astra — Start: да; Comfort: 2012+
-Opel Astra OPC — Start: да; Comfort: 2012+
-Opel Combo — Start: да; Comfort: 2012+
-Opel Corsa — Start: да; Comfort: 2019+
-Opel Insignia — Start: да; Comfort: 2008+; Business: 2021+
-Opel Meriva — Start: да; Comfort: 2012+
-Opel Mokka — Start: да; Comfort: 2019+
-Opel Omega — Start: да; Comfort: 2004+
-Opel Signum — Start: да; Comfort: 2004+
-Opel Vectra — Start: да; Comfort: 2006+
-Opel Vivaro — Start: да; Comfort: 2012+
-Opel Zafira — Start: да; Comfort: 2012+
-
-Peugeot 2008 — Start: да; Comfort: 2019+
-Peugeot 208 — Start: да; Comfort: 2019+
-Peugeot 3008 — Start: да; Comfort: 2012+
-Peugeot 301 — Start: да; Comfort: 2019+
-Peugeot 308 — Start: да; Comfort: 2012+
-Peugeot 4007 — Start: да; Comfort: 2007+
-Peugeot 4008 — Start: да; Comfort: 2012+
-Peugeot 405 — Start: да; Comfort: 2012+
-Peugeot 407 — Start: да; Comfort: 2006+
-Peugeot 408 — Start: да; Comfort: 2012+
-Peugeot 5008 — Start: да; Comfort: 2012+
-Peugeot 508 — Start: да; Comfort+: 2011+; Business: 2021+
-Peugeot 607 — Start: да; Comfort: 2004+
-Peugeot Partner — Start: да; Comfort: 2012+ (как минивэн)
-Peugeot Traveller — Start: да; Comfort: 2016+
-
-Porsche Taycan (электро) — Start: да; Comfort+: 2019+; Electro: да; Business: 2019+; Premier: да
-
-Renault Arkana — Start: да; Comfort: 2019+
-Renault Clio — Start: да; Comfort: 2019+
-Renault Dokker — Start: да; Comfort: 2012+
-Renault Duster — Start: да; Comfort: 2019+
-Renault Fluence — Start: да; Comfort: 2012+
-Renault Kadjar — Start: да; Comfort: 2015+
-Renault Kangoo — Start: да; Comfort: 2012+
-Renault Kaptur — Start: да; Comfort: 2019+
-Renault Koleos — Start: да; Comfort+: 2008+; Business: 2021+
-Renault Laguna — Start: да; Comfort: 2006+
-Renault Latitude — Start: да; Comfort: 2010+
-Renault Logan — Start: да; Comfort: 2019+
-Renault Megane — Start: да; Comfort: 2012+
-Renault Scenic — Start: да; Comfort: 2012+
-Renault Sandero — Start: да; Comfort: 2019+
-Renault Trafic — Start: да; Comfort: 2012+
-Renault Talisman — Start: да; Comfort+: 2015+; Business: 2021+
-
-SEAT Alhambra — Start: да; Comfort: 2012+
-SEAT Altea — Start: да; Comfort: 2012+
-SEAT Ibiza — Start: да; Comfort: 2019+
-SEAT Leon — Start: да; Comfort: 2012+
-SEAT Toledo — Start: да; Comfort: 2019+
-
-Skoda Fabia — Start: да; Comfort: 2019+
-Skoda Karoq — Start: да; Comfort: 2017+
-Skoda Kodiaq — Start: да; Comfort+: 2016+; Business: 2021+
-Skoda Octavia — Start: да; Comfort: 2012+; Comfort+: 2018+
-Skoda Rapid — Start: да; Comfort: 2019+
-Skoda Superb — Start: да; Comfort+: 2006+; Business: 2021+
-Skoda Roomster — Start: да; Comfort: 2012+
-
-Skywell ET5 (электро) — Start: да; Comfort+: 2021+; Electro: да; Business: 2021+
-Skywell HT-i — Start: да; Comfort+: 2023+; Business: 2023+
-
-SsangYong Actyon — Start: да; Comfort: 2012+
-SsangYong Kyron — Start: да; Comfort: 2012+
-SsangYong Rexton — Start: да; Comfort+: 2012+; Business: 2018+
-SsangYong Stavic — Start: да; Comfort: 2013+
-SsangYong Tivoli — Start: да; Comfort: 2019+
-
-Subaru Forester — Start: да; Comfort: 2006+
-Subaru Impreza — Start: да; Comfort: 2012+
-Subaru Legacy — Start: да; Comfort: 2006+
-Subaru Outback — Start: да; Comfort+: 2006+; Business: 2021+
-Subaru XV — Start: да; Comfort: 2012+
-
-Suzuki Baleno — Start: да; Comfort: 2012+
-Suzuki Escudo — Start: да; Comfort: 2019+
-Suzuki Grand Vitara — Start: да; Comfort: 2010+
-Suzuki Ignis — Start: да; Comfort: 2019+
-Suzuki Kizashi — Start: да; Comfort: 2009+
-Suzuki Solio — Start: да; Comfort: 2012+
-Suzuki Swift — Start: да; Comfort: 2019+
-Suzuki SX4 — Start: да; Comfort: 2019+
-Suzuki Vitara — Start: да; Comfort: 2019+
-Suzuki XL7 — Start: да; Comfort: 2004+
-
 Tesla Model 3 — Start: да; Comfort+: 2017+; Electro: да; Business: 2021+
 Tesla Model S — Start: да; Comfort+: 2012+; Electro: да; Business: 2015+; Premier: да
 Tesla Model X — Start: да; Comfort+: 2015+; Electro: да; Business: 2019+
 Tesla Model Y — Start: да; Comfort+: 2020+; Electro: да; Business: 2021+
-
-Toyota 4Runner — Start: да; Comfort: 2012+
-Toyota Allion — Start: да; Comfort: 2006+
-Toyota Alphard — Start: да; Comfort+: 2012+; Business: 2018+
-Toyota Aqua — Start: да; Comfort: 2019+
-Toyota Aurion — Start: да; Comfort: 2006+
-Toyota Auris — Start: да; Comfort: 2012+
-Toyota Avalon — Start: да; Comfort+: 2004+; Business: 2019+
-Toyota Avensis — Start: да; Comfort: 2006+
-Toyota Brevis — Start: да; Comfort: 2006+
-Toyota Caldina — Start: да; Comfort: 2006+
-Toyota Camry — Start: да; Comfort+: 2006+; Business: 2021+
-Toyota C-HR — Start: да; Comfort: 2016+
-Toyota Corolla — Start: да; Comfort: 2008+; Comfort+: 2018+
-Toyota Corolla Axio — Start: да; Comfort: 2008+
-Toyota Corolla Fielder — Start: да; Comfort: 2012+
-Toyota Crown — Start: да; Comfort+: 2006+; Business: 2019+; Premier: да
-Toyota Estima — Start: да; Comfort: 2012+
-Toyota Fortuner — Start: да; Comfort: 2012+
-Toyota Harrier — Start: да; Comfort+: 2006+; Business: 2021+
-Toyota Hiace — Start: да; Comfort: 2012+
-Toyota Highlander — Start: да; Comfort+: 2004+; Business: 2019+
-Toyota Ipsum — Start: да; Comfort: 2012+
-Toyota ISis — Start: да; Comfort: 2012+
-Toyota Kluger — Start: да; Comfort: 2004+
-Toyota Land Cruiser — Start: да; Comfort+: 2004+; Business: 2019+
-Toyota Prado — Start: да; Comfort+: 2004+; Business: 2019+
-Toyota Mark X — Start: да; Comfort+: 2004+; Business: 2019+
-Toyota Noah — Start: да; Comfort: 2012+
-Toyota Premio — Start: да; Comfort: 2012+
-Toyota Previa — Start: да; Comfort: 2012+
-Toyota Prius — Start: да; Comfort: 2012+; Comfort+: 2018+
-Toyota Probox — Start: да; Comfort: 2012+
-Toyota RAV4 — Start: да; Comfort: 2012+
-Toyota Rush — Start: да; Comfort: 2019+
-Toyota Sai — Start: да; Comfort: 2009+
-Toyota Sequoia — Start: да; Comfort: 2012+
-Toyota Sienna — Start: да; Comfort: 2012+
-Toyota Sienta — Start: да; Comfort: 2012+
-Toyota TownAce — Start: да; Comfort: 2012+
-Toyota Venza — Start: да; Comfort+: 2008+; Business: 2021+
-Toyota Verso — Start: да; Comfort: 2012+
-Toyota Vitz — Start: да; Comfort: 2019+
-Toyota Voxy — Start: да; Comfort: 2012+
-Toyota Wish — Start: да; Comfort: 2012+
-Toyota Yaris — Start: да; Comfort: 2019+
-
-Venucia D60 — Start: да; Comfort: 2018+
-Venucia D60 EV — Start: да; Comfort: 2018+; Electro: да
-
-Volkswagen Bora — Start: да; Comfort: 2012+
-Volkswagen Caddy — Start: да; Comfort: 2012+
-Volkswagen Caravelle — Start: да; Comfort: 2012+
-Volkswagen e-Bora — Start: да; Comfort: 2018+; Electro: да
-Volkswagen Golf — Start: да; Comfort: 2012+
-Volkswagen Golf Plus — Start: да; Comfort: 2012+
-Volkswagen ID.3 — Start: да; Comfort: 2019+; Comfort+: 2019+; Electro: да
-Volkswagen ID.4 — Start: да; Comfort: 2020+; Comfort+: 2020+; Electro: да
-Volkswagen ID.5 — Start: да; Comfort: 2021+; Comfort+: 2021+; Electro: да
-Volkswagen ID.6 — Start: да; Comfort: 2021+; Comfort+: 2021+; Electro: да; Business: 2021+
-Volkswagen Jetta — Start: да; Comfort: 2012+
-Volkswagen Lavida — Start: да; Comfort: 2012+
-Volkswagen Multivan — Start: да; Comfort: 2012+
-Volkswagen Passat — Start: да; Comfort: 2006+; Comfort+: 2012+; Business: 2021+
-Volkswagen Passat CC — Start: да; Comfort: 2008+; Comfort+: 2012+; Business: 2021+
-Volkswagen Phaeton — Start: да; Comfort: 2004+; Comfort+: 2010+; Business: 2015+
-Volkswagen Polo — Start: да; Comfort: 2019+
-Volkswagen Polo GTI — Start: да; Comfort: 2019+
-Volkswagen Sharan — Start: да; Comfort: 2012+
-Volkswagen Teramont — Start: да; Comfort: 2017+; Comfort+: 2017+; Business: 2019+
-Volkswagen Tiguan — Start: да; Comfort: 2007+; Comfort+: 2018+
-Volkswagen Touareg — Start: да; Comfort: 2004+; Comfort+: 2012+; Business: 2019+
-Volkswagen Touran — Start: да; Comfort: 2012+
-Volkswagen Transporter — Start: да; Comfort: 2012+
-
-Volvo S40 — Start: да; Comfort: 2012+
-Volvo S60 — Start: да; Comfort: 2006+; Comfort+: 2015+; Business: 2021+
-Volvo S60 Cross Country — Start: да; Comfort+: 2015+
-Volvo S80 — Start: да; Comfort: 2004+
-Volvo S90 — Start: да; Comfort: 2004+; Comfort+: 2019+; Business: 2019+
-Volvo V40 — Start: да; Comfort: 2012+
-Volvo V50 — Start: да; Comfort: 2006+
-Volvo V60 — Start: да; Comfort: 2010+; Comfort+: 2015+; Business: 2021+
-Volvo V70 — Start: да; Comfort: 2004+
-Volvo V90 — Start: да; Comfort: 2004+; Comfort+: 2019+
-Volvo XC60 — Start: да; Comfort: 2008+; Comfort+: 2019+; Business: 2021+
-Volvo XC70 — Start: да; Comfort: 2006+
-Volvo XC90 — Start: да; Comfort: 2004+; Comfort+: 2015+; Business: 2019+
-
 Voyah Free — Start: да; Comfort: 2021+; Comfort+: 2021+; Electro: да; Business: 2021+
-
-Weltmeister E5 — Start: да; Comfort: 2021+; Electro: да
-Weltmeister EX5 — Start: да; Comfort: 2018+; Electro: да
-Weltmeister W6 — Start: да; Comfort: 2021+; Electro: да
-
-Wuling Xingguang — Start: да; Comfort: 2023+; Electro: да
-
 Xpeng G3 — Start: да; Comfort: 2018+; Electro: да
 Xpeng P5 — Start: да; Comfort: 2021+; Comfort+: 2021+; Electro: да
 Xpeng P7 — Start: да; Comfort: 2020+; Comfort+: 2020+; Electro: да
-
 Zeekr 001 — Start: да; Comfort+: 2021+; Business: 2021+; Premier: да; Electro: да
 Zeekr 007 — Start: да; Comfort+: 2023+; Business: 2023+; Premier: да; Electro: да
 Zeekr 009 — Start: да; Comfort+: 2022+; Business: 2022+; Premier: да; Electro: да
 
-SWM G01 — Start: да; Comfort: 2019+
-Zotye T600 — Start: да; Comfort: 2013+
-Москвич 3 — Start: да; Comfort: 2022+
 
 --- Доставка (Dastavka) / Comfort+ ---
 (Если не подходят в пассажирские категории или водитель просит доставку)

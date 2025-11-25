@@ -1617,10 +1617,20 @@ function humanDocTitle(docType) {
   return "Документ";
 }
 
-/**
- * Аккуратная сводка для ОПЕРАТОРОВ (на русском).
- * Нормальная нумерация, читабельные блоки, полные номера (серия + номер).
- */
+function splitCarBrandModel(source) {
+  if (!source) return { brand: "—", model: "—" };
+  const s = String(source).trim().replace(/\s+/g, " ");
+  if (!s) return { brand: "—", model: "—" };
+  const parts = s.split(" ");
+  if (parts.length === 1) {
+    return { brand: parts[0], model: "—" };
+  }
+  return {
+    brand: parts[0],
+    model: parts.slice(1).join(" "),
+  };
+}
+
 function formatSummaryForOperators(docs, commonMeta = {}) {
   const { phone, tg_id, carModel, carColor } = commonMeta;
 
@@ -1628,121 +1638,86 @@ function formatSummaryForOperators(docs, commonMeta = {}) {
   const tFront = docs.find((d) => d.docType === "tech_front");
   const tBack = docs.find((d) => d.docType === "tech_back");
 
-  const fVu = (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
+  const fVu =
+    (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
   const fTf =
     (tFront && tFront.result && tFront.result.parsed && tFront.result.parsed.fields) ||
     {};
   const fTb =
-    (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
+    (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) ||
+    {};
 
   // ФИО
   let fam = "";
   let name = "";
-  let otch = "";
   if (fVu.driver_name) {
     const parts = String(fVu.driver_name).trim().split(/\s+/);
     fam = parts[0] || "";
     name = parts[1] || "";
-    otch = parts.slice(2).join(" ");
   }
 
-  // Полные номера ВУ и техпаспорта
-  const licenseSeries = (fVu.license_series || "").trim();
-  const licenseNumber = (fVu.license_number || "").trim();
-  const licenseFullFromField = (fVu.license_full || "").trim();
-  const licenseFullCombined = `${licenseSeries} ${licenseNumber}`.trim();
-  const licenseFull = licenseFullFromField || licenseFullCombined || "—";
+  // ВУ
+  const licenseSeries = (fVu.license_series || "").trim() || null;
+  const licenseNumber = (fVu.license_number || "").trim() || null;
+  const licenseSeriesNumber = [licenseSeries, licenseNumber]
+    .filter(Boolean)
+    .join(" ")
+    .trim() || "—";
 
-  const techSeries = (fTb.tech_series || "").trim();
-  const techNumber = (fTb.tech_number || "").trim();
-  const techFullFromField = (fTb.tech_full || "").trim();
-  const techFullCombined = `${techSeries} ${techNumber}`.trim();
-  const techFull = techFullFromField || techFullCombined || "—";
+  const issuedDate = fVu.issued_date || "—";
+  const expiryDate = fVu.expiry_date || "—";
 
-  const carYear = fTb.car_year || null;
+  // ПИНФЛ из лицевой техпаспорта (там как раз владелец/ПИНФЛ)
+  const pinfl = fTf.pinfl || "—";
 
-  const headerParts = [];
-  if (phone) headerParts.push(`📞 Телефон: \`${phone}\``);
-  if (tg_id) headerParts.push(`💬 Chat ID: \`${tg_id}\``);
+  // Авто (из документов/формы)
+  const plateNumber = fTf.plate_number || "—";
 
-  if (carModel || carColor || carYear) {
-    const carBits = [];
-    if (carModel) carBits.push(`модель: ${carModel}`);
-    if (carColor) carBits.push(`цвет: ${carColor}`);
-    if (carYear) carBits.push(`год: ${carYear}`);
-    headerParts.push(`🚗 Авто (из формы/документов): ${carBits.join(" / ") || "—"}`);
-  }
+  // строка марки/модели — берем сначала из документа, если нет, из выбранной модели
+  const carModelSource = fTf.car_model_text || carModel || "";
+  const { brand, model } = splitCarBrandModel(carModelSource);
+
+  // Цвет: сначала по документу, затем то, что выбрал водитель
+  const colorDocOrForm = fTf.car_color_text || carColor || "—";
+
+  // Год выпуска и кузов с оборота
+  const carYear = fTb.car_year || "—";
+  const bodyNumber = fTb.body_number || "—";
+
+  // Серия техпаспорта — именно серия, не номер
+  const techSeries = (fTb.tech_series || "").trim() || "—";
 
   const lines = [];
-  lines.push("📄 Набор документов от водителя ASR TAXI");
-  if (headerParts.length) {
-    lines.push(headerParts.join("\n"));
-  }
 
-  // ===== БЛОК "ВОДИТЕЛЬ" =====
+  lines.push("📄 *Набор документов от водителя ASR TAXI*");
   lines.push("");
-  lines.push("👤 ВОДИТЕЛЬ");
-  lines.push("");
-  lines.push("1. Фамилия");
-  lines.push(fam || "—");
-  lines.push("");
-  lines.push("2. Имя");
-  lines.push(name || "—");
-  lines.push("");
-  lines.push("3. Отчество");
-  lines.push(otch || "—");
-  lines.push("");
-  lines.push("4. Дата рождения");
-  lines.push(fVu.birth_date || "—");
-  lines.push("");
-  lines.push("5. Серия и номер водительского удостоверения");
-  lines.push(licenseFull);
-  lines.push("");
-  lines.push("6. Дата выдачи ВУ");
-  lines.push(fVu.issued_date || "—");
-  lines.push("");
-  lines.push("7. Дата окончания срока ВУ");
-  lines.push(fVu.expiry_date || "—");
-  lines.push("");
-  lines.push("8. Кем выдано");
-  lines.push(fVu.issued_by || "—");
-  lines.push("");
-  lines.push("9. ПИНФЛ (если есть)");
-  lines.push(fTf.pinfl || "—");
 
-  // ===== БЛОК "АВТОМОБИЛЬ" =====
+  // Верхний блок
+  lines.push(`Телефон: ${phone ? "`" + phone + "`" : "—"}`);
+  lines.push(`Chat ID: ${tg_id ? "`" + tg_id + "`" : "—"}`);
+  lines.push(`Цвет авто: ${carColor || "—"}`);
+  lines.push(`Модель авто: ${carModel || "—"}`);
   lines.push("");
-  lines.push("🚗 АВТОМОБИЛЬ");
+
+  // Водитель
+  lines.push("👤 *Водитель*");
+  lines.push(`Фамилия: ${fam || "—"}`);
+  lines.push(`Имя: ${name || "—"}`);
+  lines.push(`Дата выдачи ВУ: ${issuedDate}`);
+  lines.push(`Дата истечения срока ВУ: ${expiryDate}`);
+  lines.push(`ПИНФЛ: ${pinfl}`);
+  lines.push(`Серия В/У: ${licenseSeries || "—"}`);
   lines.push("");
-  lines.push("1. Госномер");
-  lines.push(fTf.plate_number || "—");
-  lines.push("");
-  lines.push("2. Марка / модель по документу");
-  lines.push(fTf.car_model_text || "—");
-  lines.push("");
-  lines.push("3. Модель (из формы бота)");
-  lines.push(carModel || "—");
-  lines.push("");
-  lines.push("4. Цвет (по документу или форме)");
-  lines.push(fTf.car_color_text || carColor || "—");
-  lines.push("");
-  lines.push("5. Год выпуска");
-  lines.push(fTb.car_year || "—");
-  lines.push("");
-  lines.push("6. Номер кузова / шасси");
-  lines.push(fTb.body_number || "—");
-  lines.push("");
-  lines.push("7. Серия и номер техпаспорта");
-  lines.push(techFull);
-  lines.push("");
-  lines.push("8. Объём двигателя");
-  lines.push(fTb.engine_volume || "—");
-  lines.push("");
-  lines.push("9. Тип топлива");
-  lines.push(fTb.fuel_type || "—");
-  lines.push("");
-  lines.push("10. VIN (если указан отдельно)");
-  lines.push(fTb.vin || "—");
+
+  // Авто
+  lines.push("🚗 *Авто*");
+  lines.push(`Гос номер: ${plateNumber}`);
+  lines.push(`Марка: ${brand}`);
+  lines.push(`Модель: ${model}`);
+  lines.push(`Цвет: ${colorDocOrForm}`);
+  lines.push(`Год выпуска авто: ${carYear}`);
+  lines.push(`Номер кузова: ${bodyNumber}`);
+  lines.push(`Серия тех паспорта: ${techSeries}`);
 
   return lines.join("\n");
 }

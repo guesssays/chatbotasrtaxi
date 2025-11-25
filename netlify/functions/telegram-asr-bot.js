@@ -1,33 +1,42 @@
 // netlify/functions/telegram-asr-bot.js
 
 const TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || null;
+const TELEGRAM_API = TELEGRAM_TOKEN
+  ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
+  : null;
 
-const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID || "")
-  .split(",")
-  .map((id) => id.trim())
-  .filter(Boolean);
+const UPLOAD_DOC_URL =
+  process.env.UPLOAD_DOC_URL ||
+  (process.env.URL &&
+    `${process.env.URL.replace(/\/$/, "")}/.netlify/functions/upload-doc`) ||
+  null;
 
-const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
+if (!TELEGRAM_TOKEN) {
+  console.error("TG_BOT_TOKEN is not set (telegram-asr-bot.js)");
+}
+if (!UPLOAD_DOC_URL) {
+  console.error("UPLOAD_DOC_URL is not set and URL is not available");
+}
 
-// URL сайта (Netlify подставляет URL / DEPLOY_URL)
-const SITE_URL = process.env.URL || process.env.DEPLOY_URL || "";
+// ====== простая сессия в памяти (для нетлифи это best-effort) ======
+const sessions = new Map();
 
-// Эндпоинт функции upload-doc (используем для обработки документов из Telegram)
-const UPLOAD_DOC_ENDPOINT =
-  process.env.UPLOAD_DOC_ENDPOINT ||
-  (SITE_URL ? `${SITE_URL}/.netlify/functions/upload-doc` : null);
+function getSession(chatId) {
+  if (!sessions.has(chatId)) {
+    sessions.set(chatId, {
+      step: "idle",
+      phone: null,
+      carModelCode: null,
+      carModelLabel: null,
+      carColor: null,
+    });
+  }
+  return sessions.get(chatId);
+}
 
-// ====== НАСТРОЙКИ ЯНДЕКС ФЛИТ API ======
-const FLEET_API_URL =
-  process.env.FLEET_API_URL || "https://fleet-api.taxi.yandex.net";
-const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || "";
-const FLEET_API_KEY = process.env.FLEET_API_KEY || "";
-const FLEET_PARK_ID = process.env.FLEET_PARK_ID || "";
-
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-
-if (!TELEGRAM_TOKEN) console.error("TG_BOT_TOKEN is not set");
+function resetSession(chatId) {
+  sessions.delete(chatId);
+}
 
 // ===== СПИСОК МОДЕЛЕЙ И РАНГ ЦВЕТОВ (КНОПКИ) =====
 
@@ -1409,1070 +1418,497 @@ const CAR_COLORS = [
   { code: "OTHER", label: "Boshqa rang" },
 ];
 
+const CAR_MODELS_PAGE_SIZE = 40; // по 40 моделей на страницу
 
-// ===== ПРОСТАЯ IN-MEMORY СЕССИЯ (на каждый chat_id) =====
-// Важно: на Netlify это не персистентно между холодными стартами, но логика тут показана целиком.
-const sessions = new Map(); // key: chatId string -> { step, data, ... }
+function buildCarModelsKeyboard(page = 0) {
+  const total = CAR_MODELS.length;
+  const pageSize = CAR_MODELS_PAGE_SIZE;
 
-function getSession(chatId) {
-  const key = String(chatId);
-  let s = sessions.get(key);
-  if (!s) {
-    s = {
-      step: "idle",
-      data: {
-        // phoneNormalized, carModelCode, carModelLabel, carColorCode, carColorLabel, fields, etc.
-      },
-      editQueue: [],
-      editIndex: 0,
-      currentField: null,
-      lastUpdated: Date.now(),
-    };
-    sessions.set(key, s);
+  const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
+  const safePage = Math.min(Math.max(0, page), maxPage);
+
+  const start = safePage * pageSize;
+  const end = Math.min(start + pageSize, total);
+
+  const slice = CAR_MODELS.slice(start, end);
+
+  const rows = [];
+
+  // по 2 модели в строке
+  for (let i = 0; i < slice.length; i += 2) {
+    const row = [];
+
+    const m1 = slice[i];
+    row.push({
+      text: m1.label,
+      callback_data: `car_model:${m1.code}`,
+    });
+
+    if (i + 1 < slice.length) {
+      const m2 = slice[i + 1];
+      row.push({
+        text: m2.label,
+        callback_data: `car_model:${m2.code}`,
+      });
+    }
+
+    rows.push(row);
   }
-  return s;
+
+  // Навигация по страницам
+  const navRow = [];
+  if (safePage > 0) {
+    navRow.push({
+      text: "⬅️ Oldingi",
+      callback_data: `car_page:${safePage - 1}`,
+    });
+  }
+  if (safePage < maxPage) {
+    navRow.push({
+      text: "Keyingi ➡️",
+      callback_data: `car_page:${safePage + 1}`,
+    });
+  }
+  if (navRow.length) {
+    rows.push(navRow);
+  }
+
+  return { inline_keyboard: rows };
 }
 
-function resetSession(chatId) {
-  sessions.delete(String(chatId));
-}
-
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ TELEGRAM =====
-
-async function sendTelegramMessage(chatId, text, replyMarkup) {
-  if (!chatId) return;
-
-  const body = {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-  };
-  if (replyMarkup) body.reply_markup = replyMarkup;
+// ====== Telegram helpers ======
+async function sendTelegramMessage(chatId, text, extra = {}) {
+  if (!TELEGRAM_API) {
+    console.error("sendTelegramMessage: no TELEGRAM_API");
+    return;
+  }
 
   try {
     const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("Telegram sendMessage error:", res.status, errText);
-    }
-  } catch (e) {
-    console.error("Telegram sendMessage exception:", e);
-  }
-}
-
-async function sendLog(text) {
-  if (!LOG_CHAT_ID) return;
-  return sendTelegramMessage(LOG_CHAT_ID, text);
-}
-
-// ===== ПРОКСИ В upload-doc ДЛЯ ОБРАБОТКИ ДОКУМЕНТОВ =====
-
-async function forwardDocToUploadDoc(rawUpdate, extraMeta) {
-  if (!UPLOAD_DOC_ENDPOINT) {
-    console.error(
-      "UPLOAD_DOC_ENDPOINT yoki URL aniqlanmagan — upload-doc funksiyasiga murojaat qilib bo‘lmadi"
-    );
-    return { ok: false, error: "no_upload_doc_url" };
-  }
-
-  try {
-    const body = {
-      source: "telegram_bot",
-      telegram_update: rawUpdate,
-    };
-
-    if (extraMeta) {
-      body.meta = extraMeta; // doc_type, chat_id, current_step va h.k.
-    }
-
-    const res = await fetch(UPLOAD_DOC_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // ВАЖНО: сюда передаём весь Telegram update, upload-doc.js сам разберёт
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error("upload-doc error:", res.status, errText);
-      return { ok: false, error: "bad_status", status: res.status, body: errText };
-    }
-
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      data = null;
-    }
-
-    return { ok: true, data };
-  } catch (e) {
-    console.error("forwardDocToUploadDoc exception:", e);
-    return { ok: false, error: "exception" };
-  }
-}
-
-// ===== ПРОВЕРКА ВОДИТЕЛЯ В ЯНДЕКС ФЛИТ =====
-
-function normalizePhone(raw) {
-  if (!raw) return "";
-  let digits = raw.replace(/[^\d]/g, "");
-
-  if (digits.length === 11 && digits[0] === "8") {
-    digits = "7" + digits.slice(1);
-  }
-  if (digits.length === 11 && digits[0] === "7") {
-    return `+${digits}`;
-  }
-  if (raw.startsWith("+")) return raw;
-  return `+${digits}`;
-}
-
-async function checkDriverInFleet(phone) {
-  if (!FLEET_API_KEY || !FLEET_PARK_ID || !FLEET_CLIENT_ID) {
-    console.warn(
-      "FLEET_API_KEY, FLEET_CLIENT_ID yoki FLEET_PARK_ID belgilanmagan — haydovchini bazadan izlay olmaymiz"
-    );
-    return { exists: false, profile: null, raw: null };
-  }
-
-  const normalized = normalizePhone(phone);
-  console.log("checkDriverInFleet → normalized phone:", normalized);
-
-  try {
-    const res = await fetch(`${FLEET_API_URL}/v1/parks/driver-profiles/list`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Client-ID": FLEET_CLIENT_ID,
-        "X-API-Key": FLEET_API_KEY,
-      },
       body: JSON.stringify({
-        query: {
-          park: { id: FLEET_PARK_ID },
-          driver_profile: {
-            phone: { value: normalized },
-          },
-        },
-        limit: 50,
+        chat_id: chatId,
+        text,
+        parse_mode: "Markdown",
+        ...extra,
       }),
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      console.error("Fleet API error:", res.status, errText);
-      return { exists: false, profile: null, error: "fleet_error" };
+      const txt = await res.text();
+      console.error("sendMessage error:", res.status, txt);
     }
-
-    const data = await res.json();
-    const profiles = Array.isArray(data.driver_profiles)
-      ? data.driver_profiles
-      : [];
-
-    let foundProfile = null;
-
-    for (const p of profiles) {
-      const apiPhones = (p.driver_profile?.phones || []).map(normalizePhone);
-      if (apiPhones.includes(normalized)) {
-        foundProfile = p;
-        break;
-      }
-    }
-
-    const exists = !!foundProfile;
-
-    console.log(
-      "Fleet API OK, exists =",
-      exists,
-      "profiles_count =",
-      profiles.length
-    );
-    if (foundProfile) {
-      console.log(
-        "Fleet API raw driver_profile for phone:",
-        JSON.stringify(foundProfile, null, 2)
-      );
-    }
-
-    await sendLog(
-      `🔍 Yandex.Fleet tekshiruvi\n` +
-        `Telefon: <b>${normalized}</b>\n` +
-        `Bazadan topildi: <b>${exists ? "HA" : "YO'Q"}</b>` +
-        (foundProfile
-          ? `\nIsm: <b>${foundProfile.driver_profile?.last_name || ""} ${
-              foundProfile.driver_profile?.first_name || ""
-            }</b>\n` +
-            `Avto: <b>${foundProfile.car?.brand || "—"} ${
-              foundProfile.car?.model || "—"
-            }</b> (${foundProfile.car?.number || "—"})`
-          : "")
-    );
-
-    return { exists, profile: foundProfile, raw: data };
   } catch (e) {
-    console.error("Fleet API exception:", e);
-    return { exists: false, profile: null, error: "fleet_exception" };
+    console.error("sendTelegramMessage exception:", e);
   }
 }
 
-// ===== КНОПКА "ПРОВЕРИТЬ СТАТУС РЕГИСТРАЦИИ" =====
+async function editReplyMarkup(chatId, messageId, replyMarkup) {
+  if (!TELEGRAM_API || !chatId || !messageId) return;
 
-async function handleStatusCheck(chatId) {
-  const session = getSession(chatId);
-  const phone =
-    session.data?.phoneNormalized ||
-    session.data?.phone ||
-    session.data?.contactPhone ||
-    null;
-
-  if (!phone) {
-    await sendTelegramMessage(
-      chatId,
-      "Telefon raqamingiz ma'lum emas.\nIltimos, /start buyrug'ini yuboring va qayta ro'yxatdan o'tish jarayonini boshlang."
-    );
-    return;
-  }
-
-  await sendTelegramMessage(
-    chatId,
-    "Ro'yxatdan o'tish holatini tekshiryapman, iltimos biroz kuting..."
-  );
-
-  const check = await checkDriverInFleet(phone);
-
-  if (check.error === "fleet_error" || check.error === "fleet_exception") {
-    await sendTelegramMessage(
-      chatId,
-      "Yandex.Taxi bazasiga hozircha ulanib bo'lmadi. Iltimos, birozdan so'ng yana tekshirib ko'ring."
-    );
-    return;
-  }
-
-  if (check.exists) {
-    const p = check.profile || {};
-    const dp = p.driver_profile || {};
-    const car = p.car || {};
-
-    await sendTelegramMessage(
-      chatId,
-      `✅ Tabriklaymiz! Sizning profilingiz Yandex.Taxi bazasida topildi.\n\n` +
-        `F.I.Sh.: <b>${dp.last_name || ""} ${dp.first_name || ""}</b>\n` +
-        (car.brand || car.model || car.number
-          ? `Avto: <b>${car.brand || "—"} ${car.model || "—"}</b> (${car.number || "—"})\n`
-          : "") +
-        `Holat: <code>${p.current_status?.status || "unknown"}</code>`
-    );
-  } else {
-    await sendTelegramMessage(
-      chatId,
-      "Hozircha sizning profilingiz Yandex.Taxi bazasida topilmadi.\nOperatorlar hujjatlaringizni ko‘rib chiqishyapti. Iltimos, birozdan so'ng yana tekshirib ko‘ring."
-    );
-  }
-}
-
-// ===== ПОСТРОЕНИЕ КНОПОК ДЛЯ МОДЕЛЕЙ МАШИН И ЦВЕТОВ =====
-
-function buildCarModelKeyboard() {
-  const rows = [];
-  let row = [];
-  for (const m of CAR_MODELS) {
-    row.push({
-      text: m.label,
-      callback_data: `car_model:${m.code}`,
+  try {
+    const res = await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: replyMarkup,
+      }),
     });
-    if (row.length === 2) {
-      rows.push(row);
-      row = [];
+
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("editMessageReplyMarkup error:", res.status, txt);
     }
+  } catch (e) {
+    console.error("editReplyMarkup exception:", e);
   }
-  if (row.length) rows.push(row);
-  return { inline_keyboard: rows };
 }
 
-function buildCarColorKeyboard() {
-  const rows = [];
-  let row = [];
-  for (const c of CAR_COLORS) {
-    row.push({
-      text: c.label,
-      callback_data: `car_color:${c.code}`,
+async function answerCallbackQuery(callbackQueryId) {
+  if (!TELEGRAM_API || !callbackQueryId) return;
+  try {
+    const res = await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId }),
     });
-    if (row.length === 2) {
-      rows.push(row);
-      row = [];
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("answerCallbackQuery error:", res.status, txt);
     }
-  }
-  if (row.length) rows.push(row);
-  return { inline_keyboard: rows };
-}
-
-// ===== ОПИСАНИЕ ПОЛЕЙ, КОТОРЫЕ МОЖНО РЕДАКТИРОВАТЬ =====
-
-function getEditableFields(session) {
-  // Порядок полей для поэтапного подтверждения/изменения
-  return [
-    "first_name",
-    "last_name",
-    "middle_name",
-    "birth_date",
-    "license_series",
-    "license_number",
-    "tech_passport_series",
-    "tech_passport_number",
-    "car_year",
-    "car_number",
-    "car_model_label",
-    "car_color_label",
-  ];
-}
-
-function mapFieldKeyToLabel(key) {
-  switch (key) {
-    case "first_name":
-      return "Ism";
-    case "last_name":
-      return "Familiya";
-    case "middle_name":
-      return "Otasining ismi";
-    case "birth_date":
-      return "Tug'ilgan sana";
-    case "license_series":
-      return "Haydovchilik guvohnomasi seriyasi";
-    case "license_number":
-      return "Haydovchilik guvohnomasi raqami";
-    case "tech_passport_series":
-      return "Texnik pasport seriyasi";
-    case "tech_passport_number":
-      return "Texnik pasport raqami";
-    case "car_year":
-      return "Avtomobil yili";
-    case "car_number":
-      return "Davlat raqami";
-    case "car_model_label":
-      return "Avtomobil modeli";
-    case "car_color_label":
-      return "Avtomobil rangi";
-    default:
-      return key;
+  } catch (e) {
+    console.error("answerCallbackQuery exception:", e);
   }
 }
 
-function getFieldValue(session, key) {
-  const d = session.data || {};
-  const f = d.fields || {};
-  switch (key) {
-    case "car_model_label":
-      return d.carModelLabel || "—";
-    case "car_color_label":
-      return d.carColorLabel || "—";
-    default:
-      return f[key] ?? "—";
+// ====== вызов upload-doc ======
+async function forwardDocToUploadDoc(telegramUpdate, meta) {
+  if (!UPLOAD_DOC_URL) {
+    console.error("forwardDocToUploadDoc: no UPLOAD_DOC_URL");
+    return null;
   }
-}
 
-// ===== СУММАРНЫЙ ТЕКСТ ДЛЯ ВОДИТЕЛЯ И ОПЕРАТОРОВ =====
+  try {
+    const res = await fetch(UPLOAD_DOC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "telegram_bot",
+        telegram_update: telegramUpdate,
+        meta: meta || {},
+      }),
+    });
 
-function buildDriverSummary(session) {
-  const d = session.data || {};
-  const f = d.fields || {};
-  const phone =
-    d.phoneNormalized || d.phone || d.contactPhone || "—";
-
-  const lines = [];
-
-  lines.push("📋 <b>Ro'yxatdan o'tish ma'lumotlari</b>");
-  lines.push("");
-  lines.push(`📱 Telefon: <b>${phone}</b>`);
-
-  lines.push(
-    `👤 F.I.Sh.: <b>${f.last_name || "—"} ${f.first_name || "—"} ${
-      f.middle_name || ""
-    }</b>`
-  );
-  lines.push(`🎂 Tug'ilgan sana: <b>${f.birth_date || "—"}</b>`);
-
-  lines.push("");
-  lines.push("🪪 <b>Haydovchilik guvohnomasi</b>");
-  lines.push(
-    `Seriya va raqam: <b>${f.license_series || "—"} ${
-      f.license_number || ""
-    }</b>`
-  );
-
-  lines.push("");
-  lines.push("📘 <b>Texnik pasport</b>");
-  lines.push(
-    `Seriya va raqam: <b>${f.tech_passport_series || "—"} ${
-      f.tech_passport_number || ""
-    }</b>`
-  );
-  lines.push(`Avtomobil yili: <b>${f.car_year || "—"}</b>`);
-
-  lines.push("");
-  lines.push("🚗 <b>Avtomobil</b>");
-  lines.push(
-    `Model: <b>${d.carModelLabel || f.car_model || "—"}</b>`
-  );
-  lines.push(
-    `Rang: <b>${d.carColorLabel || f.car_color || "—"}</b>`
-  );
-  lines.push(`Davlat raqami: <b>${f.car_number || "—"}</b>`);
-
-  return lines.join("\n");
-}
-
-// ===== ФИНАЛИЗАЦИЯ РЕГИСТРАЦИИ =====
-
-async function finalizeRegistration(chatId, session) {
-  const summary = buildDriverSummary(session);
-  const phone =
-    session.data?.phoneNormalized ||
-    session.data?.phone ||
-    session.data?.contactPhone ||
-    "—";
-
-  // Водителю — финальное сообщение
-  const replyMarkup = {
-    keyboard: [
-      [
-        {
-          text: "🔄 Ro'yxatdan o'tish holatini tekshirish",
-        },
-      ],
-    ],
-    resize_keyboard: true,
-  };
-
-  await sendTelegramMessage(
-    chatId,
-    summary +
-      "\n\n✅ <b>Ma'lumotlaringiz qabul qilindi.</b>\nOperatorlar hujjatlaringizni ko‘rib chiqishyapti. " +
-      "Odatda bu biroz vaqt oladi.\n\nRo'yxatdan o'tish holatini tekshirish uchun quyidagi tugmadan foydalaning.",
-    replyMarkup
-  );
-
-  // Операторам — тот же summary + служебная инфа
-  if (ADMIN_CHAT_IDS.length) {
-    for (const adminId of ADMIN_CHAT_IDS) {
-      await sendTelegramMessage(
-        adminId,
-        `🆕 Yangi haydovchi ro'yxatdan o'tish uchun so'rov yubordi.\n\n${summary}\n\nChat ID: <code>${chatId}</code>\nTelefon: <b>${phone}</b>`
-      );
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // ignore parse error
     }
+
+    if (!res.ok) {
+      console.error("forwardDocToUploadDoc failed:", res.status, text);
+      return { ok: false, status: res.status, raw: text };
+    }
+
+    return json || { ok: true, raw: text };
+  } catch (e) {
+    console.error("forwardDocToUploadDoc exception:", e);
+    return { ok: false, error: String(e) };
   }
-
-  await sendLog(
-    `✅ Yakuniy ro'yxatdan o'tish tasdiqlandi\nChat ID: <code>${chatId}</code>\nTelefon: <b>${phone}</b>`
-  );
-
-  // Обновим шаг
-  session.step = "completed";
-  session.lastUpdated = Date.now();
-
-  // ВАЖНО: отправка напоминания через 5 минут в Netlify-функции "как есть" нереализуема.
-  // Здесь можно только залогировать, а реализацию сделать через внешнюю очередь / cron.
-  console.log(
-    "Schedule status reminder in 5 minutes for chat:",
-    chatId
-  );
 }
 
-// ===== НАЧАЛО РЕДАКТИРОВАНИЯ ПОЛЕЙ =====
+// ====== логика шагов регистрации ======
 
-async function startEditingFlow(chatId, session) {
-  session.editQueue = getEditableFields(session);
-  session.editIndex = 0;
-  session.currentField = null;
-  session.step = "editing_fields";
-  session.lastUpdated = Date.now();
-  await goToNextEditableField(chatId, session);
-}
-
-async function goToNextEditableField(chatId, session) {
-  const queue = session.editQueue || [];
-  if (session.editIndex >= queue.length) {
-    // Все поля просмотрены — снова показываем сводку и спрашиваем "hammasi to'g'rimi?"
-    session.step = "await_summary_confirm1";
-    const summary = buildDriverSummary(session);
-    const kb = {
+async function handleStart(chatId) {
+  const text =
+    "👋 Assalomu alaykum!\n\n" +
+    "Bu bot sizga parkka ulanish uchun kerak bo‘lgan hujjatlarni to‘plashda yordam beradi.\n\n" +
+    "Boshlash uchun tugmani bosing:";
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: {
       inline_keyboard: [
         [
-          { text: "✅ Ha, hammasi to'g'ri", callback_data: "summary1_yes" },
-          { text: "✏️ O'zgartirish kerak", callback_data: "summary1_no" },
+          {
+            text: "🚕 Ro‘yxatdan o‘tishni boshlash",
+            callback_data: "start_registration",
+          },
         ],
       ],
-    };
-    await sendTelegramMessage(
-      chatId,
-      summary + "\n\nMa'lumotlar to'g'rimi?",
-      kb
-    );
-    return;
-  }
-
-  const fieldKey = queue[session.editIndex];
-  session.currentField = fieldKey;
-  session.step = "editing_field_choice";
-
-  const label = mapFieldKeyToLabel(fieldKey);
-  const value = getFieldValue(session, fieldKey);
-
-  const kb = {
-    inline_keyboard: [
-      [
-        {
-          text: "✅ To'g'ri",
-          callback_data: `edit_field_ok:${fieldKey}`,
-        },
-        {
-          text: "✏️ O'zgartirish",
-          callback_data: `edit_field_change:${fieldKey}`,
-        },
-      ],
-    ],
-  };
-
-  await sendTelegramMessage(
-    chatId,
-    `${label}: <b>${value}</b>\n\nBu ma'lumot to'g'rimi?`,
-    kb
-  );
+    },
+  });
 }
 
-// ===== ОБРАБОТКА CALLBACK'ОВ =====
-
-async function handleCallback(update) {
-  const cb = update.callback_query;
-  const data = cb.data || "";
-  const chatId = cb.message?.chat?.id;
-  if (!chatId) return { statusCode: 200, body: "No chat in callback" };
-
-  const session = getSession(chatId);
-  session.lastUpdated = Date.now();
-
-  console.log("Callback data:", data, "from chat", chatId);
-
-  // 1) Старт регистрации
-  if (data === "start_registration") {
-    session.step = "await_contact";
-
-    const replyMarkup = {
+async function askPhone(chatId, session) {
+  session.step = "waiting_phone";
+  const text =
+    "📱 Telefon raqamingizni yuboring.\n" +
+    "Eng oson yo‘l — *kontakt* sifatida yuboring (\"Share Contact\" / \"Поделиться контактом\").";
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: {
       keyboard: [
-        [{ text: "📱 Telefon raqamni yuborish", request_contact: true }],
+        [
+          {
+            text: "📲 Telefonni jo‘natish",
+            request_contact: true,
+          },
+        ],
       ],
       resize_keyboard: true,
       one_time_keyboard: true,
-    };
-
-    await sendTelegramMessage(
-      chatId,
-      "Ro'yxatdan o'tishni boshlash uchun pastdagi tugma orqali Telegram akkauntingizga ulangan telefon raqamingizni yuboring.",
-      replyMarkup
-    );
-  }
-
-  // 2) Выбор модели машины
-  else if (data.startsWith("car_model:")) {
-    const code = data.split(":")[1];
-    const model = CAR_MODELS.find((m) => m.code === code);
-    if (model) {
-      session.data.carModelCode = model.code;
-      session.data.carModelLabel = model.label;
-      session.step = "await_car_color";
-      await sendTelegramMessage(
-        chatId,
-        `Model tanlandi: <b>${model.label}</b>\n\nEndi avtomobil rangini tanlang:`,
-        buildCarColorKeyboard()
-      );
-    } else {
-      await sendTelegramMessage(
-        chatId,
-        "Modelni aniqlab bo'lmadi. Iltimos, qaytadan tanlab ko'ring."
-      );
-    }
-  }
-
-  // 3) Выбор цвета машины
-  else if (data.startsWith("car_color:")) {
-    const code = data.split(":")[1];
-    const color = CAR_COLORS.find((c) => c.code === code);
-    if (color) {
-      session.data.carColorCode = color.code;
-      session.data.carColorLabel = color.label;
-      session.step = "await_dl_front";
-
-      await sendTelegramMessage(
-        chatId,
-        `Rang tanlandi: <b>${color.label}</b>\n\nEndi ro'yxatdan o'tishni davom ettiramiz.\n\n1️⃣ Iltimos, haydovchilik guvohnomangizning <b>old tomoni</b> rasmini yuboring.\n\n📸 Rasm aniq, yozuvlar o'qiladigan bo'lsin. Hujjatni to'liq tushiring, yoritish yaxshi bo'lsin, iloji boricha yaltirash (blik) bo'lmasin.`
-      );
-    } else {
-      await sendTelegramMessage(
-        chatId,
-        "Rangni aniqlab bo'lmadi. Iltimos, qaytadan tanlab ko'ring."
-      );
-    }
-  }
-
-  // 4) Первая сводка — Да/Нет
-  else if (data === "summary1_yes") {
-    session.step = "await_summary_confirm2";
-    session.lastUpdated = Date.now();
-    const kb = {
-      inline_keyboard: [
-        [
-          {
-            text: "✅ Ha, yakuniy tasdiqlayman",
-            callback_data: "summary2_yes",
-          },
-          {
-            text: "✏️ O'zgartirish",
-            callback_data: "summary2_no",
-          },
-        ],
-      ],
-    };
-    await sendTelegramMessage(
-      chatId,
-      "Iltimos, barcha ma'lumotlarni yana bir bor diqqat bilan tekshiring.\nAgar hammasi to'g'ri bo'lsa, quyidagi tugma orqali yakuniy tasdiqni bering.",
-      kb
-    );
-  } else if (data === "summary1_no") {
-    // Переходим к поэтапному редактированию
-    await startEditingFlow(chatId, session);
-  }
-
-  // 5) Вторая сводка — финальное Да/Нет
-  else if (data === "summary2_yes") {
-    await finalizeRegistration(chatId, session);
-  } else if (data === "summary2_no") {
-    await startEditingFlow(chatId, session);
-  }
-
-  // 6) Редактирование конкретного поля
-  else if (data.startsWith("edit_field_ok:")) {
-    // Поле подтверждено, идём дальше
-    session.editIndex += 1;
-    await goToNextEditableField(chatId, session);
-  } else if (data.startsWith("edit_field_change:")) {
-    const fieldKey = data.split(":")[1];
-    session.currentField = fieldKey;
-    session.step = "await_field_new_value";
-    const label = mapFieldKeyToLabel(fieldKey);
-    const oldValue = getFieldValue(session, fieldKey);
-
-    await sendTelegramMessage(
-      chatId,
-      `${label} uchun yangi qiymatni yozib yuboring.\n\nHozirgi qiymat: <b>${oldValue}</b>`
-    );
-  }
-
-  // Ответить callback'у, чтобы "часики" исчезли
-  await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: cb.id }),
+    },
   });
-
-  return { statusCode: 200, body: "Callback handled" };
 }
 
-// ===== ОБРАБОТКА ДОКУМЕНТОВ ПО ЭТАПАМ =====
+async function askCarModel(chatId, session) {
+  session.step = "waiting_car_model";
+  const text =
+    "Endi avtomobil modelini tanlaymiz.\n\n" +
+    "Ro‘yxatdan kerakli modelni tanlang:";
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: buildCarModelsKeyboard(0),
+  });
+}
 
-async function handleDocumentStep(update, msg, chatId, session) {
-  const hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;
-  const hasImageDocument =
-    msg.document && (msg.document.mime_type || "").startsWith("image/");
-  const hasDocumentToProcess = hasPhoto || hasImageDocument;
+async function askCarColor(chatId, session) {
+  session.step = "waiting_car_color";
+  const text =
+    "🎨 Avtomobil rangini tanlang yoki yozing.\n\n" +
+    "Masalan: oq, qora, kulrang va hokazo.";
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: {
+      keyboard: [
+        [{ text: "Oq" }, { text: "Qora" }],
+        [{ text: "Kulrang" }, { text: "Ko‘k" }],
+        [{ text: "Yashil" }, { text: "Qizil" }],
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    },
+  });
+}
 
-  if (!hasDocumentToProcess) {
-    return false;
-  }
+async function askDocVuFront(chatId, session) {
+  session.step = "waiting_vu_front";
+  const text =
+    "📄 Endi haydovchilik guvohnomangizning *old tomonini* (foto) yuboring.\n\n" +
+    "Rasm aniq, matn o‘qiladigan bo‘lsin.";
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: { remove_keyboard: true },
+  });
+}
 
-  // Разрешаем документы только в ожидаемых шагах
-  const allowedSteps = [
-    "await_dl_front",
-    "await_dl_back",
-    "await_tech_front",
-    "await_tech_back",
-    "await_car_photo",
-  ];
+async function askDocTechFront(chatId, session) {
+  session.step = "waiting_tech_front";
+  const text =
+    "📄 Endi transport vositasining *texpasporti old tomonini* yuboring.";
+  await sendTelegramMessage(chatId, text);
+}
 
-  if (!allowedSteps.includes(session.step)) {
-    await sendTelegramMessage(
-      chatId,
-      "Hozir hujjat qabul qilish bosqichida emasmiz.\nAgar ro'yxatdan o'tmoqchi bo'lsangiz, /start buyrug'ini yuboring."
-    );
-    return true;
-  }
+async function askDocTechBack(chatId, session) {
+  session.step = "waiting_tech_back";
+  const text =
+    "📄 Va nihoyat, texpasportning *orqa tomonini* yuboring (u yerdan avtomobil yili va VIN olinadi).";
+  await sendTelegramMessage(chatId, text);
+}
 
-  let docType = "";
-  let nextStep = null;
-  let nextMessage = "";
+async function handleDocumentPhoto(update, session, docType) {
+  const msg =
+    update.message ||
+    update.edited_message ||
+    update.channel_post ||
+    update.edited_channel_post;
 
-  if (session.step === "await_dl_front") {
-    docType = "driver_license_front";
-    nextStep = "await_dl_back";
-    nextMessage =
-      "Haydovchilik guvohnomasining <b>old tomoni</b> qabul qilindi ✅\n\n2️⃣ Endi haydovchilik guvohnomasining <b>orqa tomoni</b> rasmini yuboring.\n\n📸 Yozuvlar aniq va o'qiladigan bo'lsin, hujjat to'liq tushsin.";
-  } else if (session.step === "await_dl_back") {
-    docType = "driver_license_back";
-    nextStep = "await_tech_front";
-    nextMessage =
-      "Haydovchilik guvohnomasining <b>orqa tomoni</b> qabul qilindi ✅\n\n3️⃣ Endi texnik pasportingizning <b>old tomoni</b> rasmini yuboring.";
-  } else if (session.step === "await_tech_front") {
-    docType = "tech_passport_front";
-    nextStep = "await_tech_back";
-    nextMessage =
-      "Texnik pasportning <b>old tomoni</b> qabul qilindi ✅\n\n4️⃣ Endi texnik pasportingizning <b>orqa tomoni</b> rasmini yuboring.";
-  } else if (session.step === "await_tech_back") {
-    docType = "tech_passport_back";
-    nextStep = "await_car_photo";
-    nextMessage =
-      "Texnik pasportning <b>orqa tomoni</b> qabul qilindi ✅\n\n5️⃣ Agar imkon bo'lsa, avtomobilingizning tashqi ko‘rinishdagi rasmini yuboring.\nAgar hozir rasm yo'q bo'lsa, <code>/skip</code> deb yozib yuborishingiz mumkin.";
-  } else if (session.step === "await_car_photo") {
-    docType = "car_photo";
-    nextStep = "await_summary_confirm1";
-    // после этого сразу перейдём к сводке
-  }
+  const chatId = msg.chat.id;
+
+  const meta = {
+    tg_id: chatId,
+    phone: session.phone,
+    carModel: session.carModelLabel,
+    carModelCode: session.carModelCode,
+    carColor: session.carColor,
+    docType,
+  };
 
   await sendTelegramMessage(
     chatId,
-    "Hujjat qabul qilindi, uni avtomatik tekshiryapmiz..."
+    "✅ Rasm qabul qilindi. Hujjat ma'lumotlari aniqlanmoqda, bir oz kuting..."
   );
 
-  const result = await forwardDocToUploadDoc(update, {
-    doc_type: docType,
-    chat_id: chatId,
-    step: session.step,
-  });
+  const resp = await forwardDocToUploadDoc(update, meta);
 
-  if (!result.ok) {
-    console.error("forwardDocToUploadDoc failed:", result);
+  if (!resp || resp.ok === false) {
     await sendTelegramMessage(
       chatId,
-      "Hujjatni avtomatik tekshirishda xatolik yuz berdi. Operatorga xabar berdik, qo‘lda tekshiruv o‘tkaziladi."
+      "❗️ Hujjatni o‘qishda xatolik yuz berdi. Bir ozdan so‘ng qayta urinib ko‘ring."
     );
-  } else {
-    // Пытаемся забрать распознанные поля (если upload-doc их возвращает)
-    const d = result.data || {};
-    const extracted =
-      d.extracted ||
-      d.fields ||
-      d.recognizedData ||
-      d.recognized ||
-      null;
-
-    if (extracted && typeof extracted === "object") {
-      session.data.fields = {
-        ...(session.data.fields || {}),
-        ...extracted,
-      };
-    }
+    return;
   }
 
-  // Переходим к следующему шагу
-  session.step = nextStep || "await_summary_confirm1";
-  session.lastUpdated = Date.now();
-
-  if (session.step === "await_summary_confirm1") {
-    const summary = buildDriverSummary(session);
-    const kb = {
-      inline_keyboard: [
-        [
-          { text: "✅ Ha, hammasi to'g'ri", callback_data: "summary1_yes" },
-          { text: "✏️ O'zgartirish kerak", callback_data: "summary1_no" },
-        ],
-      ],
-    };
+  if (docType === "vu_front") {
+    await askDocTechFront(chatId, session);
+  } else if (docType === "tech_front") {
+    await askDocTechBack(chatId, session);
+  } else if (docType === "tech_back") {
+    session.step = "done";
     await sendTelegramMessage(
       chatId,
-      summary + "\n\nMa'lumotlar to'g'rimi?",
-      kb
+      "✅ Barcha hujjatlar qabul qilindi.\n" +
+        "Operatorlar ma'lumotlaringizni tekshirib, tez orada bog‘lanishadi. Rahmat!"
     );
-  } else if (nextMessage) {
-    await sendTelegramMessage(chatId, nextMessage);
+    resetSession(chatId);
   }
-
-  return true;
 }
 
-// ===== ОСНОВНОЙ ХЭНДЛЕР NETLIFY ======
-
+// ====== handler ======
 exports.handler = async (event) => {
-  console.log("=== telegram-asr-bot (registration) invoked ===");
-  console.log("Method:", event.httpMethod);
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 200,
+      body: "OK",
+    };
+  }
 
+  let update;
   try {
-    if (event.httpMethod === "OPTIONS") {
-      return { statusCode: 200 };
-    }
+    update = JSON.parse(event.body || "{}");
+  } catch (e) {
+    console.error("telegram-asr-bot: invalid JSON", e);
+    return { statusCode: 200, body: "OK" };
+  }
 
-    if (event.httpMethod !== "POST") {
-      return { statusCode: 405, body: "Method not allowed" };
-    }
+  // ========== CALLBACK_QUERY ==========
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const data = cq.data || "";
+    const chatId = cq.message?.chat?.id;
+    const messageId = cq.message?.message_id;
 
-    if (WEBHOOK_SECRET) {
-      const incoming =
-        event.headers["x-telegram-bot-api-secret-token"] ||
-        event.headers["X-Telegram-Bot-Api-Secret-Token"];
-      if (!incoming) {
-        console.warn("Telegram so'rovi secret_token headersiz keldi");
-      } else if (incoming !== WEBHOOK_SECRET) {
-        console.warn("Bad webhook secret:", incoming);
-        return { statusCode: 403, body: "Forbidden" };
-      }
-    }
-
-    let update;
-    try {
-      update = JSON.parse(event.body || "{}");
-    } catch (e) {
-      console.error("Bad JSON from Telegram:", e);
-      return { statusCode: 400, body: "Bad request" };
-    }
-
-    console.log("Update:", JSON.stringify(update));
-
-    // ===== CALLBACK КНОПКИ =====
-    if (update.callback_query) {
-      return await handleCallback(update);
-    }
-
-    // ===== СООБЩЕНИЯ =====
-    const msg = update.message || update.edited_message;
-    if (!msg) {
-      return { statusCode: 200, body: "No message" };
-    }
-
-    const chatId = msg.chat?.id;
-    const chatType = msg.chat?.type;
-    if (!chatId || chatType !== "private") {
-      return { statusCode: 200, body: "Ignored" };
-    }
-
-    const session = getSession(chatId);
-    session.lastUpdated = Date.now();
-
-    const text = msg.text || msg.caption || "";
-    const hasContact = !!msg.contact;
-
-    // Команда /start — приветствие и кнопка "Ro'yxatdan o'tish"
-    if (text === "/start") {
-      resetSession(chatId);
-      const inlineKeyboard = {
-        inline_keyboard: [
-          [{ text: "🚖 Ro'yxatdan o'tish", callback_data: "start_registration" }],
-        ],
-      };
-
-      await sendTelegramMessage(
-        chatId,
-        "Assalomu alaykum! 👋\nBu bot haydovchilarga <b>ASR TAXI</b> parkiga ulanishda yordam beradi.\n\nRo'yxatdan o'tishni boshlash uchun quyidagi tugmani bosing.",
-        inlineKeyboard
-      );
-
+    if (!chatId) {
+      await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
 
-    // Кнопка "Проверить статус регистрации"
-    if (
-      text === "🔄 Ro'yxatdan o'tish holatini tekshirish" ||
-      text === "/status"
-    ) {
-      await handleStatusCheck(chatId);
-      return { statusCode: 200, body: "Status checked" };
+    const session = getSession(chatId);
+
+    // переход страниц списка машин
+    if (data.startsWith("car_page:")) {
+      const page = parseInt(data.split(":")[1], 10) || 0;
+      const kb = buildCarModelsKeyboard(page);
+      await editReplyMarkup(chatId, messageId, kb);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
     }
 
-    // Обновление значения поля при редактировании
-    if (session.step === "await_field_new_value" && session.currentField && !hasContact) {
-      const fieldKey = session.currentField;
-      session.data.fields = session.data.fields || {};
-      session.data.fields[fieldKey] = text.trim();
-      session.currentField = null;
-      session.step = "editing_fields";
-      session.editIndex += 1;
-
-      await sendTelegramMessage(
-        chatId,
-        `${mapFieldKeyToLabel(fieldKey)} yangilandi ✅`
-      );
-      await goToNextEditableField(chatId, session);
-      return { statusCode: 200, body: "Field updated" };
-    }
-
-    // Водитель отправил контакт
-    if (hasContact) {
-      const contact = msg.contact;
-      const from = msg.from;
-
-      // Telefon boshqa Telegram akkauntga tegishli bo‘lsa — rad etamiz
-      if (contact.user_id && from && contact.user_id !== from.id) {
+    // выбор модели
+    if (data.startsWith("car_model:")) {
+      const code = data.split(":")[1];
+      const model = CAR_MODELS.find((m) => m.code === code);
+      if (model) {
+        session.carModelCode = model.code;
+        session.carModelLabel = model.label;
         await sendTelegramMessage(
           chatId,
-          "Iltimos, aynan o'zingizning Telegram akkauntingizga ulangan raqamni yuboring."
+          `🚗 Tanlangan model: *${model.label}*`,
+          { parse_mode: "Markdown" }
         );
-        return { statusCode: 200, body: "Foreign contact rejected" };
-      }
-
-      const phone = contact.phone_number;
-      const normalized = normalizePhone(phone);
-
-      session.data.phone = phone;
-      session.data.phoneNormalized = normalized;
-      session.step = "contact_received";
-
-      // Уберём клавиатуру с отправкой контакта
-      const removeKb = { remove_keyboard: true };
-
-      console.log(
-        "Got contact from user:",
-        from?.id,
-        "phone:",
-        phone,
-        "normalized:",
-        normalized
-      );
-
-      await sendTelegramMessage(
-        chatId,
-        `Rahmat! <b>${normalized}</b> raqam qabul qilindi.\nSizni Yandex.Taxi bazasida tekshiryapman...`,
-        removeKb
-      );
-
-      await sendLog(
-        `📲 Yangi haydovchi kontakti\n` +
-          `Chat ID: <code>${chatId}</code>\n` +
-          `Telefon (xom): <code>${phone}</code>\n` +
-          `Telefon (norm.): <b>${normalized}</b>`
-      );
-
-      const check = await checkDriverInFleet(normalized);
-
-      if (check.error === "fleet_error" || check.error === "fleet_exception") {
-        await sendTelegramMessage(
-          chatId,
-          "Hozircha Yandex.Taxi bazasini tekshirib bo'lmadi. Raqamingizni operatorga yuboraman, u siz bilan qo'lda bog'lanadi."
-        );
-
-        if (ADMIN_CHAT_IDS.length) {
-          for (const adminId of ADMIN_CHAT_IDS) {
-            await sendTelegramMessage(
-              adminId,
-              `❗️ Fleet API xatosi.\nChat ID: <code>${chatId}</code>\nTelefon: <b>${normalized}</b>`
-            );
-          }
-        }
-        return { statusCode: 200, body: "Fleet error" };
-      }
-
-      if (check.exists) {
-        // Уже есть в базе — документы и машину дополнительно не спрашиваем
-        await sendTelegramMessage(
-          chatId,
-          "Siz allaqachon Yandex.Taxi bazasida ro'yxatdan o'tgansiz. ✅\nOperator ma'lumotlarni tekshiradi va siz bilan ulanish bo'yicha bog'lanadi."
-        );
-
-        const p = check.profile || {};
-        const dp = p.driver_profile || {};
-        const car = p.car || {};
-
-        const shortInfo =
-          `F.I.Sh.: <b>${dp.last_name || ""} ${dp.first_name || ""}</b>\n` +
-          (car.brand || car.model || car.number
-            ? `Avto: <b>${car.brand || "—"} ${car.model || "—"}</b> (${car.number || "—"})\n`
-            : "") +
-          `Holat: <code>${p.current_status?.status || "unknown"}</code>`;
-
-        if (ADMIN_CHAT_IDS.length) {
-          for (const adminId of ADMIN_CHAT_IDS) {
-            await sendTelegramMessage(
-              adminId,
-              `✅ Haydovchi bazada topildi.\nChat ID: <code>${chatId}</code>\nTelefon: <b>${normalized}</b>\n${shortInfo}`
-            );
-          }
-        }
-
-        await sendLog(
-          `✅ Tekshiruv natijasi\n` +
-            `Chat ID: <code>${chatId}</code>\n` +
-            `Telefon: <b>${normalized}</b>\n` +
-            shortInfo
-        );
-
-        session.step = "completed_existing";
+        await askCarColor(chatId, session);
       } else {
-        // Yandex bazasida yo'q — спрашиваем модель машины (кнопками)
-        session.step = "await_car_model";
         await sendTelegramMessage(
           chatId,
-          "Siz hozircha Yandex.Taxi bazasida topilmadingiz.\nParkka ulanish uchun ma'lumotlarni to'ldirishni davom ettiramiz.\n\nAvval avtomobil modelini tanlang:",
-          buildCarModelKeyboard()
-        );
-
-        if (ADMIN_CHAT_IDS.length) {
-          for (const adminId of ADMIN_CHAT_IDS) {
-            await sendTelegramMessage(
-              adminId,
-              `🆕 Ro'yxatdan o'tish uchun yangi haydovchi.\nChat ID: <code>${chatId}</code>\nTelefon: <b>${normalized}</b>\nAvtomobil modeli va hujjatlar Telegram orqali qabul qilinadi.`
-            );
-          }
-        }
-
-        await sendLog(
-          `🆕 Haydovchi Fleet bazasidan topilmadi\n` +
-            `Chat ID: <code>${chatId}</code>\n` +
-            `Telefon: <b>${normalized}</b>\n` +
-            `Keyingi bosqich: avtomobil modelini tanlash`
+          "Bu model topilmadi. Qayta urinib ko‘ring."
         );
       }
-
-      return { statusCode: 200, body: "Contact processed" };
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
     }
 
-    // Обработка документов (фото) по текущему шагу
-    const docHandled = await handleDocumentStep(update, msg, chatId, session);
-    if (docHandled) {
-      return { statusCode: 200, body: "Document handled" };
-    }
-
-    // Пропуск фото машины (последний шаг документов)
-    if (text === "/skip" && session.step === "await_car_photo") {
-      session.step = "await_summary_confirm1";
-      session.lastUpdated = Date.now();
-      const summary = buildDriverSummary(session);
-      const kb = {
-        inline_keyboard: [
-          [
-            { text: "✅ Ha, hammasi to'g'ri", callback_data: "summary1_yes" },
-            { text: "✏️ O'zgartirish kerak", callback_data: "summary1_no" },
-          ],
-        ],
-      };
+    // старт регистрации
+    if (data === "start_registration") {
+      resetSession(chatId);
+      const session2 = getSession(chatId);
       await sendTelegramMessage(
         chatId,
-        summary + "\n\nMa'lumotlar to'g'rimi?",
-        kb
+        "Ajoyib, ro‘yxatdan o‘tishni boshlaymiz. Avval telefon raqamingizni tasdiqlaymiz."
       );
-      return { statusCode: 200, body: "Skip car photo" };
+      await askPhone(chatId, session2);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
     }
 
-    // Всё остальное
+    await answerCallbackQuery(cq.id);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // ========== MESSAGE ==========
+  const msg =
+    update.message ||
+    update.edited_message ||
+    update.channel_post ||
+    update.edited_channel_post;
+
+  if (!msg) {
+    return { statusCode: 200, body: "OK" };
+  }
+
+  const chatId = msg.chat.id;
+  const text = msg.text || "";
+  const session = getSession(chatId);
+
+  // /start
+  if (text === "/start") {
+    resetSession(chatId);
+    await handleStart(chatId);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // контакт (номер телефона)
+  if (msg.contact && session.step === "waiting_phone") {
+    const phone = msg.contact.phone_number;
+    session.phone = phone;
     await sendTelegramMessage(
       chatId,
-      "Hozircha bu bot faqat haydovchilarni ro'yxatdan o'tkazish va hujjatlarni qabul qilish uchun ishlaydi.\nRo'yxatdan o'tishni boshlash uchun /start buyrug'ini yuboring."
+      `📞 Telefon raqami qabul qilindi: *${phone}*`,
+      { parse_mode: "Markdown" }
     );
-
+    await askCarModel(chatId, session);
     return { statusCode: 200, body: "OK" };
-  } catch (err) {
-    console.error("telegram-asr-bot handler error:", err);
-    await sendLog(
-      `🔥 telegram-asr-bot handler xatosi:\n<code>${String(err)}</code>`
-    );
-    return { statusCode: 500, body: "Internal error" };
   }
+
+  // если ждём телефон, а пришёл текст
+  if (session.step === "waiting_phone" && text) {
+    // очень простой парсер – просто сохраним
+    const phone = text.trim();
+    session.phone = phone;
+    await sendTelegramMessage(
+      chatId,
+      `📞 Telefon raqami qabul qilindi: *${phone}*`,
+      { parse_mode: "Markdown" }
+    );
+    await askCarModel(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // выбор цвета (ожидаем текст)
+  if (session.step === "waiting_car_color" && text) {
+    session.carColor = text.trim();
+    await sendTelegramMessage(
+      chatId,
+      `🎨 Rang qabul qilindi: *${session.carColor}*`,
+      { parse_mode: "Markdown" }
+    );
+    await askDocVuFront(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // фото документов
+  if (
+    (session.step === "waiting_vu_front" ||
+      session.step === "waiting_tech_front" ||
+      session.step === "waiting_tech_back") &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    if (session.step === "waiting_vu_front") {
+      await handleDocumentPhoto(update, session, "vu_front");
+    } else if (session.step === "waiting_tech_front") {
+      await handleDocumentPhoto(update, session, "tech_front");
+    } else if (session.step === "waiting_tech_back") {
+      await handleDocumentPhoto(update, session, "tech_back");
+    }
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // если пользователь пишет что-то, а мы не в активном шаге
+  if (session.step === "idle") {
+    await handleStart(chatId);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // дефолт: подскажем, что ждем
+  if (session.step === "waiting_vu_front") {
+    await sendTelegramMessage(
+      chatId,
+      "Hozir haydovchilik guvohnomangizning *old tomonini rasmga olib yuborishingiz* kerak.",
+      { parse_mode: "Markdown" }
+    );
+  } else if (session.step === "waiting_tech_front") {
+    await sendTelegramMessage(
+      chatId,
+      "Hozir *texpasport old tomonini* yuboring."
+    );
+  } else if (session.step === "waiting_tech_back") {
+    await sendTelegramMessage(
+      chatId,
+      "Hozir *texpasport orqa tomonini* yuboring."
+    );
+  }
+
+  return { statusCode: 200, body: "OK" };
 };

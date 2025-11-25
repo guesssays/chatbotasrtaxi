@@ -11,6 +11,18 @@ const UPLOAD_DOC_URL =
     `${process.env.URL.replace(/\/$/, "")}/.netlify/functions/upload-doc`) ||
   null;
 
+// операторы / логи — такие же переменные, как в upload-doc.js
+const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
+
+// Яндекс API для статуса (заглушка — подставь свои значения)
+const YANDEX_API_URL = process.env.YANDEX_API_URL || null;
+const YANDEX_API_KEY = process.env.YANDEX_API_KEY || null;
+
 if (!TELEGRAM_TOKEN) {
   console.error("TG_BOT_TOKEN is not set (telegram-asr-bot.js)");
 }
@@ -18,17 +30,34 @@ if (!UPLOAD_DOC_URL) {
   console.error("UPLOAD_DOC_URL is not set and URL is not available");
 }
 
-// ====== простая сессия в памяти (для нетлифи это best-effort) ======
+// ====== простая сессия в памяти (best-effort для Netlify) ======
 const sessions = new Map();
 
 function getSession(chatId) {
   if (!sessions.has(chatId)) {
     sessions.set(chatId, {
       step: "idle",
+
       phone: null,
       carModelCode: null,
       carModelLabel: null,
       carColor: null,
+
+      // AI-распознанные документы
+      docs: {
+        vu_front: null,
+        tech_front: null,
+        tech_back: null,
+      },
+
+      // агрегированные данные для редактирования
+      data: {},
+
+      // подтверждения / редактирование
+      confirmStage: "none", // none | first | second
+      editIndex: 0,
+      editAwaitingValue: false,
+      currentFieldKey: null,
     });
   }
   return sessions.get(chatId);
@@ -38,14 +67,13 @@ function resetSession(chatId) {
   sessions.delete(chatId);
 }
 
-// ===== СПИСОК МОДЕЛЕЙ И РАНГ ЦВЕТОВ (КНОПКИ) =====
+// ===== СПИСОК МОДЕЛЕЙ И ЦВЕТОВ =====
 
-// Генерация "кода" модели для callback_data (только латиница/цифры, до 60 символов)
 function makeCarCode(label) {
   return label
     .normalize("NFKD")
-    .replace(/[^\w\s]/g, " ")      // всё, кроме букв/цифр/пробелов -> пробел
-    .replace(/[\u0400-\u04FF]+/g, "") // выбросить кириллицу из кода
+    .replace(/[^\w\s]/g, " ")
+    .replace(/[\u0400-\u04FF]+/g, "")
     .toUpperCase()
     .replace(/\s+/g, "_")
     .replace(/_+/g, "_")
@@ -53,8 +81,6 @@ function makeCarCode(label) {
     .slice(0, 60);
 }
 
-// Дополнительно руками фиксируем самые популярные локальные варианты,
-// чтобы точно не потерять Nexia 3 и т.п.
 const EXTRA_POPULAR_MODELS = [
   "Chevrolet Cobalt",
   "Chevrolet Gentra",
@@ -1375,27 +1401,19 @@ Zeekr 001	от 2021
 Zeekr 007	от 2023
 Zeekr 009	от 2022
 `.trim();
-
-// Разбираем список:
-// 1) убираем пустые строки
-// 2) выбрасываем "не допускается"
-// 3) берём только название модели (то, что до таба/двойных пробелов)
 const parsedModelLabels = CAR_MODELS_SOURCE
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line && !/не допускается/i.test(line))
   .map((line) => {
-    // иногда разделитель — таб, иногда несколько пробелов
     const cleaned = line.replace(/\s{2,}/g, "\t");
     return cleaned.split("\t")[0].trim();
   });
 
-// Объединяем «популярные» и распарсенный список, убираем дубли
 const CAR_MODEL_LABELS = Array.from(
   new Set([...EXTRA_POPULAR_MODELS, ...parsedModelLabels])
 );
 
-// Финальный массив, который использует бот
 const CAR_MODELS = CAR_MODEL_LABELS.map((label) => ({
   code: makeCarCode(label),
   label,
@@ -1412,89 +1430,76 @@ const CAR_COLORS = [
   { code: "BROWN", label: "Jigarrang" },
   { code: "GREEN", label: "Yashil" },
   { code: "PINK", label: "Pushti" },
-  { code: "DARK_ORANGE", label: "To'q sariq" },
-  { code: "INDIGO", label: "Siyohrang" },
-  { code: "BEIGE", label: "Bej" },
   { code: "OTHER", label: "Boshqa rang" },
 ];
 
-const CAR_MODELS_PAGE_SIZE = 40; // по 40 моделей на страницу
+const CAR_MODELS_PAGE_SIZE = 40;
 
 function buildCarModelsKeyboard(page = 0) {
   const total = CAR_MODELS.length;
   const pageSize = CAR_MODELS_PAGE_SIZE;
-
   const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
   const safePage = Math.min(Math.max(0, page), maxPage);
 
   const start = safePage * pageSize;
   const end = Math.min(start + pageSize, total);
-
   const slice = CAR_MODELS.slice(start, end);
 
   const rows = [];
-
-  // по 2 модели в строке
   for (let i = 0; i < slice.length; i += 2) {
     const row = [];
-
     const m1 = slice[i];
-    row.push({
-      text: m1.label,
-      callback_data: `car_model:${m1.code}`,
-    });
-
+    row.push({ text: m1.label, callback_data: `car_model:${m1.code}` });
     if (i + 1 < slice.length) {
       const m2 = slice[i + 1];
-      row.push({
-        text: m2.label,
-        callback_data: `car_model:${m2.code}`,
-      });
+      row.push({ text: m2.label, callback_data: `car_model:${m2.code}` });
     }
-
     rows.push(row);
   }
 
-  // Навигация по страницам
   const navRow = [];
   if (safePage > 0) {
-    navRow.push({
-      text: "⬅️ Oldingi",
-      callback_data: `car_page:${safePage - 1}`,
-    });
+    navRow.push({ text: "⬅️ Oldingi", callback_data: `car_page:${safePage - 1}` });
   }
   if (safePage < maxPage) {
-    navRow.push({
-      text: "Keyingi ➡️",
-      callback_data: `car_page:${safePage + 1}`,
-    });
+    navRow.push({ text: "Keyingi ➡️", callback_data: `car_page:${safePage + 1}` });
   }
-  if (navRow.length) {
-    rows.push(navRow);
-  }
+  if (navRow.length) rows.push(navRow);
 
   return { inline_keyboard: rows };
 }
 
-// ====== Telegram helpers ======
+// ===== поля для редактирования =====
+
+const EDIT_FIELDS = [
+  { key: "lastName", label: "Фамилия" },
+  { key: "firstName", label: "Имя" },
+  { key: "middleName", label: "Отчество" },
+  { key: "licenseSeries", label: "Серия водительского удостоверения" },
+  { key: "licenseNumber", label: "Номер водительского удостоверения" },
+  { key: "techSeries", label: "Серия техпаспорта" },
+  { key: "techNumber", label: "Номер техпаспорта" },
+  { key: "plateNumber", label: "Госномер" },
+  { key: "carYear", label: "Год выпуска автомобиля" },
+  { key: "bodyNumber", label: "Номер кузова" },
+  { key: "pinfl", label: "ПИНФЛ" },
+  { key: "carModelLabel", label: "Модель авто" },
+  { key: "carColor", label: "Цвет авто" },
+];
+
+// ===== Telegram helpers =====
+
 async function sendTelegramMessage(chatId, text, extra = {}) {
   if (!TELEGRAM_API) {
     console.error("sendTelegramMessage: no TELEGRAM_API");
     return;
   }
-
   try {
     const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "Markdown",
-        ...extra,
-      }),
+      body: JSON.stringify({ chat_id: chatId, text, ...extra }),
     });
-
     if (!res.ok) {
       const txt = await res.text();
       console.error("sendMessage error:", res.status, txt);
@@ -1506,7 +1511,6 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
 
 async function editReplyMarkup(chatId, messageId, replyMarkup) {
   if (!TELEGRAM_API || !chatId || !messageId) return;
-
   try {
     const res = await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
       method: "POST",
@@ -1517,7 +1521,6 @@ async function editReplyMarkup(chatId, messageId, replyMarkup) {
         reply_markup: replyMarkup,
       }),
     });
-
     if (!res.ok) {
       const txt = await res.text();
       console.error("editMessageReplyMarkup error:", res.status, txt);
@@ -1544,13 +1547,172 @@ async function answerCallbackQuery(callbackQueryId) {
   }
 }
 
-// ====== вызов upload-doc ======
+// ===== отправка альбома документов операторам =====
+
+function humanDocTitle(docType) {
+  if (docType === "vu_front") return "Водительское удостоверение (лицевая)";
+  if (docType === "tech_front") return "Техпаспорт (лицевая)";
+  if (docType === "tech_back") return "Техпаспорт (оборотная)";
+  return "Документ";
+}
+
+function formatSummaryForOperators(docs, commonMeta = {}) {
+  const { phone, tg_id, carModel, carColor } = commonMeta;
+
+  let carYear = null;
+  for (const d of docs) {
+    if (d.docType === "tech_back" && d.result && d.result.parsed) {
+      const f = d.result.parsed.fields || {};
+      if (f.car_year) {
+        carYear = f.car_year;
+        break;
+      }
+    }
+  }
+
+  const headerParts = [];
+  if (phone) headerParts.push(`📞 Телефон: \`${phone}\``);
+  if (tg_id) headerParts.push(`💬 TG ID: \`${tg_id}\``);
+  if (carModel || carColor || carYear) {
+    const carLine =
+      `🚗 Авто: ${carModel || "—"} / ${carColor || "—"}${carYear ? ` / ${carYear} г.` : ""}`;
+    headerParts.push(carLine);
+  }
+
+  const lines = [];
+  lines.push("*Набор документов от водителя ASR TAXI*");
+  if (headerParts.length) lines.push(headerParts.join("\n"));
+
+  for (const doc of docs) {
+    const p = (doc.result && doc.result.parsed) || {};
+    const f = p.fields || {};
+    const warnings = p.warnings || [];
+
+    lines.push("");
+    lines.push(`*${humanDocTitle(doc.docType)}*`);
+
+    if (doc.docType === "vu_front") {
+      lines.push(`Серия ВУ: \`${f.license_series || ""}\``);
+      lines.push(`Номер ВУ: \`${f.license_number || ""}\``);
+      lines.push(`Полностью: \`${f.license_full || ""}\``);
+      lines.push(`ФИО: ${f.driver_name || "—"}`);
+      lines.push(`Дата рождения: \`${f.birth_date || ""}\``);
+      lines.push(`Категории: ${f.categories || "—"}`);
+      lines.push(`Дата выдачи: \`${f.issued_date || ""}\``);
+      lines.push(`Окончание срока: \`${f.expiry_date || ""}\``);
+      lines.push(`Кем выдано: ${f.issued_by || "—"}`);
+    } else if (doc.docType === "tech_front") {
+      lines.push(`Госномер: \`${f.plate_number || ""}\``);
+      lines.push(`Владелец: ${f.owner_name || "—"}`);
+      lines.push(`Адрес: ${f.owner_address || "—"}`);
+      lines.push(`Марка/модель (док): ${f.car_model_text || "—"}`);
+      lines.push(`Цвет (док): ${f.car_color_text || "—"}`);
+      lines.push(`ПИНФЛ владельца: \`${f.pinfl || ""}\``);
+    } else if (doc.docType === "tech_back") {
+      lines.push(`Серия техпаспорта: \`${f.tech_series || ""}\``);
+      lines.push(`Номер техпаспорта: \`${f.tech_number || ""}\``);
+      lines.push(`Полностью: \`${f.tech_full || ""}\``);
+      lines.push(`Год выпуска авто: \`${f.car_year || ""}\``);
+      lines.push(`Номер кузова/шасси: \`${f.body_number || ""}\``);
+      lines.push(`Объём двигателя: \`${f.engine_volume || ""}\``);
+      lines.push(`Тип топлива: ${f.fuel_type || "—"}`);
+      lines.push(`VIN: \`${f.vin || ""}\``);
+    } else {
+      lines.push("Данные не распознаны или тип документа неизвестен.");
+    }
+
+    if (Array.isArray(warnings) && warnings.length) {
+      lines.push("");
+      lines.push("⚠️ Предупреждения:");
+      for (const w of warnings) lines.push(`• ${w}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function sendDocsToOperators(chatId, session) {
+  if (!ADMIN_CHAT_IDS.length) {
+    console.log("sendDocsToOperators: no ADMIN_CHAT_IDS");
+    return;
+  }
+
+  const docs = [];
+  const order = ["vu_front", "tech_front", "tech_back"];
+  for (const t of order) {
+    const d = session.docs[t];
+    if (d && d.doc) docs.push(d.doc);
+  }
+
+  const commonMeta = {
+    phone: session.phone,
+    tg_id: chatId,
+    carModel: session.carModelLabel,
+    carColor: session.carColor,
+  };
+
+  const summaryText = formatSummaryForOperators(docs, commonMeta);
+
+  // альбом с фото: используем file_id (без перезалива)
+  const media = [];
+  for (const t of order) {
+    const d = session.docs[t];
+    if (!d || !d.fileId) continue;
+    const item = {
+      type: "photo",
+      media: d.fileId,
+    };
+    if (!media.length) {
+      item.caption = "Набор документов от водителя ASR TAXI";
+    }
+    media.push(item);
+  }
+
+  for (const adminId of ADMIN_CHAT_IDS) {
+    if (media.length >= 1) {
+      try {
+        const res = await fetch(`${TELEGRAM_API}/sendMediaGroup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: adminId,
+            media,
+          }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          console.error("sendMediaGroup error:", res.status, txt);
+        }
+      } catch (e) {
+        console.error("sendMediaGroup exception:", e);
+      }
+    }
+
+    await sendTelegramMessage(adminId, summaryText, {
+      parse_mode: "Markdown",
+      disable_web_page_preview: true,
+    });
+  }
+
+  if (LOG_CHAT_ID) {
+    try {
+      await sendTelegramMessage(
+        LOG_CHAT_ID,
+        "Новая заявка водителя отправлена операторам.",
+      );
+    } catch (e) {
+      console.error("sendDocsToOperators log error:", e);
+    }
+  }
+}
+
+// ===== upload-doc =====
+
 async function forwardDocToUploadDoc(telegramUpdate, meta) {
   if (!UPLOAD_DOC_URL) {
     console.error("forwardDocToUploadDoc: no UPLOAD_DOC_URL");
     return null;
   }
-
   try {
     const res = await fetch(UPLOAD_DOC_URL, {
       method: "POST",
@@ -1559,6 +1721,7 @@ async function forwardDocToUploadDoc(telegramUpdate, meta) {
         source: "telegram_bot",
         telegram_update: telegramUpdate,
         meta: meta || {},
+        previewOnly: true, // ВАЖНО: сейчас только распознаём, операторам не шлём
       }),
     });
 
@@ -1567,7 +1730,7 @@ async function forwardDocToUploadDoc(telegramUpdate, meta) {
     try {
       json = JSON.parse(text);
     } catch {
-      // ignore parse error
+      // ignore
     }
 
     if (!res.ok) {
@@ -1582,12 +1745,128 @@ async function forwardDocToUploadDoc(telegramUpdate, meta) {
   }
 }
 
-// ====== логика шагов регистрации ======
+// ===== helpers для session.data =====
+
+function updateSessionDataFromFields(session, docType, f) {
+  const d = session.data || (session.data = {});
+
+  if (docType === "vu_front") {
+    if (f.driver_name && !d.driverName) d.driverName = f.driver_name;
+    // попытка разбить ФИО
+    if (f.driver_name) {
+      const parts = String(f.driver_name).trim().split(/\s+/);
+      if (!d.lastName && parts[0]) d.lastName = parts[0];
+      if (!d.firstName && parts[1]) d.firstName = parts[1];
+      if (!d.middleName && parts[2]) d.middleName = parts.slice(2).join(" ");
+    }
+
+    if (f.license_series && !d.licenseSeries) d.licenseSeries = f.license_series;
+    if (f.license_number && !d.licenseNumber) d.licenseNumber = f.license_number;
+    if (f.license_full && !d.licenseFull) d.licenseFull = f.license_full;
+
+    if (f.birth_date && !d.birthDate) d.birthDate = f.birth_date;
+    if (f.issued_date && !d.issuedDate) d.issuedDate = f.issued_date;
+    if (f.expiry_date && !d.expiryDate) d.expiryDate = f.expiry_date;
+  } else if (docType === "tech_front") {
+    if (f.plate_number && !d.plateNumber) d.plateNumber = f.plate_number;
+    if (f.owner_name && !d.ownerName) d.ownerName = f.owner_name;
+    if (f.owner_address && !d.ownerAddress) d.ownerAddress = f.owner_address;
+    if (f.pinfl && !d.pinfl) d.pinfl = f.pinfl;
+  } else if (docType === "tech_back") {
+    if (f.tech_series && !d.techSeries) d.techSeries = f.tech_series;
+    if (f.tech_number && !d.techNumber) d.techNumber = f.tech_number;
+    if (f.tech_full && !d.techFull) d.techFull = f.tech_full;
+
+    if (f.car_year && !d.carYear) d.carYear = f.car_year;
+    if (f.body_number && !d.bodyNumber) d.bodyNumber = f.body_number;
+    if (f.engine_volume && !d.engineVolume) d.engineVolume = f.engine_volume;
+    if (f.fuel_type && !d.fuelType) d.fuelType = f.fuel_type;
+    if (f.vin && !d.vin) d.vin = f.vin;
+  }
+
+  // дополнительно из сессии
+  if (session.carModelLabel) d.carModelLabel = session.carModelLabel;
+  if (session.carColor) d.carColor = session.carColor;
+  if (session.phone) d.phone = session.phone;
+}
+
+function recomputeDerived(session) {
+  const d = session.data || (session.data = {});
+  const fioParts = [d.lastName, d.firstName, d.middleName].filter(Boolean);
+  if (fioParts.length) d.driverName = fioParts.join(" ");
+
+  if (d.licenseSeries || d.licenseNumber) {
+    d.licenseFull = `${d.licenseSeries || ""} ${d.licenseNumber || ""}`.trim();
+  }
+  if (d.techSeries || d.techNumber) {
+    d.techFull = `${d.techSeries || ""} ${d.techNumber || ""}`.trim();
+  }
+}
+
+function applySessionDataToDocs(session) {
+  const d = session.data || {};
+  const map = session.docs || {};
+
+  if (map.vu_front && map.vu_front.doc && map.vu_front.doc.result?.parsed) {
+    const f = map.vu_front.doc.result.parsed.fields || {};
+    if (d.licenseSeries) f.license_series = d.licenseSeries;
+    if (d.licenseNumber) f.license_number = d.licenseNumber;
+    if (d.licenseFull) f.license_full = d.licenseFull;
+    if (d.driverName) f.driver_name = d.driverName;
+    if (d.birthDate) f.birth_date = d.birthDate;
+    if (d.issuedDate) f.issued_date = d.issuedDate;
+    if (d.expiryDate) f.expiry_date = d.expiryDate;
+  }
+
+  if (map.tech_front && map.tech_front.doc && map.tech_front.doc.result?.parsed) {
+    const f = map.tech_front.doc.result.parsed.fields || {};
+    if (d.plateNumber) f.plate_number = d.plateNumber;
+    if (d.ownerName) f.owner_name = d.ownerName;
+    if (d.ownerAddress) f.owner_address = d.ownerAddress;
+    if (d.pinfl) f.pinfl = d.pinfl;
+  }
+
+  if (map.tech_back && map.tech_back.doc && map.tech_back.doc.result?.parsed) {
+    const f = map.tech_back.doc.result.parsed.fields || {};
+    if (d.techSeries) f.tech_series = d.techSeries;
+    if (d.techNumber) f.tech_number = d.techNumber;
+    if (d.techFull) f.tech_full = d.techFull;
+    if (d.carYear) f.car_year = d.carYear;
+    if (d.bodyNumber) f.body_number = d.bodyNumber;
+    if (d.engineVolume) f.engine_volume = d.engineVolume;
+    if (d.fuelType) f.fuel_type = d.fuelType;
+    if (d.vin) f.vin = d.vin;
+  }
+}
+
+// helpers для редактирования
+
+function getFieldValue(session, key) {
+  const d = session.data || {};
+  if (key === "carModelLabel") return session.carModelLabel || d.carModelLabel;
+  if (key === "carColor") return session.carColor || d.carColor;
+  return d[key];
+}
+
+function setFieldValue(session, key, value) {
+  const d = session.data || (session.data = {});
+  if (key === "carModelLabel") {
+    session.carModelLabel = value;
+    d.carModelLabel = value;
+  } else if (key === "carColor") {
+    session.carColor = value;
+    d.carColor = value;
+  } else {
+    d[key] = value;
+  }
+}
+
+// ===== логика шагов регистрации =====
 
 async function handleStart(chatId) {
   const text =
     "👋 Assalomu alaykum!\n\n" +
-    "Bu bot sizga parkka ulanish uchun kerak bo‘lgan hujjatlarni to‘plashda yordam beradi.\n\n" +
+    "Bu bot sizga ASR TAXI parkiga ulanish uchun kerak bo‘lgan hujjatlarni to‘plashda yordam beradi.\n\n" +
     "Boshlash uchun tugmani bosing:";
   await sendTelegramMessage(chatId, text, {
     reply_markup: {
@@ -1606,8 +1885,8 @@ async function handleStart(chatId) {
 async function askPhone(chatId, session) {
   session.step = "waiting_phone";
   const text =
-    "📱 Telefon raqamingizni yuboring.\n" +
-    "Eng oson yo‘l — *kontakt* sifatida yuboring (\"Share Contact\" / \"Поделиться контактом\").";
+    "📱 Telefon raqamingizni yuboring.\n\n" +
+    "Eng oson yo‘l — *kontakt* sifatida yuborish (\"Share Contact\" / \"Поделиться контактом\").";
   await sendTelegramMessage(chatId, text, {
     reply_markup: {
       keyboard: [
@@ -1621,6 +1900,7 @@ async function askPhone(chatId, session) {
       resize_keyboard: true,
       one_time_keyboard: true,
     },
+    parse_mode: "Markdown",
   });
 }
 
@@ -1628,9 +1908,10 @@ async function askCarModel(chatId, session) {
   session.step = "waiting_car_model";
   const text =
     "Endi avtomobil modelini tanlaymiz.\n\n" +
-    "Ro‘yxatdan kerakli modelni tanlang:";
+    "Ro‘yxatdan kerakli modelni tanlang. Agar darhol ko‘rinmasa, sahifalarni o‘zgartiring:";
   await sendTelegramMessage(chatId, text, {
     reply_markup: buildCarModelsKeyboard(0),
+    parse_mode: "Markdown",
   });
 }
 
@@ -1638,7 +1919,7 @@ async function askCarColor(chatId, session) {
   session.step = "waiting_car_color";
   const text =
     "🎨 Avtomobil rangini tanlang yoki yozing.\n\n" +
-    "Masalan: oq, qora, kulrang va hokazo.";
+    "Masalan: *Oq, Qora, Kulrang* va hokazo.";
   await sendTelegramMessage(chatId, text, {
     reply_markup: {
       keyboard: [
@@ -1649,32 +1930,236 @@ async function askCarColor(chatId, session) {
       resize_keyboard: true,
       one_time_keyboard: true,
     },
+    parse_mode: "Markdown",
   });
 }
 
 async function askDocVuFront(chatId, session) {
   session.step = "waiting_vu_front";
   const text =
-    "📄 Endi haydovchilik guvohnomangizning *old tomonini* (foto) yuboring.\n\n" +
-    "Rasm aniq, matn o‘qiladigan bo‘lsin.";
+    "📄 Endi haydovchilik guvohnomangizning *old tomonini* rasmga olib yuboring.\n\n" +
+    "Foto aniq, yorug‘lik yaxshi, matn o‘qiladigan bo‘lsin. Blichlar va xiralik bo‘lmasin.";
   await sendTelegramMessage(chatId, text, {
     reply_markup: { remove_keyboard: true },
+    parse_mode: "Markdown",
   });
 }
 
 async function askDocTechFront(chatId, session) {
   session.step = "waiting_tech_front";
   const text =
-    "📄 Endi transport vositasining *texpasporti old tomonini* yuboring.";
-  await sendTelegramMessage(chatId, text);
+    "📄 Endi transport vositasining *texpasporti old tomonini* yuboring.\n\n" +
+    "Foto aniq va to‘liq hujjat ko‘rinadigan bo‘lsin.";
+  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
 }
 
 async function askDocTechBack(chatId, session) {
   session.step = "waiting_tech_back";
   const text =
-    "📄 Va nihoyat, texpasportning *orqa tomonini* yuboring (u yerdan avtomobil yili va VIN olinadi).";
-  await sendTelegramMessage(chatId, text);
+    "📄 Va nihoyat, texpasportning *orqa tomonini* yuboring.\n\n" +
+    "Bu yerdan avtomobil yili, kuzov raqami va boshqa ma'lumotlar olinadi.";
+  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
 }
+
+// ===== подтверждение и редактирование =====
+
+async function startFirstConfirmation(chatId, session) {
+  session.confirmStage = "first";
+  session.step = "confirm_summary_1";
+
+  recomputeDerived(session);
+  applySessionDataToDocs(session);
+
+  const docs = [];
+  const order = ["vu_front", "tech_front", "tech_back"];
+  for (const t of order) {
+    const d = session.docs[t];
+    if (d && d.doc) docs.push(d.doc);
+  }
+
+  const summary = formatSummaryForOperators(docs, {
+    phone: session.phone,
+    tg_id: chatId,
+    carModel: session.carModelLabel,
+    carColor: session.carColor,
+  });
+
+  const text =
+    summary +
+    "\n\n" +
+    "Проверьте, пожалуйста, все данные.\n" +
+    "Если всё верно — нажмите *«Да, всё верно»*.\n" +
+    "Если нужно что-то поправить — нажмите *«Изменить»*.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Да, всё верно", callback_data: "confirm1_yes" },
+          { text: "✏️ Изменить", callback_data: "confirm1_edit" },
+        ],
+      ],
+    },
+  });
+}
+
+async function startSecondConfirmation(chatId, session) {
+  session.confirmStage = "second";
+  session.step = "confirm_summary_2";
+
+  const text =
+    "‼️ Пожалуйста, ещё раз *внимательно и досконально* проверьте все данные.\n\n" +
+    "Подтверждая, вы подтверждаете, что указали всё корректно.\n\n" +
+    "Если уверены — нажмите *«Да, я подтверждаю»*.\n" +
+    "Если хотите что-то изменить — нажмите *«Изменить»*.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "✅ Да, я подтверждаю",
+            callback_data: "confirm2_yes",
+          },
+          {
+            text: "✏️ Изменить",
+            callback_data: "confirm2_edit",
+          },
+        ],
+      ],
+    },
+  });
+}
+
+async function askNextEditField(chatId, session) {
+  const idx = session.editIndex || 0;
+  if (idx >= EDIT_FIELDS.length) {
+    // всё отредактировали — снова показываем полный список
+    await startFirstConfirmation(chatId, session);
+    return;
+  }
+
+  const field = EDIT_FIELDS[idx];
+  session.currentFieldKey = field.key;
+  session.editAwaitingValue = false;
+  session.step = "editing_field";
+
+  const currentValue = getFieldValue(session, field.key) || "не указано";
+
+  const text =
+    `Поле: *${field.label}*\n` +
+    `Текущее значение: \`${currentValue}\`.\n\n` +
+    "Если оставить как есть — нажмите *«Подтвердить»*.\n" +
+    "Если хотите изменить — нажмите *«Изменить»*.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Подтвердить", callback_data: "edit_field_confirm" },
+          { text: "✏️ Изменить", callback_data: "edit_field_change" },
+        ],
+      ],
+    },
+  });
+}
+
+// ====== Яндекс статус (заглушка) ======
+
+async function checkYandexStatus(phone) {
+  if (!YANDEX_API_URL || !YANDEX_API_KEY) {
+    return {
+      ok: false,
+      status: "unknown",
+      message: "Интеграция с Яндексом не настроена.",
+    };
+  }
+
+  try {
+    const res = await fetch(YANDEX_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${YANDEX_API_KEY}`,
+      },
+      body: JSON.stringify({ phone }),
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: "error",
+        message: `Ошибка Яндекс API: ${res.status}`,
+        raw: json,
+      };
+    }
+
+    // тут нужно адаптировать под реальный ответ Яндекс API
+    const registered = Boolean(json && (json.registered || json.status === "active"));
+
+    return {
+      ok: true,
+      status: registered ? "registered" : "pending",
+      raw: json,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: "error",
+      message: String(e),
+    };
+  }
+}
+
+async function handleStatusCheck(chatId, session) {
+  const phone = session.phone || (session.data && session.data.phone);
+  if (!phone) {
+    await sendTelegramMessage(
+      chatId,
+      "Телефон не найден в заявке. Пожалуйста, пройдите регистрацию ещё раз."
+    );
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    "⏳ Проверяю статус регистрации в Яндекс..."
+  );
+
+  const res = await checkYandexStatus(phone);
+
+  if (!res.ok) {
+    await sendTelegramMessage(
+      chatId,
+      `Не удалось получить статус регистрации.\n${res.message || ""}`
+    );
+    return;
+  }
+
+  if (res.status === "registered") {
+    await sendTelegramMessage(
+      chatId,
+      "✅ Ваша регистрация в Яндекс такси *подтверждена*.\n" +
+        "Можете приступать к работе. Удачи на линиях! 🚕",
+      { parse_mode: "Markdown" }
+    );
+  } else {
+    await sendTelegramMessage(
+      chatId,
+      "Пока что ваша регистрация ещё *не завершена*.\n" +
+        "Попробуйте проверить статус немного позже.",
+      { parse_mode: "Markdown" }
+    );
+  }
+}
+
+// ====== обработка фото документов ======
 
 async function handleDocumentPhoto(update, session, docType) {
   const msg =
@@ -1684,6 +2169,18 @@ async function handleDocumentPhoto(update, session, docType) {
     update.edited_channel_post;
 
   const chatId = msg.chat.id;
+
+  // вытащим file_id для альбома
+  let fileId = null;
+  if (Array.isArray(msg.photo) && msg.photo.length) {
+    fileId = msg.photo[msg.photo.length - 1].file_id;
+  } else if (
+    msg.document &&
+    msg.document.mime_type &&
+    msg.document.mime_type.startsWith("image/")
+  ) {
+    fileId = msg.document.file_id;
+  }
 
   const meta = {
     tg_id: chatId,
@@ -1696,7 +2193,7 @@ async function handleDocumentPhoto(update, session, docType) {
 
   await sendTelegramMessage(
     chatId,
-    "✅ Rasm qabul qilindi. Hujjat ma'lumotlari aniqlanmoqda, bir oz kuting..."
+    "✅ Фото получено. Распознаю данные, подождите пару секунд..."
   );
 
   const resp = await forwardDocToUploadDoc(update, meta);
@@ -1704,23 +2201,53 @@ async function handleDocumentPhoto(update, session, docType) {
   if (!resp || resp.ok === false) {
     await sendTelegramMessage(
       chatId,
-      "❗️ Hujjatni o‘qishda xatolik yuz berdi. Bir ozdan so‘ng qayta urinib ko‘ring."
+      "❗️ Ошибка при распознавании документа. Попробуйте ещё раз отправить фото."
     );
     return;
   }
+
+  let parsedDoc = null;
+  if (resp.mode === "single" && resp.doc) {
+    parsedDoc = resp.doc;
+  } else if (resp.doc) {
+    parsedDoc = resp.doc;
+  }
+
+  if (!parsedDoc || !parsedDoc.result || !parsedDoc.result.parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось корректно прочитать данные с документа. Попробуйте сделать фото лучше (без бликов и размытий) и отправить ещё раз."
+    );
+    return;
+  }
+
+  const fields = parsedDoc.result.parsed.fields || {};
+
+  // сохраняем в сессию
+  session.docs = session.docs || {};
+  session.docs[docType] = {
+    fileId,
+    doc: {
+      docType,
+      docTitle: humanDocTitle(docType),
+      result: parsedDoc.result,
+    },
+  };
+
+  updateSessionDataFromFields(session, docType, fields);
+  recomputeDerived(session);
 
   if (docType === "vu_front") {
     await askDocTechFront(chatId, session);
   } else if (docType === "tech_front") {
     await askDocTechBack(chatId, session);
   } else if (docType === "tech_back") {
-    session.step = "done";
+    // все три документа собраны — запускаем подтверждение
     await sendTelegramMessage(
       chatId,
-      "✅ Barcha hujjatlar qabul qilindi.\n" +
-        "Operatorlar ma'lumotlaringizni tekshirib, tez orada bog‘lanishadi. Rahmat!"
+      "✅ Все необходимые документы получены. Сейчас покажу вам всю собранную информацию для проверки."
     );
-    resetSession(chatId);
+    await startFirstConfirmation(chatId, session);
   }
 }
 
@@ -1741,7 +2268,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // ========== CALLBACK_QUERY ==========
+  // ===== CALLBACK_QUERY =====
   if (update.callback_query) {
     const cq = update.callback_query;
     const data = cq.data || "";
@@ -1755,7 +2282,7 @@ exports.handler = async (event) => {
 
     const session = getSession(chatId);
 
-    // переход страниц списка машин
+    // пагинация моделей
     if (data.startsWith("car_page:")) {
       const page = parseInt(data.split(":")[1], 10) || 0;
       const kb = buildCarModelsKeyboard(page);
@@ -1773,14 +2300,14 @@ exports.handler = async (event) => {
         session.carModelLabel = model.label;
         await sendTelegramMessage(
           chatId,
-          `🚗 Tanlangan model: *${model.label}*`,
+          `🚗 Вы выбрали модель: *${model.label}*`,
           { parse_mode: "Markdown" }
         );
         await askCarColor(chatId, session);
       } else {
         await sendTelegramMessage(
           chatId,
-          "Bu model topilmadi. Qayta urinib ko‘ring."
+          "Эта модель не найдена. Попробуйте выбрать заново."
         );
       }
       await answerCallbackQuery(cq.id);
@@ -1790,12 +2317,88 @@ exports.handler = async (event) => {
     // старт регистрации
     if (data === "start_registration") {
       resetSession(chatId);
-      const session2 = getSession(chatId);
+      const s = getSession(chatId);
       await sendTelegramMessage(
         chatId,
-        "Ajoyib, ro‘yxatdan o‘tishni boshlaymiz. Avval telefon raqamingizni tasdiqlaymiz."
+        "Отлично, начинаем регистрацию. Сначала подтвердим ваш номер телефона."
       );
-      await askPhone(chatId, session2);
+      await askPhone(chatId, s);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // первая сводка: "всё верно / изменить"
+    if (data === "confirm1_yes") {
+      session.confirmStage = "first";
+      await startSecondConfirmation(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+    if (data === "confirm1_edit") {
+      session.confirmStage = "first";
+      session.editIndex = 0;
+      await askNextEditField(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // вторая сводка
+    if (data === "confirm2_yes") {
+      session.confirmStage = "second";
+      session.step = "finished";
+
+      await sendDocsToOperators(chatId, session);
+
+      await sendTelegramMessage(
+        chatId,
+        "✅ Ваша заявка и документы отправлены операторам на проверку.\n\n" +
+          "Через несколько минут вы можете проверить статус регистрации.",
+        {
+          reply_markup: {
+            keyboard: [[{ text: "🔄 Проверить статус регистрации" }]],
+            resize_keyboard: true,
+          },
+        }
+      );
+
+      // здесь можно реализовать отдельный cron/worker,
+      // который через 5 минут отправит напоминание
+
+      return { statusCode: 200, body: "OK" };
+    }
+    if (data === "confirm2_edit") {
+      session.confirmStage = "second";
+      session.editIndex = 0;
+      await askNextEditField(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // редактирование полей
+    if (data === "edit_field_confirm") {
+      session.editAwaitingValue = false;
+      session.editIndex = (session.editIndex || 0) + 1;
+      await askNextEditField(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    if (data === "edit_field_change") {
+      session.editAwaitingValue = true;
+      const field = EDIT_FIELDS[session.editIndex] || null;
+      const label = field ? field.label : "поле";
+      await sendTelegramMessage(
+        chatId,
+        `Отправьте новое значение для поля *${label}* одним сообщением.`,
+        { parse_mode: "Markdown" }
+      );
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // статус
+    if (data === "check_status") {
+      await handleStatusCheck(chatId, session);
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
@@ -1804,7 +2407,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // ========== MESSAGE ==========
+  // ===== MESSAGE =====
   const msg =
     update.message ||
     update.edited_message ||
@@ -1826,13 +2429,23 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
+  // кнопка "Проверить статус регистрации"
+  if (
+    text === "🔄 Проверить статус регистрации" ||
+    text.toLowerCase().includes("проверить статус")
+  ) {
+    await handleStatusCheck(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
   // контакт (номер телефона)
   if (msg.contact && session.step === "waiting_phone") {
     const phone = msg.contact.phone_number;
     session.phone = phone;
+    session.data.phone = phone;
     await sendTelegramMessage(
       chatId,
-      `📞 Telefon raqami qabul qilindi: *${phone}*`,
+      `📞 Телефон принят: *${phone}*`,
       { parse_mode: "Markdown" }
     );
     await askCarModel(chatId, session);
@@ -1841,27 +2454,67 @@ exports.handler = async (event) => {
 
   // если ждём телефон, а пришёл текст
   if (session.step === "waiting_phone" && text) {
-    // очень простой парсер – просто сохраним
     const phone = text.trim();
     session.phone = phone;
+    session.data.phone = phone;
     await sendTelegramMessage(
       chatId,
-      `📞 Telefon raqami qabul qilindi: *${phone}*`,
+      `📞 Телефон принят: *${phone}*`,
       { parse_mode: "Markdown" }
     );
     await askCarModel(chatId, session);
     return { statusCode: 200, body: "OK" };
   }
 
-  // выбор цвета (ожидаем текст)
+  // выбор цвета (текст)
   if (session.step === "waiting_car_color" && text) {
     session.carColor = text.trim();
+    session.data.carColor = session.carColor;
     await sendTelegramMessage(
       chatId,
-      `🎨 Rang qabul qilindi: *${session.carColor}*`,
+      `🎨 Цвет принят: *${session.carColor}*`,
       { parse_mode: "Markdown" }
     );
     await askDocVuFront(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // ввод значения при редактировании поля
+  if (
+    session.step === "editing_field" &&
+    session.editAwaitingValue &&
+    text
+  ) {
+    const idx = session.editIndex || 0;
+    const field = EDIT_FIELDS[idx];
+    if (!field) {
+      session.editAwaitingValue = false;
+      await askNextEditField(chatId, session);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    const value = text.trim();
+    setFieldValue(session, field.key, value);
+    recomputeDerived(session);
+
+    const msgText =
+      `Новое значение для поля *${field.label}*: \`${value}\`.\n\n` +
+      "Теперь это значение верное?";
+
+    session.editAwaitingValue = false;
+
+    await sendTelegramMessage(chatId, msgText, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Подтвердить", callback_data: "edit_field_confirm" },
+            { text: "✏️ Изменить ещё раз", callback_data: "edit_field_change" },
+          ],
+        ],
+      },
+    });
+
     return { statusCode: 200, body: "OK" };
   }
 
@@ -1885,28 +2538,30 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // если пользователь пишет что-то, а мы не в активном шаге
+  // если сессия idle — повторно показываем старт
   if (session.step === "idle") {
     await handleStart(chatId);
     return { statusCode: 200, body: "OK" };
   }
 
-  // дефолт: подскажем, что ждем
+  // подсказки по шагам
   if (session.step === "waiting_vu_front") {
     await sendTelegramMessage(
       chatId,
-      "Hozir haydovchilik guvohnomangizning *old tomonini rasmga olib yuborishingiz* kerak.",
+      "Сейчас нужно отправить *фото лицевой стороны водительского удостоверения*.",
       { parse_mode: "Markdown" }
     );
   } else if (session.step === "waiting_tech_front") {
     await sendTelegramMessage(
       chatId,
-      "Hozir *texpasport old tomonini* yuboring."
+      "Сейчас нужно отправить *фото лицевой стороны техпаспорта*.",
+      { parse_mode: "Markdown" }
     );
   } else if (session.step === "waiting_tech_back") {
     await sendTelegramMessage(
       chatId,
-      "Hozir *texpasport orqa tomonini* yuboring."
+      "Сейчас нужно отправить *фото оборотной стороны техпаспорта*.",
+      { parse_mode: "Markdown" }
     );
   }
 

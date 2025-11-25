@@ -95,7 +95,6 @@ async function sendDocsBatchToTelegramTargets(docs) {
         return {
           type: "photo",
           media: `attach://${attachName}`,
-          // короткий caption на самой фотке
           caption: doc.caption || "",
         };
       });
@@ -149,6 +148,7 @@ async function sendTextToTelegramTargets(text) {
 /**
  * Вызов OpenAI Vision
  * imageDataUrl — строка вида data:image/jpeg;base64,....
+ * docType — "vu_front" | "tech_front" | "tech_back"
  */
 async function extractDocDataWithOpenAI(imageDataUrl, docType) {
   if (!OPENAI_API_KEY) return null;
@@ -176,17 +176,29 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 Переписывай текст 1-в-1 как на документе, не переводя язык и не меняя формат.
 `;
 
+    // ВУ — лицевая
     if (docType === "vu_front") {
       userInstruction = `
-На изображении ВОДИТЕЛЬСКОЕ УДОСТОВЕРЕНИЕ (лицевая сторона).
+На изображении ВОДИТЕЛЬСКОЕ УДОСТОВЕРЕНИЕ УЗБЕКИСТАНА (лицевая сторона).
 
-Нужно считать ТОЛЬКО следующие поля с документа:
-1. Фамилия
-2. Имя
-4a. дата выдачи
-4b. дата истечения срока
-4d. ПИНФЛ
-5. Серия В/У
+Ориентиры:
+- В левом нижнем углу фото водителя.
+- Справа от фото вертикальный список пунктов 1., 2., 3., 4a., 4b., 4c., 4d., 5. и т.д.
+- Под номером 5 находится СЕРИЯ И НОМЕР водительского удостоверения (например: "AF1881855").
+
+Нужно считать ТОЛЬКО следующие поля с документа (из основной тёмной/чёрной разметки, НЕ из серых служебных надписей и фоновых номеров):
+
+1. Фамилия — текст справа от "1."
+2. Имя — текст справа от "2."
+4a. дата выдачи — дата справа от "4a."
+4b. дата истечения срока — дата справа от "4b."
+4d. ПИНФЛ — длинный цифровой номер справа от "4d."
+5. Серия и номер В/У — буквы + цифры в строке справа от "5." (например "AF1881855").
+   НЕ путать с серыми блеклыми номерами на фоне или по краям документа.
+
+Игнорируй:
+- любые серые/бледные номера в нижней части документа;
+- watermark-номера, фоновую сетку, случайные цифры на полях.
 
 Верни JSON строго в формате:
 
@@ -201,20 +213,32 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 }
 
 Где:
-- "issue_date" — дата выдачи (4a) в том же формате, как напечатано (например "10.09.2022").
-- "valid_to" — дата истечения срока (4b), тоже без изменения формата.
-- Все значения пиши ровно так, как на документе: тот же алфавит, регистр и знаки.
+- "issue_date" — дата выдачи (4a) в том же формате, как напечатано (например "21.09.2020").
+- "valid_to" — дата истечения срока (4b), без изменения формата.
+- "pinfl" — номер из поля 4d.
+- "licence_series_number" — ТОЛЬКО строка из поля 5. (например "AF1881855"), без лишних пробелов и не из серых фонов.
+
+Все значения пиши ровно так, как на документе.
 Если какое-то поле не видно/обрезано — оставь пустую строку.
 НЕ добавляй никаких других полей.
 `;
-    } else if (docType === "tech_front") {
+    }
+    // Техпаспорт — лицевая
+    else if (docType === "tech_front") {
       userInstruction = `
-На изображении ТЕХПАСПОРТ/СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТО (ЛИЦЕВАЯ СТОРОНА).
+На изображении СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТОТРАНСПОРТНОГО СРЕДСТВА УЗБЕКИСТАНА (ЛИЦЕВАЯ СТОРОНА).
 
-Нужно считать ТОЛЬКО:
-1. Гос номер
-2. Марка
-3. Цвет
+Интересуют ТОЛЬКО строки с нумерацией 1, 2, 3 слева от текста:
+
+1. Гос номер (DAVLAT RAAQAM BELGISI / STATE NUMBER PLATE)
+2. Марка/модель (RUSUMI / MODELI)
+3. Цвет (RANGI / VEHICLE COLOUR)
+
+Нужно считать:
+
+- 1. Гос номер
+- 2. Марку / модель
+- 3. Цвет
 
 Верни JSON строго в формате:
 
@@ -226,21 +250,34 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 }
 
 Где:
-- "plate_number" — гос номер (поле 1), переписать 1-в-1 (буквы, цифры, пробелы).
-- "brand" — марка (из поля 2), если там "марка / модель", переписать весь текст поля.
-- "color" — цвет (поле 3) в точной записи.
+- "plate_number" — значение из строки 1, переписать 1-в-1 (буквы, цифры, пробелы).
+- "brand" — текст из строки 2 (марка/модель), если указаны и марка, и модель — переписать всё.
+- "color" — текст из строки 3.
 
-Ничего не придумывай. Если какие-то из этих полей не видны — оставь пустую строку.
+Игнорируй:
+- все колонки справа с перечислением областей;
+- водяные знаки и серые номера;
+- любую надпись, не относящуюся к строкам 1, 2, 3.
+
+Если поле не видно — оставь пустую строку.
 НЕ добавляй других полей.
 `;
-    } else if (docType === "tech_back") {
+    }
+    // Техпаспорт — оборотная
+    else if (docType === "tech_back") {
       userInstruction = `
-На изображении ТЕХПАСПОРТ/СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТО (ОБОРОТНАЯ СТОРОНА).
+На изображении СВИДЕТЕЛЬСТВО О РЕГИСТРАЦИИ АВТОТРАНСПОРТНОГО СРЕДСТВА УЗБЕКИСТАНА (ОБОРОТНАЯ СТОРОНА).
 
-Нужно считать ТОЛЬКО:
-9. Год выпуска
-11. Номер кузова
-Серия тех паспорта (буквенно-цифровое обозначение серии СТС/техпаспорта).
+Нужны ТОЛЬКО следующие данные:
+
+9. Год выпуска (ISHLAB CHIQARILGAN YILI / YEAR OF MANUFACTURE)
+11. Номер кузова/шасси (KUZOV / SHASSI RAAQAMI / VEHICLE IDENTIFICATION NUMBER)
+Серия техпаспорта — буквенно-цифровой код в верхней части документа (например "AAG5304177"), который относится к документу целиком, а не к кузову или двигателю.
+
+Ориентиры:
+- Поле 9 — обычно четырёхзначный год (например "2023") в строке с номером "9." слева.
+- Поле 11 — длинная строка с буквами/цифрами рядом с номером строки "11.".
+- Серия техпаспорта — отдельная строка/надпись с буквами и цифрами без "KG" и без пробелов, часто в правом верхнем углу, не помечена номером строки (НЕ поле 11).
 
 Верни JSON строго в формате:
 
@@ -252,12 +289,17 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 }
 
 Где:
-- "year" — значение из поля 9 (год выпуска), переписать как есть.
-- "body_number" — значение из поля 11 (номер кузова/шасси), переписать как есть.
-- "sts_series" — только СЕРИЯ техпаспорта (без номера, если они разделены), переписать как на документе.
+- "year" — значение из строки 9 (только год выпуска, например "2023").
+- "body_number" — значение из строки 11 (VIN/номер кузова).
+- "sts_series" — буквенно-цифровая серия самого техпаспорта (например "AAG5304177"), без пробелов и единиц измерения.
 
-Если какое-то поле не видно/нечитаемо — оставь пустую строку.
-НЕ добавляй других полей и не придумывай значения.
+Игнорируй:
+- массу, мощность, топливо, количество мест и другие поля;
+- любые серые/фоновые номера и водяные знаки;
+- числовые значения с "KG", "kW" и т.п.
+
+Если поле не видно или не читается — верни для него пустую строку.
+НЕ придумывай значения и не добавляй других полей.
 `;
     }
 
@@ -342,10 +384,10 @@ function buildOperatorSummary({
     "Имя",
     vu.first_name || "",
     "",
-    "Дата выдачи",
+    "Дата выдачи В/У",
     vu.issue_date || "",
     "",
-    "Дата истечения срока",
+    "Дата истечения В/У",
     vu.valid_to || "",
     "",
     "ПИНФЛ",
@@ -364,6 +406,9 @@ function buildOperatorSummary({
     "",
     "Цвет",
     tf.color || "",
+    "",
+    "Год выпуска авто",
+    tb.year || "",
     "",
     "Номер кузова",
     tb.body_number || "",
@@ -396,26 +441,26 @@ exports.handler = async (event) => {
     }
 
     const {
-      images,   // новый батч-формат: [{ image, docType, docTitle }, ...]
-      image,    // старый одиночный формат (на всякий случай)
+      images,   // батч-формат: [{ image, docType, docTitle }, ...]
+      image,    // старый одиночный формат
       tg_id,
       phone,
       docType,
       docTitle,
       carColor,
-      carModel, // НОВОЕ: модель автомобиля из формы
+      carModel,
+      previewOnly, // НОВОЕ: если true — не слать операторам, только вернуть JSON
     } = payload || {};
 
-    // ===== БАТЧ: сразу несколько документов =====
+    // ===== БАТЧ: несколько документов =====
     if (Array.isArray(images) && images.length) {
       console.log("upload-doc: batch mode, images.length =", images.length);
 
       const docsForSend = [];
 
-      // сюда собираем распознанные данные по типам документов
-      let vuData = null;         // В/У лицевая (vu_front)
-      let techFrontData = null;  // техпаспорт лицевая (tech_front)
-      let techBackData = null;   // техпаспорт оборот (tech_back)
+      let vuData = null;        // В/У лицевая (vu_front)
+      let techFrontData = null; // техпаспорт лицевая (tech_front)
+      let techBackData = null;  // техпаспорт оборот (tech_back)
 
       for (let i = 0; i < images.length; i++) {
         const item = images[i] || {};
@@ -451,8 +496,8 @@ exports.handler = async (event) => {
           console.error("Doc OCR global error (batch item):", e);
         }
 
-        // короткий caption прямо на фото
-        const shortCaption = `Документ ${i + 1}/${images.length}`;
+        const shortCaption =
+          item.docTitle || `Документ ${i + 1}/${images.length}`;
 
         docsForSend.push({
           buffer,
@@ -460,25 +505,32 @@ exports.handler = async (event) => {
         });
       }
 
-      // отправляем сначала альбом
-      await sendDocsBatchToTelegramTargets(docsForSend);
+      // Если previewOnly НЕ указан или false — как раньше шлём операторам
+      if (!previewOnly) {
+        await sendDocsBatchToTelegramTargets(docsForSend);
 
-      // затем — один текст со сводкой ТОЛЬКО по нужным полям
-      const fullText = buildOperatorSummary({
-        phone,
-        tg_id,
-        carColor,
-        carModel,
-        vuData,
-        techFrontData,
-        techBackData,
-      });
+        const fullText = buildOperatorSummary({
+          phone,
+          tg_id,
+          carColor,
+          carModel,
+          vuData,
+          techFrontData,
+          techBackData,
+        });
 
-      await sendTextToTelegramTargets(fullText);
+        await sendTextToTelegramTargets(fullText);
+      }
 
       return {
         statusCode: 200,
-        body: JSON.stringify({ ok: true, mode: "batch" }),
+        body: JSON.stringify({
+          ok: true,
+          mode: "batch",
+          vuData,
+          techFrontData,
+          techBackData,
+        }),
       };
     }
 
@@ -501,7 +553,6 @@ exports.handler = async (event) => {
 
     const buffer = Buffer.from(base64, "base64");
 
-    // для одиночного документа тоже стараемся собрать поля в ту же структуру
     let vuData = null;
     let techFrontData = null;
     let techBackData = null;
@@ -534,12 +585,17 @@ exports.handler = async (event) => {
       techBackData,
     });
 
-    // здесь кладём сводку прямо в caption к фото
     await sendPhotoToTelegramTargets(buffer, summaryText);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ ok: true, mode: "single" }),
+      body: JSON.stringify({
+        ok: true,
+        mode: "single",
+        vuData,
+        techFrontData,
+        techBackData,
+      }),
     };
   } catch (err) {
     console.error("upload-doc handler error:", err);

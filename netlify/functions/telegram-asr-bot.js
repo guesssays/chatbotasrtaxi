@@ -19,9 +19,11 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
-// Яндекс API для статуса (заглушка — подставь свои значения)
-const YANDEX_API_URL = process.env.YANDEX_API_URL || null;
-const YANDEX_API_KEY = process.env.YANDEX_API_KEY || null;
+// ===== Yandex Fleet API (Park) для проверки статуса =====
+const FLEET_API_URL = process.env.FLEET_API_URL || null;
+const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
+const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || null;
+const FLEET_PARK_ID = process.env.FLEET_PARK_ID || null;
 
 if (!TELEGRAM_TOKEN) {
   console.error("TG_BOT_TOKEN is not set (telegram-asr-bot.js)");
@@ -32,6 +34,42 @@ if (!UPLOAD_DOC_URL) {
 
 // ====== простая сессия в памяти (best-effort для Netlify) ======
 const sessions = new Map();
+
+// напоминания о проверке статуса (в памяти)
+const reminderTimers = new Map();
+
+function cancelStatusReminders(chatId) {
+  const timers = reminderTimers.get(chatId);
+  if (timers && timers.length) {
+    for (const t of timers) clearTimeout(t);
+  }
+  reminderTimers.delete(chatId);
+}
+
+function scheduleStatusReminders(chatId) {
+  // очищаем старые таймеры для этого чата
+  cancelStatusReminders(chatId);
+
+  const delaysMinutes = [5, 10, 15]; // можно менять (5/10/15 минут)
+  const text =
+    "ℹ️ Eslatma: agar hali ro‘yxatdan o‘tish holatini tekshirmagan bo‘lsangiz, " +
+    "\"🔄 Ro‘yxatdan o‘tish holatini tekshirish\" tugmasini bosib ko‘rishingiz mumkin.";
+
+  const timers = delaysMinutes.map((min) =>
+    setTimeout(() => {
+      sendTelegramMessage(chatId, text, {
+        reply_markup: {
+          keyboard: [[{ text: "🔄 Ro‘yxatdan o‘tish holatini tekshirish" }]],
+          resize_keyboard: true,
+        },
+      }).catch((e) =>
+        console.error("status reminder send error for chat", chatId, e)
+      );
+    }, min * 60 * 1000)
+  );
+
+  reminderTimers.set(chatId, timers);
+}
 
 function getSession(chatId) {
   if (!sessions.has(chatId)) {
@@ -65,6 +103,7 @@ function getSession(chatId) {
 
 function resetSession(chatId) {
   sessions.delete(chatId);
+  cancelStatusReminders(chatId);
 }
 
 // ===== СПИСОК МОДЕЛЕЙ И ЦВЕТОВ =====
@@ -1578,43 +1617,25 @@ function humanDocTitle(docType) {
   return "Документ";
 }
 
+/**
+ * Аккуратная сводка для ОПЕРАТОРОВ (на русском).
+ * Нормальная нумерация, читабельные блоки, полные номера (серия + номер).
+ */
 function formatSummaryForOperators(docs, commonMeta = {}) {
   const { phone, tg_id, carModel, carColor } = commonMeta;
 
-  let carYear = null;
-  for (const d of docs) {
-    if (d.docType === "tech_back" && d.result && d.result.parsed) {
-      const f = d.result.parsed.fields || {};
-      if (f.car_year) {
-        carYear = f.car_year;
-        break;
-      }
-    }
-  }
-
-  const headerParts = [];
-  if (phone) headerParts.push(`📞 Телефон: \`${phone}\``);
-  if (tg_id) headerParts.push(`Chat ID: \`${tg_id}\``);
-  headerParts.push(`Цвет авто (из формы): ${carColor || "—"}`);
-  headerParts.push(`Модель авто (из формы): ${carModel || "—"}`);
-  if (carYear) headerParts.push(`Год машины (по документам): ${carYear}`);
-
-  const lines = [];
-  lines.push("📄 Набор документов от водителя ASR TAXI");
-  if (headerParts.length) lines.push(headerParts.join("\n"));
-
-  // разберём документы по типам
   const vu = docs.find((d) => d.docType === "vu_front");
   const tFront = docs.find((d) => d.docType === "tech_front");
   const tBack = docs.find((d) => d.docType === "tech_back");
 
   const fVu = (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
   const fTf =
-    (tFront && tFront.result && tFront.result.parsed && tFront.result.parsed.fields) || {};
+    (tFront && tFront.result && tFront.result.parsed && tFront.result.parsed.fields) ||
+    {};
   const fTb =
     (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
 
-  // ФИО разбиваем на части
+  // ФИО
   let fam = "";
   let name = "";
   let otch = "";
@@ -1625,6 +1646,42 @@ function formatSummaryForOperators(docs, commonMeta = {}) {
     otch = parts.slice(2).join(" ");
   }
 
+  // Полные номера ВУ и техпаспорта
+  const licenseSeries = (fVu.license_series || "").trim();
+  const licenseNumber = (fVu.license_number || "").trim();
+  const licenseFullFromField = (fVu.license_full || "").trim();
+  const licenseFullCombined = `${licenseSeries} ${licenseNumber}`.trim();
+  const licenseFull = licenseFullFromField || licenseFullCombined || "—";
+
+  const techSeries = (fTb.tech_series || "").trim();
+  const techNumber = (fTb.tech_number || "").trim();
+  const techFullFromField = (fTb.tech_full || "").trim();
+  const techFullCombined = `${techSeries} ${techNumber}`.trim();
+  const techFull = techFullFromField || techFullCombined || "—";
+
+  const carYear = fTb.car_year || null;
+
+  const headerParts = [];
+  if (phone) headerParts.push(`📞 Телефон: \`${phone}\``);
+  if (tg_id) headerParts.push(`💬 Chat ID: \`${tg_id}\``);
+
+  if (carModel || carColor || carYear) {
+    const carBits = [];
+    if (carModel) carBits.push(`модель: ${carModel}`);
+    if (carColor) carBits.push(`цвет: ${carColor}`);
+    if (carYear) carBits.push(`год: ${carYear}`);
+    headerParts.push(`🚗 Авто (из формы/документов): ${carBits.join(" / ") || "—"}`);
+  }
+
+  const lines = [];
+  lines.push("📄 Набор документов от водителя ASR TAXI");
+  if (headerParts.length) {
+    lines.push(headerParts.join("\n"));
+  }
+
+  // ===== БЛОК "ВОДИТЕЛЬ" =====
+  lines.push("");
+  lines.push("👤 ВОДИТЕЛЬ");
   lines.push("");
   lines.push("1. Фамилия");
   lines.push(fam || "—");
@@ -1635,39 +1692,132 @@ function formatSummaryForOperators(docs, commonMeta = {}) {
   lines.push("3. Отчество");
   lines.push(otch || "—");
   lines.push("");
-  lines.push("4a. Дата выдачи");
+  lines.push("4. Дата рождения");
+  lines.push(fVu.birth_date || "—");
+  lines.push("");
+  lines.push("5. Серия и номер водительского удостоверения");
+  lines.push(licenseFull);
+  lines.push("");
+  lines.push("6. Дата выдачи ВУ");
   lines.push(fVu.issued_date || "—");
   lines.push("");
-  lines.push("4b. Дата истечения срока");
+  lines.push("7. Дата окончания срока ВУ");
   lines.push(fVu.expiry_date || "—");
   lines.push("");
-  lines.push("4d. ПИНФЛ");
+  lines.push("8. Кем выдано");
+  lines.push(fVu.issued_by || "—");
+  lines.push("");
+  lines.push("9. ПИНФЛ (если есть)");
   lines.push(fTf.pinfl || "—");
+
+  // ===== БЛОК "АВТОМОБИЛЬ" =====
   lines.push("");
-  lines.push("5. Серия В/У");
-  lines.push(fVu.license_series || "—");
+  lines.push("🚗 АВТОМОБИЛЬ");
   lines.push("");
-  lines.push("Авто:");
-  lines.push("");
-  lines.push("1. Гос номер");
+  lines.push("1. Госномер");
   lines.push(fTf.plate_number || "—");
   lines.push("");
-  lines.push("2. Марка:");
+  lines.push("2. Марка / модель по документу");
   lines.push(fTf.car_model_text || "—");
-  lines.push("Модель:");
+  lines.push("");
+  lines.push("3. Модель (из формы бота)");
   lines.push(carModel || "—");
   lines.push("");
-  lines.push("3. Цвет");
+  lines.push("4. Цвет (по документу или форме)");
   lines.push(fTf.car_color_text || carColor || "—");
   lines.push("");
-  lines.push("9. Год выпуска");
+  lines.push("5. Год выпуска");
   lines.push(fTb.car_year || "—");
   lines.push("");
-  lines.push("11. Номер кузова");
+  lines.push("6. Номер кузова / шасси");
   lines.push(fTb.body_number || "—");
   lines.push("");
-  lines.push("Серия тех паспорта");
-  lines.push(fTb.tech_series || "—");
+  lines.push("7. Серия и номер техпаспорта");
+  lines.push(techFull);
+  lines.push("");
+  lines.push("8. Объём двигателя");
+  lines.push(fTb.engine_volume || "—");
+  lines.push("");
+  lines.push("9. Тип топлива");
+  lines.push(fTb.fuel_type || "—");
+  lines.push("");
+  lines.push("10. VIN (если указан отдельно)");
+  lines.push(fTb.vin || "—");
+
+  return lines.join("\n");
+}
+
+/**
+ * Сводка для ВОДИТЕЛЯ (на узбекском, с нормальным форматированием).
+ * Тоже использует полные номера (серия + номер).
+ */
+function formatSummaryForDriverUz(docs, commonMeta = {}) {
+  const { carModel, carColor } = commonMeta;
+
+  const vu = docs.find((d) => d.docType === "vu_front");
+  const tFront = docs.find((d) => d.docType === "tech_front");
+  const tBack = docs.find((d) => d.docType === "tech_back");
+
+  const fVu = (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
+  const fTf =
+    (tFront && tFront.result && tFront.result.parsed && tFront.result.parsed.fields) ||
+    {};
+  const fTb =
+    (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
+
+  // FIO
+  let fam = "";
+  let name = "";
+  let otch = "";
+  if (fVu.driver_name) {
+    const parts = String(fVu.driver_name).trim().split(/\s+/);
+    fam = parts[0] || "";
+    name = parts[1] || "";
+    otch = parts.slice(2).join(" ");
+  }
+
+  // Полные номера
+  const licenseSeries = (fVu.license_series || "").trim();
+  const licenseNumber = (fVu.license_number || "").trim();
+  const licenseFullFromField = (fVu.license_full || "").trim();
+  const licenseFullCombined = `${licenseSeries} ${licenseNumber}`.trim();
+  const licenseFull = licenseFullFromField || licenseFullCombined || "—";
+
+  const techSeries = (fTb.tech_series || "").trim();
+  const techNumber = (fTb.tech_number || "").trim();
+  const techFullFromField = (fTb.tech_full || "").trim();
+  const techFullCombined = `${techSeries} ${techNumber}`.trim();
+  const techFull = techFullFromField || techFullCombined || "—";
+
+  const finalCarColor = fTf.car_color_text || carColor || "—";
+  const finalCarModelForm = carModel || "—";
+  const finalCarModelDoc = fTf.car_model_text || "—";
+
+  const lines = [];
+
+  lines.push("👤 Haydovchi ma'lumotlari");
+  lines.push("");
+  lines.push(`1. Familiya: ${fam || "—"}`);
+  lines.push(`2. Ism: ${name || "—"}`);
+  lines.push(`3. Otasining ismi: ${otch || "—"}`);
+  lines.push(`4. Tug‘ilgan sana: ${fVu.birth_date || "—"}`);
+  lines.push(
+    `5. Haydovchilik guvohnomasi (seriya va raqam): ${licenseFull || "—"}`
+  );
+  lines.push(`6. Berilgan sana: ${fVu.issued_date || "—"}`);
+  lines.push(`7. Amal qilish muddati: ${fVu.expiry_date || "—"}`);
+  lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${fTf.pinfl || "—"}`);
+
+  lines.push("");
+  lines.push("🚗 Avtomobil ma'lumotlari");
+  lines.push("");
+  lines.push(`1. Davlat raqami: ${fTf.plate_number || "—"}`);
+  lines.push(`2. Marka/model (hujjat bo‘yicha): ${finalCarModelDoc}`);
+  lines.push(`3. Model (botda tanlangan): ${finalCarModelForm}`);
+  lines.push(`4. Rangi: ${finalCarColor}`);
+  lines.push(`5. Chiqarilgan yili: ${fTb.car_year || "—"}`);
+  lines.push(`6. Kuzov/shassi raqami: ${fTb.body_number || "—"}`);
+  lines.push(`7. Texpasport (seriya va raqam): ${techFull || "—"}`);
 
   return lines.join("\n");
 }
@@ -2006,15 +2156,13 @@ async function startFirstConfirmation(chatId, session) {
     if (d && d.doc) docs.push(d.doc);
   }
 
-  const summary = formatSummaryForOperators(docs, {
-    phone: session.phone,
-    tg_id: chatId,
+  const driverSummary = formatSummaryForDriverUz(docs, {
     carModel: session.carModelLabel,
     carColor: session.carColor,
   });
 
   const text =
-    summary +
+    driverSummary +
     "\n\n" +
     "🔎 Iltimos, barcha ma'lumotlarni diqqat bilan tekshiring.\n" +
     "Agar hammasi to‘g‘ri bo‘lsa — *«Ha, hammasi to‘g‘ri»* tugmasini bosing.\n" +
@@ -2097,25 +2245,31 @@ async function askNextEditField(chatId, session) {
   });
 }
 
-// ====== Яндекс статус (заглушка) ======
+// ====== Проверка статуса через Yandex Fleet API ======
 
 async function checkYandexStatus(phone) {
-  if (!YANDEX_API_URL || !YANDEX_API_KEY) {
+  if (!FLEET_API_URL || !FLEET_API_KEY || !FLEET_CLIENT_ID || !FLEET_PARK_ID) {
     return {
       ok: false,
       status: "unknown",
-      message: "Yandex bilan integratsiya sozlanmagan.",
+      message:
+        "Yandex Fleet (park) bilan integratsiya sozlanmagan (FLEET_API_URL / FLEET_API_KEY / FLEET_CLIENT_ID / FLEET_PARK_ID).",
     };
   }
 
   try {
-    const res = await fetch(YANDEX_API_URL, {
+    // ⚠️ Здесь нужно подставить реальный endpoint и формат запроса по документации Fleet API
+    const res = await fetch(FLEET_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${YANDEX_API_KEY}`,
+        "X-Client-ID": FLEET_CLIENT_ID,
+        "X-API-Key": FLEET_API_KEY,
       },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({
+        phone,
+        park_id: FLEET_PARK_ID,
+      }),
     });
 
     const json = await res.json().catch(() => null);
@@ -2124,13 +2278,18 @@ async function checkYandexStatus(phone) {
       return {
         ok: false,
         status: "error",
-        message: `Yandex API xatosi: ${res.status}`,
+        message: `Yandex Fleet API xatosi: ${res.status}`,
         raw: json,
       };
     }
 
-    // тут нужно адаптировать под реальный ответ Яндекс API
-    const registered = Boolean(json && (json.registered || json.status === "active"));
+    // тут нужно адаптировать под реальный ответ Яндекс/Fleet API
+    // примеры:
+    //  - status: "active" | "onboarding" | "blocked"
+    //  - либо флаг registered: true/false
+    const registered = Boolean(
+      json && (json.registered || json.status === "active")
+    );
 
     return {
       ok: true,
@@ -2172,6 +2331,7 @@ async function handleStatusCheck(chatId, session) {
   }
 
   if (res.status === "registered") {
+    cancelStatusReminders(chatId);
     await sendTelegramMessage(
       chatId,
       "✅ Yandex Taxi tizimidagi ro‘yxatingiz *tasdiqlandi*.\n" +
@@ -2245,7 +2405,7 @@ async function handleDocumentPhoto(update, session, docType) {
   if (!parsedDoc || !parsedDoc.result || !parsedDoc.result.parsed) {
     await sendTelegramMessage(
       chatId,
-      "Ma'lumotlarni to‘g‘ri o‘qishning imkoni bo‘lmadi. Iltimos, hujjatni yorug‘ joyda, ravshan va xirasiz suratga olib, qayta yuboring."
+      "Ma'lumotlarni to‘g‘ri o‘qishning imkoni bo‘lmadi. Iltimos, hujjatni yorug‘ joyda, ravshan va xirasiz suratга olib, qayta yuboring."
     );
     return;
   }
@@ -2414,7 +2574,8 @@ exports.handler = async (event) => {
         }
       );
 
-      // напоминалку через 5 минут будем делать отдельно (cron / внешний воркер)
+      // Запускаем напоминания (5/10/15 минут)
+      scheduleStatusReminders(chatId);
 
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
@@ -2534,11 +2695,7 @@ exports.handler = async (event) => {
   }
 
   // ввод значения при редактировании поля
-  if (
-    session.step === "editing_field" &&
-    session.editAwaitingValue &&
-    text
-  ) {
+  if (session.step === "editing_field" && session.editAwaitingValue && text) {
     const idx = session.editIndex || 0;
     const field = EDIT_FIELDS[idx];
     if (!field) {

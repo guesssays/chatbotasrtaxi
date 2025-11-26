@@ -1765,6 +1765,34 @@ function normalizeDateToISO(dateStr) {
   // если не смогли распарсить — лучше вообще не отправлять
   return undefined;
 }
+function normalizeDriverLicenseNumber(countryCode, licenseSeries, licenseNumber, licenseFull) {
+  // 1) берём готовое поле licenseFull, если есть
+  let raw = (licenseFull && String(licenseFull).trim()) || "";
+  // 2) иначе склеиваем серию + номер
+  if (!raw) {
+    raw = `${licenseSeries || ""}${licenseNumber || ""}`.trim();
+  }
+  if (!raw) return null;
+
+  let v = raw.toUpperCase();
+
+  // оставляем только латиницу и цифры
+  v = v.replace(/[^0-9A-Z]/g, "");
+
+  const country = (countryCode || "").toUpperCase();
+
+  // Для Узбекистана часто в серию попадает "UZ" или "UZB" — убираем этот префикс
+  if (country === "UZB") {
+    if (v.startsWith("UZB")) {
+      v = v.slice(3);
+    } else if (v.startsWith("UZ")) {
+      v = v.slice(2);
+    }
+  }
+
+  if (!v) return null;
+  return v;
+}
 
 async function createDriverInFleet(driverPayload) {
   const cfg = ensureFleetConfigured();
@@ -1800,29 +1828,56 @@ async function createDriverInFleet(driverPayload) {
       driverPayload.middle_name || driverPayload.middleName;
   }
 
-  // 🔧 Сбор номера В/У: склеиваем серию и номер без пробела, убираем все пробелы
-  const driverLicenseNumberRaw =
-    driverPayload.licenseFull ||
-    `${driverPayload.licenseSeries || ""}${driverPayload.licenseNumber || ""}`;
-  const driverLicenseNumber = driverLicenseNumberRaw
-    ? String(driverLicenseNumberRaw).replace(/\s+/g, "").toUpperCase()
-    : null;
-
   // 🔧 Нормализуем даты к формату YYYY-MM-DD
   const issuedISO = normalizeDateToISO(driverPayload.issuedDate);
   const expiryISO = normalizeDateToISO(driverPayload.expiryDate);
   const birthISO = normalizeDateToISO(driverPayload.birthDate);
 
-  const license = driverLicenseNumber
-    ? {
+  // 🔧 Нормализуем номер В/У
+  const countryCode = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
+  const driverLicenseNumber = normalizeDriverLicenseNumber(
+    countryCode,
+    driverPayload.licenseSeries,
+    driverPayload.licenseNumber,
+    driverPayload.licenseFull
+  );
+
+  // заодно кладём обратно нормализованный номер, чтобы дальше в коде он тоже был «чистым»
+  if (driverLicenseNumber) {
+    driverPayload.licenseFull = driverLicenseNumber;
+  }
+
+  let license;
+  if (driverLicenseNumber) {
+    if (countryCode === "UZB") {
+      // формат узбекского ВУ: 2 буквы + 7 цифр, например "AB1234567"
+      const uzPattern = /^[A-Z]{2}\d{7}$/;
+      if (uzPattern.test(driverLicenseNumber)) {
+        license = {
+          number: driverLicenseNumber,
+          country: countryCode,
+          issue_date: issuedISO,
+          expiry_date: expiryISO,
+          birth_date: birthISO,
+        };
+      } else {
+        console.warn(
+          "createDriverInFleet: license number doesn't match UZB pattern, skip sending license",
+          driverLicenseNumber
+        );
+      }
+    } else {
+      // для других стран просто отправляем то, что есть
+      license = {
         number: driverLicenseNumber,
-        // 🔧 ВАЖНО: страна — в верхнем регистре, ISO3
-        country: (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase(),
+        country: countryCode,
         issue_date: issuedISO,
         expiry_date: expiryISO,
         birth_date: birthISO,
-      }
-    : undefined;
+      };
+    }
+  }
+
 
   const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
@@ -2132,10 +2187,11 @@ async function findDriverByLicense(licenseVariants) {
     return { ok: true, found: false };
   }
 
-  const norm = (s) =>
-    String(s || "")
-      .toUpperCase()
-      .replace(/[^0-9A-Z]/g, "");
+  const norm = (s) => {
+    const country = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
+    return normalizeDriverLicenseNumber(country, null, null, s);
+  };
+
 
   const wanted = (licenseVariants || []).map(norm).filter(Boolean);
   if (!wanted.length) return { ok: true, found: false };
@@ -2922,6 +2978,8 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
 // ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
 
+// ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
+
 async function handleDocumentPhoto(update, session, docType) {
   const msg =
     update.message ||
@@ -2996,15 +3054,21 @@ async function handleDocumentPhoto(update, session, docType) {
   updateSessionDataFromFields(session, docType, fields);
   recomputeDerived(session);
 
+  // ===== тут как раз нужная правка В/У =====
   if (docType === "vu_front") {
     // двойная проверка В/У
     const d = session.data || {};
-    const base =
-      d.licenseFull ||
-      `${d.licenseSeries || ""}${d.licenseNumber || ""}`.replace(/\s+/g, "");
-    const cleanBase = (base || "").replace(/\s+/g, "");
+    const countryCode = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
 
-    if (!cleanBase) {
+    // нормализуем номер ВУ (убираем UZ/UZB, лишние символы и т.п.)
+    const cleanNumber = normalizeDriverLicenseNumber(
+      countryCode,
+      d.licenseSeries,
+      d.licenseNumber,
+      d.licenseFull
+    );
+
+    if (!cleanNumber) {
       await sendTelegramMessage(
         chatId,
         "Haydovchilik guvohnomasi seriya/raqamini aniqlashning imkoni bo‘lmadi. Iltimos, hujjatni qayta, aniqroq suratga oling."
@@ -3012,10 +3076,13 @@ async function handleDocumentPhoto(update, session, docType) {
       return;
     }
 
-    const variant1 = cleanBase;
-    const variant2 = cleanBase.startsWith("UZ") ? cleanBase : `UZ${cleanBase}`;
+    // сохраняем нормализованный номер в session.data,
+    // чтобы дальше вся логика работала уже с «чистым» значением
+    d.licenseFull = cleanNumber;
+    session.data = d;
 
-    const checkRes = await findDriverByLicense([variant1, variant2]);
+    // ищем водителя по уже нормализованному номеру
+    const checkRes = await findDriverByLicense([cleanNumber]);
 
     if (!checkRes.ok) {
       await sendTelegramMessage(
@@ -3079,6 +3146,7 @@ async function handleDocumentPhoto(update, session, docType) {
     }
   }
 }
+
 
 // ===== ОБРАБОТКА НОМЕРА ТЕЛЕФОНА =====
 

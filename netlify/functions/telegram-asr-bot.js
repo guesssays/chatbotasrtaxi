@@ -2072,7 +2072,6 @@ async function findDriverByLicense(licenseVariants) {
         "last_name",
         "middle_name",
         "phones",
-        "license",
         "licenses",
       ],
       current_status: ["status"],
@@ -2110,10 +2109,7 @@ if (!res.ok) {
     const dp = (item && item.driver_profile) || {};
     const rawLicenses = [];
 
-    if (typeof dp.license === "string") rawLicenses.push(dp.license);
-    if (dp.license && typeof dp.license.number === "string") {
-      rawLicenses.push(dp.license.number);
-    }
+ 
     if (Array.isArray(dp.licenses)) {
       for (const l of dp.licenses) {
         if (l && typeof l.number === "string") {

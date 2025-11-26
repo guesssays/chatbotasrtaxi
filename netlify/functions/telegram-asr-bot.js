@@ -395,6 +395,16 @@ const TARIFF_RULES = {
   // заполняются по тому же принципу, как в ТЗ
 };
 
+// Маппинг наших внутренних названий тарифов → категории Флита
+const TARIFF_CATEGORY_MAP = {
+  Start: "econom",
+  Comfort: "comfort",
+  "Comfort+": "comfort_plus",
+  Business: "business",
+  Electro: "electric",
+  Cargo: "cargo",
+};
+
 // Определение тарифов по бренду / модели / году
 function getTariffsForCar(brandCode, modelLabel, carYearRaw) {
   const year = parseInt(String(carYearRaw || "").trim(), 10);
@@ -959,39 +969,60 @@ function setFieldValue(session, key, value) {
   }
 }
 
-// ===== YANDEX FLEET API WRAPPER (ЗАГЛУШКИ) =====
+// ===== YANDEX FLEET API (реальная интеграция для ПРОВЕРКИ/РЕГИСТРАЦИИ) =====
 
-async function callFleetApi(method, payload) {
-  if (!FLEET_API_URL || !FLEET_API_KEY || !FLEET_CLIENT_ID || !FLEET_PARK_ID) {
+const FLEET_API_BASE_URL =
+  (FLEET_API_URL && FLEET_API_URL.replace(/\/$/, "")) ||
+  "https://fleet-api.taxi.yandex.net";
+
+/**
+ * Проверяем, что заданы ключи для Fleet API.
+ */
+function ensureFleetConfigured() {
+  if (!FLEET_CLIENT_ID || !FLEET_API_KEY || !FLEET_PARK_ID) {
     return {
       ok: false,
       message:
-        "Yandex Fleet integratsiya sozlanmagan (FLEET_API_URL / FLEET_API_KEY / FLEET_CLIENT_ID / FLEET_PARK_ID).",
+        "Yandex Fleet integratsiyasi sozlanmagan (FLEET_CLIENT_ID / FLEET_API_KEY / FLEET_PARK_ID).",
     };
   }
+  return { ok: true };
+}
+
+/**
+ * Общий POST в Yandex Fleet (без идемпотентности).
+ */
+async function callFleetPost(path, payload) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) return { ok: false, message: cfg.message };
+
+  const url = `${FLEET_API_BASE_URL}${path}`;
 
   try {
-    const res = await fetch(FLEET_API_URL, {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Client-ID": FLEET_CLIENT_ID,
         "X-API-Key": FLEET_API_KEY,
       },
-      body: JSON.stringify({
-        method,
-        park_id: FLEET_PARK_ID,
-        payload,
-      }),
+      body: JSON.stringify(payload || {}),
     });
 
-    const json = await res.json().catch(() => null);
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      // если ответ не JSON, просто оставим raw = null
+    }
 
     if (!res.ok) {
       return {
         ok: false,
         status: res.status,
-        message: `Yandex Fleet API xatosi: ${res.status}`,
+        message:
+          (json && (json.message || json.code)) ||
+          `Yandex Fleet API xatosi: ${res.status}`,
         raw: json,
       };
     }
@@ -1002,51 +1033,390 @@ async function callFleetApi(method, payload) {
   }
 }
 
-// Поиск водителя по телефону
-async function findDriverByPhone(phone) {
-  const res = await callFleetApi("find_driver_by_phone", { phone });
-  if (!res.ok) return { ok: false, found: false, error: res.message };
+/**
+ * Идемпотентный POST в Yandex Fleet (для создания сущностей).
+ */
+async function callFleetPostIdempotent(path, payload, idempotencyKey) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) return { ok: false, message: cfg.message };
 
-  // TODO: адаптировать под реальный ответ
-  const driver = res.data && res.data.driver;
-  if (!driver) return { ok: true, found: false };
+  const url = `${FLEET_API_BASE_URL}${path}`;
+  const key =
+    idempotencyKey ||
+    `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  return {
-    ok: true,
-    found: true,
-    driver: {
-      id: driver.id || driver.driver_id || null,
-      name: driver.full_name || driver.name || null,
-      phone: driver.phone || phone,
-      status: driver.status || null,
-    },
-  };
-}
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client-ID": FLEET_CLIENT_ID,
+        "X-API-Key": FLEET_API_KEY,
+        "X-Idempotency-Token": key,
+      },
+      body: JSON.stringify(payload || {}),
+    });
 
-// Поиск водителя по В/У (двойная проверка AF / UZAF)
-async function findDriverByLicense(licenseVariants) {
-  for (const license of licenseVariants) {
-    const res = await callFleetApi("find_driver_by_license", { license });
-    if (!res.ok) continue;
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      // ignore
+    }
 
-    const driver = res.data && res.data.driver;
-    if (driver) {
+    if (!res.ok) {
       return {
-        ok: true,
-        found: true,
-        driver: {
-          id: driver.id || driver.driver_id || null,
-          name: driver.full_name || driver.name || null,
-          phone: driver.phone || null,
-          license,
-        },
+        ok: false,
+        status: res.status,
+        message:
+          (json && (json.message || json.code)) ||
+          `Yandex Fleet API xatosi: ${res.status}`,
+        raw: json,
       };
     }
+
+    return { ok: true, data: json };
+  } catch (e) {
+    return { ok: false, message: String(e) };
   }
+}
+
+/**
+ * Нормализация телефона под формат, который обычно хранится в Яндексе.
+ */
+function normalizePhoneForYandex(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/[^\d]/g, "");
+  if (!digits) return null;
+
+  // Узбекистан: 998XXXXXXXXX → +998XXXXXXXXX
+  if (digits.startsWith("998")) {
+    return `+${digits}`;
+  }
+
+  // Россия: 89XXXXXXXXX → +79XXXXXXXXX
+  if (digits.length === 11 && digits[0] === "8") {
+    return `+7${digits.slice(1)}`;
+  }
+
+  // Если уже с кодом страны — просто добавим +
+  if (digits.length >= 11) {
+    return `+${digits}`;
+  }
+
+  // fallback — как есть
+  return phone;
+}
+
+/**
+ * Создание водителя в Яндекс Флит через /v2/parks/contractors/driver-profile.
+ *
+ * Здесь мы используем только безопасный минимум:
+ *  - ФИО
+ *  - телефон
+ *  - данные В/У
+ *
+ * Условия работы, схемы выплат, work_rule_id и т.п. по твоей просьбе
+ * пока НЕ заполняем — ты добавишь по доке, когда договоритесь с Яндексом.
+ */
+async function createDriverInFleet(driverPayload) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) return { ok: false, error: cfg.message };
+
+  const phoneNorm = normalizePhoneForYandex(driverPayload.phone);
+  const idempotencyKey = `driver-${FLEET_PARK_ID}-${phoneNorm || ""}`;
+
+  // Минимальный контрактор-профиль
+  const body = {
+    park_id: FLEET_PARK_ID,
+    contractor_profile: {
+      // person
+      person: {
+        first_name: driverPayload.first_name || driverPayload.firstName || "",
+        last_name: driverPayload.last_name || driverPayload.lastName || "",
+        middle_name:
+          driverPayload.middle_name || driverPayload.middleName || "",
+      },
+      // телефон(ы)
+      phones: phoneNorm
+        ? [
+            {
+              number: phoneNorm,
+              type: "mobile",
+              is_default: true,
+            },
+          ]
+        : [],
+      // водительское удостоверение
+      driver_license: driverPayload.licenseFull
+        ? {
+            number: driverPayload.licenseFull,
+            country: "UZB",
+            issue_date: driverPayload.issuedDate || undefined,
+            expiration_date: driverPayload.expiryDate || undefined,
+          }
+        : undefined,
+      // статус; можно сразу активным сделать, если политика парка позволяет
+      work_status: "working",
+      // TODO: здесь позже можно добавить work_rule_id, payout_details и т.п.
+    },
+  };
+
+  const res = await callFleetPostIdempotent(
+    "/v2/parks/contractors/driver-profile",
+    body,
+    idempotencyKey
+  );
+
+  if (!res.ok) {
+    return { ok: false, error: res.message || "driver create error", raw: res.raw };
+  }
+
+  const data = res.data || {};
+  const profile =
+    data.contractor_profile || data.driver_profile || data.profile || {};
+  const driverId = profile.id || data.id || null;
+
+  if (!driverId) {
+    return { ok: false, error: "Yandex Fleet не вернул id водителя", raw: data };
+  }
+
+  return { ok: true, driverId, raw: data };
+}
+
+/**
+ * Создание авто в Яндекс Флит через /v2/parks/cars/car.
+ *
+ * Маппим на минимальные поля: марка/модель, госномер, год, цвет, категории.
+ */
+async function createCarInFleet(carPayload) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) return { ok: false, error: cfg.message };
+
+  const idempotencyKey = `car-${FLEET_PARK_ID}-${carPayload.plate_number || ""}`;
+
+  const categories =
+    Array.isArray(carPayload.tariffs) && carPayload.tariffs.length
+      ? carPayload.tariffs
+          .map((t) => TARIFF_CATEGORY_MAP[t])
+          .filter(Boolean)
+      : [];
+
+  const body = {
+    park_id: FLEET_PARK_ID,
+    car: {
+      brand_name: carPayload.brand || "",
+      model_name: carPayload.model || "",
+      color: carPayload.color || "",
+      state_number: carPayload.plate_number || carPayload.plates_number || "",
+      vin: carPayload.body_number || "",
+      year: carPayload.year ? Number(carPayload.year) : undefined,
+      call_sign: carPayload.call_sign || undefined,
+      categories: categories.length ? categories : undefined,
+      // Для грузовых можно позже добавить поля кузова по доке
+    },
+  };
+
+  const res = await callFleetPostIdempotent(
+    "/v2/parks/cars/car",
+    body,
+    idempotencyKey
+  );
+
+  if (!res.ok) {
+    return { ok: false, error: res.message || "car create error", raw: res.raw };
+  }
+
+  const data = res.data || {};
+  const car = data.car || {};
+  const carId = car.id || data.id || null;
+
+  if (!carId) {
+    return { ok: false, error: "Yandex Fleet не вернул id автомобиля", raw: data };
+  }
+
+  return { ok: true, carId, raw: data };
+}
+
+/**
+ * Поиск водителя по телефону (через /v1/parks/driver-profiles/list).
+ * Мы забираем список профилей и фильтруем телефоны на своей стороне.
+ */
+async function findDriverByPhone(phoneRaw) {
+  const normalizedPhone = normalizePhoneForYandex(phoneRaw);
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, found: false, error: cfg.message };
+  }
+
+  const body = {
+    fields: {
+      driver_profile: ["first_name", "last_name", "middle_name", "phones"],
+      car: ["brand", "model", "color", "number", "normalized_number", "status", "year"],
+      current_status: ["status"],
+    },
+    limit: 500,
+    offset: 0,
+    query: {
+      park: {
+        id: FLEET_PARK_ID,
+      },
+      // при желании можно добавить фильтры по work_status и т.д.
+    },
+  };
+
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    return { ok: false, found: false, error: res.message };
+  }
+
+  const profiles = (res.data && res.data.driver_profiles) || [];
+  if (!profiles.length) {
+    return { ok: true, found: false };
+  }
+
+  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
+  if (!phoneDigits) return { ok: true, found: false };
+
+  for (const item of profiles) {
+    const dp = (item && item.driver_profile) || {};
+    const phones = Array.isArray(dp.phones) ? dp.phones : [];
+
+    for (const p of phones) {
+      const num = (p && (p.number || p.phone)) || "";
+      const numDigits = num.replace(/[^\d]/g, "");
+      if (!numDigits) continue;
+
+      // сравниваем по окончанию, чтобы 998xx совпал с +998xx
+      if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
+        const fullName =
+          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") ||
+          null;
+        const status =
+          (item.current_status && item.current_status.status) || null;
+
+        return {
+          ok: true,
+          found: true,
+          driver: {
+            id: dp.id || null,
+            name: fullName,
+            phone: num || normalizedPhone || phoneRaw,
+            status,
+          },
+        };
+      }
+    }
+  }
+
   return { ok: true, found: false };
 }
 
-// Проверка статуса (упрощённая)
+/**
+ * Поиск водителя по номеру В/У.
+ *
+ * Важно: схема поля с номером В/У в driver_profile может отличаться
+ * в зависимости от версии API/настроек. Я закладываю несколько типичных
+ * вариантов (license / license.number / licenses[].number).
+ *
+ * Если у тебя в ответе поле называется иначе — просто поправь маппинг ниже.
+ */
+async function findDriverByLicense(licenseVariants) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, found: false, error: cfg.message };
+  }
+
+  const body = {
+    fields: {
+      driver_profile: [
+        "first_name",
+        "last_name",
+        "middle_name",
+        "phones",
+        // "license", // <- если по доке нужно явно запросить поле с В/У — добавь его сюда
+      ],
+      current_status: ["status"],
+    },
+    limit: 500,
+    offset: 0,
+    query: {
+      park: {
+        id: FLEET_PARK_ID,
+      },
+    },
+  };
+
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    return { ok: false, found: false, error: res.message };
+  }
+
+  const profiles = (res.data && res.data.driver_profiles) || [];
+  if (!profiles.length) {
+    return { ok: true, found: false };
+  }
+
+  const norm = (s) =>
+    String(s || "")
+      .toUpperCase()
+      .replace(/[^0-9A-Z]/g, "");
+
+  const wanted = (licenseVariants || []).map(norm).filter(Boolean);
+  if (!wanted.length) return { ok: true, found: false };
+
+  for (const item of profiles) {
+    const dp = (item && item.driver_profile) || {};
+    const rawLicenses = [];
+
+    // несколько потенциальных вариантов хранения номера В/У
+    if (typeof dp.license === "string") rawLicenses.push(dp.license);
+    if (dp.license && typeof dp.license.number === "string") {
+      rawLicenses.push(dp.license.number);
+    }
+    if (Array.isArray(dp.licenses)) {
+      for (const l of dp.licenses) {
+        if (l && typeof l.number === "string") {
+          rawLicenses.push(l.number);
+        }
+      }
+    }
+
+    const normalizedFromApi = rawLicenses.map(norm).filter(Boolean);
+    if (!normalizedFromApi.length) continue;
+
+    for (const target of wanted) {
+      if (normalizedFromApi.includes(target)) {
+        const fullName =
+          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") ||
+          null;
+        const phones = Array.isArray(dp.phones) ? dp.phones : [];
+        const phoneFromApi =
+          (phones[0] && (phones[0].number || phones[0].phone)) || null;
+        const status =
+          (item.current_status && item.current_status.status) || null;
+
+        return {
+          ok: true,
+          found: true,
+          driver: {
+            id: dp.id || null,
+            name: fullName,
+            phone: phoneFromApi,
+            status,
+            license: target,
+          },
+        };
+      }
+    }
+  }
+
+  return { ok: true, found: false };
+}
+
+/**
+ * Проверка статуса (для меню и кнопки "Проверить статус").
+ */
 async function checkYandexStatus(phone) {
   const found = await findDriverByPhone(phone);
   if (!found.ok) {
@@ -1064,29 +1434,11 @@ async function checkYandexStatus(phone) {
     };
   }
 
-  // TODO: использовать реальный статус из driver.status
   return {
     ok: true,
-    status: "registered",
+    status: (found.driver && found.driver.status) || "registered",
     driver: found.driver,
   };
-}
-
-// Создание водителя (заглушка)
-async function createDriverInFleet(driverData) {
-  const res = await callFleetApi("create_driver", driverData);
-  if (!res.ok) return { ok: false, error: res.message, raw: res.raw };
-  // TODO: адаптировать под реальный ответ
-  const driverId = res.data && (res.data.id || res.data.driver_id);
-  return { ok: true, driverId, raw: res.data };
-}
-
-// Создание авто (заглушка)
-async function createCarInFleet(carData) {
-  const res = await callFleetApi("create_car", carData);
-  if (!res.ok) return { ok: false, error: res.message, raw: res.raw };
-  const carId = res.data && (res.data.id || res.data.car_id);
-  return { ok: true, carId, raw: res.data };
 }
 
 // ===== ЛОГИКА МЕНЮ ВОДИТЕЛЯ =====
@@ -1600,21 +1952,22 @@ async function autoRegisterInYandexFleet(chatId, session) {
     session.registerWithoutCar = true;
   }
 
-  // Создание водителя
+  // Создание водителя (наш внутренний payload → дальше адаптируем к API)
   const driverPayload = {
-    // TODO: адаптировать поля под Fleet API
     phone,
     park_id: FLEET_PARK_ID,
     full_name: d.driverName,
     last_name: d.lastName,
     first_name: d.firstName,
     middle_name: d.middleName,
-    license: d.licenseFull,
-    license_series: d.licenseSeries,
-    license_number: d.licenseNumber,
+    licenseFull: d.licenseFull,
+    licenseSeries: d.licenseSeries,
+    licenseNumber: d.licenseNumber,
     pinfl: d.pinfl,
-    work_rule: session.isCargo ? "Bot Cargo 3%" : "Bot 3%",
-    limit_taxi: session.isCargo ? 15000 : 5000,
+    issuedDate: d.issuedDate,
+    expiryDate: d.expiryDate,
+    // по условиям работы (3% и т.п.) пока ничего сюда НЕ передаём,
+    // только пользовательские данные
   };
 
   const driverRes = await createDriverInFleet(driverPayload);
@@ -1633,14 +1986,14 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   session.driverFleetId = driverRes.driverId || null;
 
-  // Если есть авто (не грузовой без тарифа)
+  // Если есть авто (не "без авто")
   if (!session.registerWithoutCar) {
     const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
     const pozivnoiSource = String(phone || "").replace(/[^\d]/g, "");
     const pozivnoi = pozivnoiSource.slice(-7) || null;
 
     const carPayload = {
-      // TODO: адаптировать поля под Fleet API
+      // внутренний payload, маппим в createCarInFleet
       park_id: FLEET_PARK_ID,
       brand,
       model,
@@ -1696,6 +2049,9 @@ async function autoRegisterInYandexFleet(chatId, session) {
     reply_markup: {
       keyboard: [
         [{ text: "🔄 Ro‘yxatdan o‘tish holatini tekshirish" }],
+
+
+
         [{ text: "🚕 Открыть личный кабинет" }],
       ],
       resize_keyboard: true,

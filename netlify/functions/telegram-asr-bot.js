@@ -1989,14 +1989,36 @@ async function createDriverInFleet(driverPayload) {
   }
 
   const data = res.data || {};
-  const profile = data.profile || data.contractor_profile || {};
-  const driverId = data.id || profile.id || null;
+
+  // Пытаемся вытащить id водителя из разных вариантов структуры ответа
+  let driverId =
+    data.id ||
+    (data.profile && data.profile.id) ||
+    (data.contractor_profile && data.contractor_profile.id) ||
+    (data.driver_profile && data.driver_profile.id) ||
+    data.driver_profile_id ||
+    data.contractor_profile_id ||
+    null;
+
+  // Если в ответе id нет — пробуем найти водителя по телефону
+  if (!driverId && driverPayload.phone) {
+    const found = await findDriverByPhone(driverPayload.phone);
+    if (found.ok && found.found && found.driver && found.driver.id) {
+      driverId = found.driver.id;
+    }
+  }
 
   if (!driverId) {
-    return { ok: false, error: "Yandex Fleet не вернул id водителя", raw: data };
+    return {
+      ok: false,
+      error:
+        "Yandex Fleet не вернул id водителя (после create и поиска по телефону)",
+      raw: data,
+    };
   }
 
   return { ok: true, driverId, raw: data };
+
 }
 
 

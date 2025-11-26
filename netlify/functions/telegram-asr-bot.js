@@ -1203,16 +1203,15 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   const issuedDate = fVu.issued_date || "—";
   const expiryDate = fVu.expiry_date || "—";
 
-const driverPinfl =
-  fVu.pinfl ||
-  fVu.driver_pinfl ||
-  fTf.driver_pinfl ||
-  fTb.driver_pinfl ||
-  fTf.pinfl ||
-  fTb.pinfl ||
-  "—";
-lines.push(`ПИНФЛ: ${driverPinfl}`);
-
+  // ПИНФЛ водителя: приоритет — из прав, затем остальные источники
+  const driverPinfl =
+    fVu.pinfl ||
+    fVu.driver_pinfl ||
+    fTf.driver_pinfl ||
+    fTb.driver_pinfl ||
+    fTf.pinfl ||
+    fTb.pinfl ||
+    "—";
 
   const plateNumber = fTf.plate_number || "—";
   const carModelSource = fTf.car_model_text || carModel || "";
@@ -1251,7 +1250,7 @@ lines.push(`ПИНФЛ: ${driverPinfl}`);
   lines.push(`Имя: ${name || "—"}`);
   lines.push(`Дата выдачи ВУ: ${issuedDate}`);
   lines.push(`Дата истечения срока ВУ: ${expiryDate}`);
-  lines.push(`ПИНФЛ: ${pinfl}`);
+  lines.push(`ПИНФЛ: ${driverPinfl}`);
   lines.push(`Серия В/У: ${licenseSeries || "—"}`);
   lines.push("");
 
@@ -1281,6 +1280,8 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
     {};
   const fTb =
     (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
+
+  // ПИНФЛ водителя (тот же приоритет, что и для операторов)
   const driverPinfl =
     fVu.pinfl ||
     fVu.driver_pinfl ||
@@ -1289,7 +1290,6 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
     fTf.pinfl ||
     fTb.pinfl ||
     "—";
-lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
 
   let fam = "";
   let name = "";
@@ -1330,7 +1330,7 @@ lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
   );
   lines.push(`6. Berilgan sana: ${fVu.issued_date || "—"}`);
   lines.push(`7. Amal qilish muddati: ${fVu.expiry_date || "—"}`);
-  lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${fTf.pinfl || "—"}`);
+  lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
 
   lines.push("");
   lines.push("🚗 Avtomobil ma'lumotlari");
@@ -1357,6 +1357,7 @@ lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
 
   return lines.join("\n");
 }
+
 
 async function sendDocsToOperators(chatId, session, options = {}) {
   const targetIds = new Set();

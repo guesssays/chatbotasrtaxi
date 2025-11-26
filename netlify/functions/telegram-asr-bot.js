@@ -1743,10 +1743,29 @@ function normalizePhoneForYandex(phone) {
 
   return phone;
 }
+function normalizeDateToISO(dateStr) {
+  if (!dateStr) return undefined;
+  const s = String(dateStr).trim();
+  if (!s) return undefined;
 
-/**
- * Создание водителя через /v2/parks/contractors/driver-profile
- */
+  // уже в формате YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+
+  // форматы вида DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+  const m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (m) {
+    const d = m[1].padStart(2, "0");
+    const mo = m[2].padStart(2, "0");
+    const y = m[3];
+    return `${y}-${mo}-${d}`;
+  }
+
+  // если не смогли распарсить — лучше вообще не отправлять
+  return undefined;
+}
+
 async function createDriverInFleet(driverPayload) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
@@ -1781,27 +1800,31 @@ async function createDriverInFleet(driverPayload) {
       driverPayload.middle_name || driverPayload.middleName;
   }
 
-  const driverLicenseNumber =
+  // 🔧 Сбор номера В/У: склеиваем серию и номер без пробела, убираем все пробелы
+  const driverLicenseNumberRaw =
     driverPayload.licenseFull ||
-    `${driverPayload.licenseSeries || ""} ${
-      driverPayload.licenseNumber || ""
-    }`.trim();
+    `${driverPayload.licenseSeries || ""}${driverPayload.licenseNumber || ""}`;
+  const driverLicenseNumber = driverLicenseNumberRaw
+    ? String(driverLicenseNumberRaw).replace(/\s+/g, "").toUpperCase()
+    : null;
+
+  // 🔧 Нормализуем даты к формату YYYY-MM-DD
+  const issuedISO = normalizeDateToISO(driverPayload.issuedDate);
+  const expiryISO = normalizeDateToISO(driverPayload.expiryDate);
+  const birthISO = normalizeDateToISO(driverPayload.birthDate);
 
   const license = driverLicenseNumber
     ? {
         number: driverLicenseNumber,
-        country: FLEET_DEFAULT_LICENSE_COUNTRY.toLowerCase(),
-        issue_date: driverPayload.issuedDate || undefined,
-        expiry_date: driverPayload.expiryDate || undefined,
-        birth_date: driverPayload.birthDate || undefined,
+        // 🔧 ВАЖНО: страна — в верхнем регистре, ISO3
+        country: (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase(),
+        issue_date: issuedISO,
+        expiry_date: expiryISO,
+        birth_date: birthISO,
       }
     : undefined;
 
-  const totalSince =
-    driverPayload.issuedDate ||
-    driverPayload.expiryDate ||
-    driverPayload.birthDate ||
-    "2005-01-01";
+  const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
   // employment_type
   const employmentType = FLEET_DEFAULT_EMPLOYMENT_TYPE;
@@ -1889,6 +1912,7 @@ async function createDriverInFleet(driverPayload) {
 
   return { ok: true, driverId, raw: data };
 }
+
 
 
 

@@ -1842,55 +1842,44 @@ async function createDriverInFleet(driverPayload) {
     driverPayload.licenseFull
   );
 
-  // заодно кладём обратно нормализованный номер, чтобы дальше в коде он тоже был «чистым»
+  // сохраняем нормализованный номер обратно
   if (driverLicenseNumber) {
     driverPayload.licenseFull = driverLicenseNumber;
   }
 
-  let license;
+  // 🟢 ИСПРАВЛЕНИЕ: всегда отправляем driver_license, если номер есть,
+  // больше НЕ выкидываем его из-за локального regex
+  let license = undefined;
   if (driverLicenseNumber) {
     if (countryCode === "UZB") {
-      // формат узбекского ВУ: 2 буквы + 7 цифр, например "AB1234567"
-      const uzPattern = /^[A-Z]{2}\d{7}$/;
-      if (uzPattern.test(driverLicenseNumber)) {
-        license = {
-          number: driverLicenseNumber,
-          country: countryCode,
-          issue_date: issuedISO,
-          expiry_date: expiryISO,
-          birth_date: birthISO,
-        };
-      } else {
+      // можем мягко залогировать, если формат «нестандартный», но не блокируем
+      const uzSoftPattern = /^[A-Z]{2}\d{7,14}$/; // допускаем 7–14 цифр
+      if (!uzSoftPattern.test(driverLicenseNumber)) {
         console.warn(
-          "createDriverInFleet: license number doesn't match UZB pattern, skip sending license",
+          "createDriverInFleet: license number looks unusual for UZB, but will be sent anyway",
           driverLicenseNumber
         );
       }
-    } else {
-      // для других стран просто отправляем то, что есть
-      license = {
-        number: driverLicenseNumber,
-        country: countryCode,
-        issue_date: issuedISO,
-        expiry_date: expiryISO,
-        birth_date: birthISO,
-      };
     }
-  }
 
+    license = {
+      number: driverLicenseNumber,
+      country: countryCode,
+      issue_date: issuedISO,
+      expiry_date: expiryISO,
+      birth_date: birthISO,
+    };
+  }
 
   const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
-  // employment_type
   const employmentType = FLEET_DEFAULT_EMPLOYMENT_TYPE;
 
-  // 🔴 ГЛАВНОЕ: берём TIN из taxId ИЛИ pinfl
   const taxId =
     (driverPayload.taxId && String(driverPayload.taxId).trim()) ||
     (driverPayload.pinfl && String(driverPayload.pinfl).trim()) ||
     null;
 
-  // Если самозанятый и нет TIN — сразу возвращаем ошибку, а не бьёмся в Fleet
   if (employmentType === "selfemployed" && !taxId) {
     return {
       ok: false,
@@ -1899,7 +1888,6 @@ async function createDriverInFleet(driverPayload) {
     };
   }
 
-  // 👇 account без обязательного payment_service_id
   const account = {
     balance_limit: "0",
     block_orders_on_balance_below_limit: false,
@@ -1917,14 +1905,13 @@ async function createDriverInFleet(driverPayload) {
           phone: phoneNorm,
         }
       : undefined,
-    driver_license: license,
+    driver_license: license, // <— теперь почти всегда объект
     driver_license_experience: {
       total_since_date: totalSince,
     },
     employment_type: employmentType,
   };
 
-  // добавляем tax_identification_number только если он есть
   if (taxId) {
     person.tax_identification_number = taxId;
   }
@@ -1967,6 +1954,7 @@ async function createDriverInFleet(driverPayload) {
 
   return { ok: true, driverId, raw: data };
 }
+
 
 
 
@@ -3055,12 +3043,12 @@ async function handleDocumentPhoto(update, session, docType) {
   recomputeDerived(session);
 
   // ===== тут как раз нужная правка В/У =====
+  // ===== обработка водительского удостоверения (ВУ) =====
   if (docType === "vu_front") {
-    // двойная проверка В/У
     const d = session.data || {};
     const countryCode = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
 
-    // нормализуем номер ВУ (убираем UZ/UZB, лишние символы и т.п.)
+    // Нормализуем полный код ВУ (серия+номер), убираем мусор, UZ/UZB и т.д.
     const cleanNumber = normalizeDriverLicenseNumber(
       countryCode,
       d.licenseSeries,
@@ -3076,13 +3064,28 @@ async function handleDocumentPhoto(update, session, docType) {
       return;
     }
 
-    // сохраняем нормализованный номер в session.data,
-    // чтобы дальше вся логика работала уже с «чистым» значением
-    d.licenseFull = cleanNumber;
-    session.data = d;
+    // Аккуратно раскладываем cleanNumber на серию и номер:
+    // пример: AF000488684 -> серия: AF, номер: 000488684
+    let series = d.licenseSeries || null;
+    let num = d.licenseNumber || null;
 
-    // ищем водителя по уже нормализованному номеру
-    const checkRes = await findDriverByLicense([cleanNumber]);
+    const m = cleanNumber.match(/^([A-Z]{2,3})(\d{5,})$/);
+    if (m) {
+      series = m[1];     // только буквы
+      num = m[2];        // только цифры
+    }
+
+    d.licenseSeries = series;
+    d.licenseNumber = num;
+    d.licenseFull = cleanNumber; // чистый без UZ/UZB и мусора
+
+    session.data = d;
+    recomputeDerived(session); // чтобы всё красиво пересчиталось
+
+    // Ищем водителя в Яндексе по нормализованному номеру ВУ
+    const checkRes = await findDriverByLicense(
+      [cleanNumber, d.licenseFull, `${series || ""}${num || ""}`].filter(Boolean)
+    );
 
     if (!checkRes.ok) {
       await sendTelegramMessage(

@@ -1803,17 +1803,52 @@ async function createDriverInFleet(driverPayload) {
     driverPayload.birthDate ||
     "2005-01-01";
 
-  // 👇 тут ключевое: account без payment_service_id по умолчанию
+  // employment_type
+  const employmentType = FLEET_DEFAULT_EMPLOYMENT_TYPE;
+
+  // 🔴 ГЛАВНОЕ: берём TIN из taxId ИЛИ pinfl
+  const taxId =
+    (driverPayload.taxId && String(driverPayload.taxId).trim()) ||
+    (driverPayload.pinfl && String(driverPayload.pinfl).trim()) ||
+    null;
+
+  // Если самозанятый и нет TIN — сразу возвращаем ошибку, а не бьёмся в Fleet
+  if (employmentType === "selfemployed" && !taxId) {
+    return {
+      ok: false,
+      error:
+        "Для самозанятого водителя требуется TIN (ИНН / ПИНФЛ). Не удалось получить его автоматически из документов.",
+    };
+  }
+
+  // 👇 account без обязательного payment_service_id
   const account = {
     balance_limit: "0",
     block_orders_on_balance_below_limit: false,
     work_rule_id: workRuleId,
   };
 
-  // если FLEET_PAYMENT_SERVICE_ID задан в env — добавим его,
-  // если нет — Яндекс сам подставит платежный сервис
   if (FLEET_PAYMENT_SERVICE_ID) {
     account.payment_service_id = FLEET_PAYMENT_SERVICE_ID;
+  }
+
+  const person = {
+    full_name: fullName,
+    contact_info: phoneNorm
+      ? {
+          phone: phoneNorm,
+        }
+      : undefined,
+    driver_license: license,
+    driver_license_experience: {
+      total_since_date: totalSince,
+    },
+    employment_type: employmentType,
+  };
+
+  // добавляем tax_identification_number только если он есть
+  if (taxId) {
+    person.tax_identification_number = taxId;
   }
 
   const body = {
@@ -1822,20 +1857,7 @@ async function createDriverInFleet(driverPayload) {
       partner: true,
       platform: true,
     },
-    person: {
-      full_name: fullName,
-      contact_info: phoneNorm
-        ? {
-            phone: phoneNorm,
-          }
-        : undefined,
-      driver_license: license,
-      driver_license_experience: {
-        total_since_date: totalSince,
-      },
-      employment_type: FLEET_DEFAULT_EMPLOYMENT_TYPE,
-      tax_identification_number: driverPayload.taxId || undefined,
-    },
+    person,
     profile: {
       hire_date: todayIso,
       work_status: "working",
@@ -1867,6 +1889,7 @@ async function createDriverInFleet(driverPayload) {
 
   return { ok: true, driverId, raw: data };
 }
+
 
 
 /**

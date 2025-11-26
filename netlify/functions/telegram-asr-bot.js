@@ -1816,7 +1816,6 @@ async function createDriverInFleet(driverPayload) {
 
   const phoneNorm = normalizePhoneForYandex(driverPayload.phone);
   const todayIso = new Date().toISOString().slice(0, 10);
-
   const idempotencyKey = `driver-${FLEET_PARK_ID}-${phoneNorm || ""}`;
 
   const fullName = {
@@ -1828,12 +1827,12 @@ async function createDriverInFleet(driverPayload) {
       driverPayload.middle_name || driverPayload.middleName;
   }
 
-  // 🔧 Нормализуем даты к формату YYYY-MM-DD
+  // нормализуем даты к YYYY-MM-DD
   const issuedISO = normalizeDateToISO(driverPayload.issuedDate);
   const expiryISO = normalizeDateToISO(driverPayload.expiryDate);
   const birthISO = normalizeDateToISO(driverPayload.birthDate);
 
-  // 🔧 Нормализуем номер В/У
+  // нормализуем номер В/У
   const countryCode = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
   const driverLicenseNumber = normalizeDriverLicenseNumber(
     countryCode,
@@ -1842,26 +1841,12 @@ async function createDriverInFleet(driverPayload) {
     driverPayload.licenseFull
   );
 
-  // сохраняем нормализованный номер обратно
   if (driverLicenseNumber) {
     driverPayload.licenseFull = driverLicenseNumber;
   }
 
-  // 🟢 ИСПРАВЛЕНИЕ: всегда отправляем driver_license, если номер есть,
-  // больше НЕ выкидываем его из-за локального regex
   let license = undefined;
   if (driverLicenseNumber) {
-    if (countryCode === "UZB") {
-      // можем мягко залогировать, если формат «нестандартный», но не блокируем
-      const uzSoftPattern = /^[A-Z]{2}\d{7,14}$/; // допускаем 7–14 цифр
-      if (!uzSoftPattern.test(driverLicenseNumber)) {
-        console.warn(
-          "createDriverInFleet: license number looks unusual for UZB, but will be sent anyway",
-          driverLicenseNumber
-        );
-      }
-    }
-
     license = {
       number: driverLicenseNumber,
       country: countryCode,
@@ -1873,19 +1858,32 @@ async function createDriverInFleet(driverPayload) {
 
   const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
-  const employmentType = FLEET_DEFAULT_EMPLOYMENT_TYPE;
+  // 🔧 employment_type: по умолчанию individual, selfemployed только для “правильного” ИНН
+  let employmentType =
+    (FLEET_DEFAULT_EMPLOYMENT_TYPE || "individual").toLowerCase();
 
-  const taxId =
+  // сырое значение налогового идентификатора (у вас это PINFL)
+  let taxIdRaw =
     (driverPayload.taxId && String(driverPayload.taxId).trim()) ||
     (driverPayload.pinfl && String(driverPayload.pinfl).trim()) ||
     null;
 
-  if (employmentType === "selfemployed" && !taxId) {
-    return {
-      ok: false,
-      error:
-        "Для самозанятого водителя требуется TIN (ИНН / ПИНФЛ). Не удалось получить его автоматически из документов.",
-    };
+  let taxId = null;
+
+  if (employmentType === "selfemployed") {
+    const digits = (taxIdRaw || "").replace(/\D/g, "");
+    // для selfemployed Яндекс ожидает формат российского ИНН — 12 цифр
+    if (digits.length === 12) {
+      taxId = digits;
+    } else {
+      console.warn(
+        "createDriverInFleet: taxId не похож на российский ИНН (12 цифр), " +
+          "переключаю employment_type на 'individual'. taxIdRaw=",
+        taxIdRaw
+      );
+      employmentType = "individual";
+      taxId = null;
+    }
   }
 
   const account = {
@@ -1905,14 +1903,15 @@ async function createDriverInFleet(driverPayload) {
           phone: phoneNorm,
         }
       : undefined,
-    driver_license: license, // <— теперь почти всегда объект
+    driver_license: license,
     driver_license_experience: {
       total_since_date: totalSince,
     },
     employment_type: employmentType,
   };
 
-  if (taxId) {
+  // 🔧 важно: отправляем tax_identification_number только если реально selfemployed с валидным ИНН
+  if (employmentType === "selfemployed" && taxId) {
     person.tax_identification_number = taxId;
   }
 
@@ -1954,6 +1953,7 @@ async function createDriverInFleet(driverPayload) {
 
   return { ok: true, driverId, raw: data };
 }
+
 
 
 

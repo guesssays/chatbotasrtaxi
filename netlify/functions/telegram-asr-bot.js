@@ -1144,9 +1144,11 @@ async function sendOperatorAlert(text) {
   if (!targetIds.size) return;
 
   for (const id of targetIds) {
-    await sendTelegramMessage(id, text, { parse_mode: "Markdown" });
+    // БЕЗ parse_mode — чтобы не падать на подчёркиваниях в error-кодах
+    await sendTelegramMessage(id, text);
   }
 }
+
 
 // ===== формирование сводок для операторов / водителя =====
 

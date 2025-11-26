@@ -1203,7 +1203,16 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   const issuedDate = fVu.issued_date || "—";
   const expiryDate = fVu.expiry_date || "—";
 
-  const pinfl = fTf.pinfl || "—";
+const driverPinfl =
+  fVu.pinfl ||
+  fVu.driver_pinfl ||
+  fTf.driver_pinfl ||
+  fTb.driver_pinfl ||
+  fTf.pinfl ||
+  fTb.pinfl ||
+  "—";
+lines.push(`ПИНФЛ: ${driverPinfl}`);
+
 
   const plateNumber = fTf.plate_number || "—";
   const carModelSource = fTf.car_model_text || carModel || "";
@@ -1272,6 +1281,15 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
     {};
   const fTb =
     (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
+  const driverPinfl =
+    fVu.pinfl ||
+    fVu.driver_pinfl ||
+    fTf.driver_pinfl ||
+    fTb.driver_pinfl ||
+    fTf.pinfl ||
+    fTb.pinfl ||
+    "—";
+lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
 
   let fam = "";
   let name = "";
@@ -1472,11 +1490,26 @@ function updateSessionDataFromFields(session, docType, f) {
     if (f.birth_date && !d.birthDate) d.birthDate = f.birth_date;
     if (f.issued_date && !d.issuedDate) d.issuedDate = f.issued_date;
     if (f.expiry_date && !d.expiryDate) d.expiryDate = f.expiry_date;
+
+    // 🔴 ГЛАВНОЕ: ПИНФЛ ВОДИТЕЛЯ СЧИТАЕМ ИЗ ПРАВ
+    const pinflFromVu = f.pinfl || f.driver_pinfl;
+    if (pinflFromVu) {
+      if (!d.driverPinfl) d.driverPinfl = pinflFromVu;
+      // общий d.pinfl всегда стараемся держать ПИНФЛ водителя
+      if (!d.pinfl) d.pinfl = pinflFromVu;
+    }
   } else if (docType === "tech_front") {
     if (f.plate_number && !d.plateNumber) d.plateNumber = f.plate_number;
     if (f.owner_name && !d.ownerName) d.ownerName = f.owner_name;
     if (f.owner_address && !d.ownerAddress) d.ownerAddress = f.owner_address;
-    if (f.pinfl && !d.pinfl) d.pinfl = f.pinfl;
+
+    // ПИНФЛ с техпаспорта считаем ПИНФЛ ВЛАДЕЛЬЦА, а не водителя
+    const pinflFromTech = f.pinfl || f.owner_pinfl;
+    if (pinflFromTech) {
+      if (!d.ownerPinfl) d.ownerPinfl = pinflFromTech;
+      // fallback: только если у нас ещё вообще нет ПИНФЛ водителя
+      if (!d.pinfl && !d.driverPinfl) d.pinfl = pinflFromTech;
+    }
   } else if (docType === "tech_back") {
     if (f.tech_series && !d.techSeries) d.techSeries = f.tech_series;
     if (f.tech_number && !d.techNumber) d.techNumber = f.tech_number;
@@ -1487,12 +1520,18 @@ function updateSessionDataFromFields(session, docType, f) {
     if (f.engine_volume && !d.engineVolume) d.engineVolume = f.engine_volume;
     if (f.fuel_type && !d.fuelType) d.fuelType = f.fuel_type;
     if (f.vin && !d.vin) d.vin = f.vin;
+
+    const pinflFromBack = f.pinfl_back;
+    if (pinflFromBack && !d.pinfl && !d.driverPinfl) {
+      d.pinfl = pinflFromBack;
+    }
   }
 
   if (session.carModelLabel) d.carModelLabel = session.carModelLabel;
   if (session.carColor) d.carColor = session.carColor;
   if (session.phone) d.phone = session.phone;
 }
+
 
 function recomputeDerived(session) {
   const d = session.data || (session.data = {});
@@ -1520,6 +1559,10 @@ function applySessionDataToDocs(session) {
     if (d.birthDate) f.birth_date = d.birthDate;
     if (d.issuedDate) f.issued_date = d.issuedDate;
     if (d.expiryDate) f.expiry_date = d.expiryDate;
+    if (d.driverPinfl || d.pinfl) {
+      f.pinfl = d.driverPinfl || d.pinfl;
+      f.driver_pinfl = d.driverPinfl || d.pinfl;
+    }
   }
 
   if (map.tech_front && map.tech_front.doc && map.tech_front.doc.result?.parsed) {
@@ -1527,7 +1570,8 @@ function applySessionDataToDocs(session) {
     if (d.plateNumber) f.plate_number = d.plateNumber;
     if (d.ownerName) f.owner_name = d.ownerName;
     if (d.ownerAddress) f.owner_address = d.ownerAddress;
-    if (d.pinfl) f.pinfl = d.pinfl;
+    // в техпаспорте оставляем ПИНФЛ владельца, но если нужно — можем туда же положить и водителя
+    if (d.ownerPinfl) f.pinfl = d.ownerPinfl;
   }
 
   if (map.tech_back && map.tech_back.doc && map.tech_back.doc.result?.parsed) {
@@ -1542,6 +1586,7 @@ function applySessionDataToDocs(session) {
     if (d.vin) f.vin = d.vin;
   }
 }
+
 
 function getFieldValue(session, key) {
   const d = session.data || {};

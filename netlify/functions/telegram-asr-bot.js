@@ -1858,35 +1858,38 @@ async function createDriverInFleet(driverPayload) {
 
   const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
-  // 🔧 тип занятости: park env решает, но для selfemployed мы теперь ОТПРАВЛЯЕМ любой PINFL
+  // Тип занятости — по умолчанию считаем selfemployed (AsrPul)
   let employmentType =
-    (FLEET_DEFAULT_EMPLOYMENT_TYPE || "individual").toLowerCase();
+    (FLEET_DEFAULT_EMPLOYMENT_TYPE || "selfemployed").toLowerCase();
+  if (employmentType !== "selfemployed" && employmentType !== "individual") {
+    employmentType = "selfemployed";
+  }
 
-  // сырое значение налогового идентификатора (у вас это PINFL)
+  // PINFL → tax_identification_number (TIN)
   let taxIdRaw =
     (driverPayload.taxId && String(driverPayload.taxId).trim()) ||
     (driverPayload.pinfl && String(driverPayload.pinfl).trim()) ||
-    null;
+    "";
 
-  let taxId = null;
+  const taxDigits = taxIdRaw.replace(/\D/g, "");
 
-  if (employmentType === "selfemployed") {
-    const digits = (taxIdRaw || "").replace(/\D/g, "");
-    if (digits.length > 0) {
-      // ВАЖНО: для Узбекистана PINFL 14 цифр — используем как есть
-      taxId = digits;
-    } else {
-      console.warn(
-        "createDriverInFleet: taxId отсутствует, переключаю employment_type на 'individual'. taxIdRaw=",
-        taxIdRaw
-      );
-      employmentType = "individual";
-      taxId = null;
-    }
+  if (!taxDigits) {
+    // Без PINFL авто-регистрацию не делаем, отправляем к оператору
+    return {
+      ok: false,
+      error:
+        "Для регистрации водителя в Yandex Fleet не найден PINFL (tax_identification_number). Нужен корректный PINFL из документов.",
+      code: "missing_pinfl_for_driver",
+    };
   }
 
+  // Лимит по счёту согласно ТЗ:
+  // 5000 сум — такси / доставка
+  // 15000 сум — грузовые
+  const balanceLimit = driverPayload.isCargo ? "15000" : "5000";
+
   const account = {
-    balance_limit: "0",
+    balance_limit: balanceLimit,
     block_orders_on_balance_below_limit: false,
     work_rule_id: workRuleId,
   };
@@ -1907,12 +1910,9 @@ async function createDriverInFleet(driverPayload) {
       total_since_date: totalSince,
     },
     employment_type: employmentType,
+    // самое важное — всегда отправляем PINFL как TIN
+    tax_identification_number: taxDigits,
   };
-
-  // 🔧 теперь tax_identification_number отправляем для selfemployed с ЛЮБЫМ валидным набором цифр (PINFL)
-  if (employmentType === "selfemployed" && taxId) {
-    person.tax_identification_number = taxId;
-  }
 
   const body = {
     account,
@@ -1952,6 +1952,7 @@ async function createDriverInFleet(driverPayload) {
 
   return { ok: true, driverId, raw: data };
 }
+
 
 
 
@@ -2856,6 +2857,7 @@ async function autoRegisterInYandexFleet(chatId, session) {
     expiryDate: d.expiryDate,
     birthDate: d.birthDate,
     isHunter: session.isHunterReferral,
+    isCargo: session.isCargo,
   };
 
   const driverRes = await createDriverInFleet(driverPayload);

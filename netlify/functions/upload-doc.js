@@ -374,10 +374,12 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
 - "expiry_date" — дата окончания (поле 4b).
 - "categories" — строка из пункта 9 (например "A, B, C").
 - "issued_by" — кем выдан документ (если есть отдельное поле).
+- "driver_pinfl" — ПИНФЛ водителя из пункта 4d, только цифры (обычно 14), без пробелов.
 
 ВАЖНО:
 - Серия/номер ВУ берутся только из строки с кодом типа "AF000488684".
 - Серые большие цифры на фоне, водяные знаки, надписи "UZ", "UZB" и любые фоновые элементы игнорируй.
+- ПИНФЛ водителя брать ТОЛЬКО из поля 4d. Никакие другие числа на документе не считать ПИНФЛ.
 - Если серию или номер не видно — ставь null.
 `
       : docType === "tech_front"
@@ -465,7 +467,7 @@ async function extractDocDataWithOpenAI(imageDataUrl, docType) {
     "driver_name": "ФИО полностью или null",
     "birth_date": "ГГГГ-MM-ДД или null",
     "issued_by": "кем выдано или null",
-
+     "driver_pinfl": "ПИНФЛ водителя из пункта 4d (только цифры, обычно 14), без пробелов, или null",
     // для tech_front:
     "plate_number": "госномер, как на документе (например \\"01Y984SB\\") или null",
     "owner_name": "ФИО владельца или null",
@@ -625,6 +627,7 @@ function formatSummaryForOperators(docs, commonMeta = {}) {
       lines.push(`Полностью: \`${f.license_full || ""}\``);
       lines.push(`ФИО: ${f.driver_name || "—"}`);
       lines.push(`Дата рождения: \`${f.birth_date || ""}\``);
+      lines.push(`ПИНФЛ водителя: \`${f.driver_pinfl || ""}\``);
       lines.push(`Категории: ${f.categories || "—"}`);
       lines.push(`Дата выдачи: \`${f.issued_date || ""}\``);
       lines.push(`Окончание срока: \`${f.expiry_date || ""}\``);

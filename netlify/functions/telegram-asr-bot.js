@@ -1858,7 +1858,7 @@ async function createDriverInFleet(driverPayload) {
 
   const totalSince = issuedISO || expiryISO || birthISO || "2005-01-01";
 
-  // 🔧 employment_type: по умолчанию individual, selfemployed только для “правильного” ИНН
+  // 🔧 тип занятости: park env решает, но для selfemployed мы теперь ОТПРАВЛЯЕМ любой PINFL
   let employmentType =
     (FLEET_DEFAULT_EMPLOYMENT_TYPE || "individual").toLowerCase();
 
@@ -1872,13 +1872,12 @@ async function createDriverInFleet(driverPayload) {
 
   if (employmentType === "selfemployed") {
     const digits = (taxIdRaw || "").replace(/\D/g, "");
-    // для selfemployed Яндекс ожидает формат российского ИНН — 12 цифр
-    if (digits.length === 12) {
+    if (digits.length > 0) {
+      // ВАЖНО: для Узбекистана PINFL 14 цифр — используем как есть
       taxId = digits;
     } else {
       console.warn(
-        "createDriverInFleet: taxId не похож на российский ИНН (12 цифр), " +
-          "переключаю employment_type на 'individual'. taxIdRaw=",
+        "createDriverInFleet: taxId отсутствует, переключаю employment_type на 'individual'. taxIdRaw=",
         taxIdRaw
       );
       employmentType = "individual";
@@ -1910,7 +1909,7 @@ async function createDriverInFleet(driverPayload) {
     employment_type: employmentType,
   };
 
-  // 🔧 важно: отправляем tax_identification_number только если реально selfemployed с валидным ИНН
+  // 🔧 теперь tax_identification_number отправляем для selfemployed с ЛЮБЫМ валидным набором цифр (PINFL)
   if (employmentType === "selfemployed" && taxId) {
     person.tax_identification_number = taxId;
   }

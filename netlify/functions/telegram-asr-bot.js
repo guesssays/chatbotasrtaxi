@@ -2065,17 +2065,8 @@ async function findDriverByLicense(licenseVariants) {
     return { ok: false, found: false, error: cfg.message };
   }
 
+  // ВАЖНО: убрали fields.*, чтобы не ловить 400 из-за неизвестных полей
   const body = {
-    fields: {
-      driver_profile: [
-        "first_name",
-        "last_name",
-        "middle_name",
-        "phones",
-        "licenses",
-      ],
-      current_status: ["status"],
-    },
     limit: 500,
     offset: 0,
     query: {
@@ -2085,12 +2076,11 @@ async function findDriverByLicense(licenseVariants) {
     },
   };
 
-const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
-if (!res.ok) {
-  console.error("findDriverByLicense: fleet error:", res);
-  return { ok: false, found: false, error: res.message };
-}
-
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    console.error("findDriverByLicense: fleet error:", res);
+    return { ok: false, found: false, error: res.message };
+  }
 
   const profiles = (res.data && res.data.driver_profiles) || [];
   if (!profiles.length) {
@@ -2107,9 +2097,15 @@ if (!res.ok) {
 
   for (const item of profiles) {
     const dp = (item && item.driver_profile) || {};
+
     const rawLicenses = [];
 
- 
+    // 1) Наиболее типичный вариант: одиночный объект license
+    if (dp.license && typeof dp.license.number === "string") {
+      rawLicenses.push(dp.license.number);
+    }
+
+    // 2) На всякий случай — если API вернет массив licenses
     if (Array.isArray(dp.licenses)) {
       for (const l of dp.licenses) {
         if (l && typeof l.number === "string") {
@@ -2149,6 +2145,7 @@ if (!res.ok) {
 
   return { ok: true, found: false };
 }
+
 
 /**
  * Проверка статуса для кнопки "Проверить статус"

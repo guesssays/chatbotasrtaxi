@@ -1993,12 +1993,8 @@ async function findDriverByPhone(phoneRaw) {
     return { ok: false, found: false, error: cfg.message };
   }
 
+  // ВАЖНО: убрали fields.*, чтобы не ловить 400 по неизвестным полям
   const body = {
-    fields: {
-      driver_profile: ["first_name", "last_name", "middle_name", "phones"],
-      car: ["brand", "model", "color", "number", "normalized_number", "status", "year"],
-      current_status: ["status"],
-    },
     limit: 500,
     offset: 0,
     query: {
@@ -2008,12 +2004,11 @@ async function findDriverByPhone(phoneRaw) {
     },
   };
 
-const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
-if (!res.ok) {
-  console.error("findDriverByLicense: fleet error:", res);
-  return { ok: false, found: false, error: res.message };
-}
-
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    console.error("findDriverByPhone: fleet error:", res);
+    return { ok: false, found: false, error: res.message };
+  }
 
   const profiles = (res.data && res.data.driver_profiles) || [];
   if (!profiles.length) {
@@ -2055,6 +2050,7 @@ if (!res.ok) {
 
   return { ok: true, found: false };
 }
+
 
 /**
  * Поиск водителя по номеру В/У (двойная проверка после загрузки ВУ)

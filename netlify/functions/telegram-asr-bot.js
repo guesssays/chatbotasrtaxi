@@ -1576,7 +1576,10 @@ function ensureFleetConfigured() {
 
 async function callFleetPost(path, payload) {
   const cfg = ensureFleetConfigured();
-  if (!cfg.ok) return { ok: false, message: cfg.message };
+  if (!cfg.ok) {
+    console.error("callFleetPost: fleet not configured:", cfg.message);
+    return { ok: false, message: cfg.message };
+  }
 
   const url = `${FLEET_API_BASE_URL}${path}`;
 
@@ -1598,6 +1601,7 @@ async function callFleetPost(path, payload) {
     } catch (e) {}
 
     if (!res.ok) {
+      console.error("callFleetPost error:", res.status, json);
       return {
         ok: false,
         status: res.status,
@@ -1610,9 +1614,11 @@ async function callFleetPost(path, payload) {
 
     return { ok: true, data: json };
   } catch (e) {
+    console.error("callFleetPost exception:", e);
     return { ok: false, message: String(e) };
   }
 }
+
 
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   const cfg = ensureFleetConfigured();
@@ -2002,10 +2008,12 @@ async function findDriverByPhone(phoneRaw) {
     },
   };
 
-  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
-  if (!res.ok) {
-    return { ok: false, found: false, error: res.message };
-  }
+const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+if (!res.ok) {
+  console.error("findDriverByLicense: fleet error:", res);
+  return { ok: false, found: false, error: res.message };
+}
+
 
   const profiles = (res.data && res.data.driver_profiles) || [];
   if (!profiles.length) {
@@ -2078,10 +2086,12 @@ async function findDriverByLicense(licenseVariants) {
     },
   };
 
-  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
-  if (!res.ok) {
-    return { ok: false, found: false, error: res.message };
-  }
+const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+if (!res.ok) {
+  console.error("findDriverByLicense: fleet error:", res);
+  return { ok: false, found: false, error: res.message };
+}
+
 
   const profiles = (res.data && res.data.driver_profiles) || [];
   if (!profiles.length) {

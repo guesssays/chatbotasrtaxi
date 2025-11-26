@@ -19,11 +19,36 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
-// ===== Yandex Fleet API (Park) для проверки статуса и регистрации =====
+// ===== Yandex Fleet API (Park) =====
 const FLEET_API_URL = process.env.FLEET_API_URL || null;
 const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
 const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || null;
 const FLEET_PARK_ID = process.env.FLEET_PARK_ID || null;
+
+// из ТЗ про условия работы и оплату:
+const FLEET_WORK_RULE_ID_DEFAULT =
+  process.env.FLEET_WORK_RULE_ID_DEFAULT || null; // обычный 3% бот
+const FLEET_WORK_RULE_ID_HUNTER =
+  process.env.FLEET_WORK_RULE_ID_HUNTER || null; // 3% hunter
+
+// платёжный сервис Яндекса, без него Account не создать
+const FLEET_PAYMENT_SERVICE_ID =
+  process.env.FLEET_PAYMENT_SERVICE_ID || null;
+
+// дефолты для профиля водителя / авто
+const FLEET_DEFAULT_LICENSE_COUNTRY =
+  process.env.FLEET_DEFAULT_LICENSE_COUNTRY || "UZB";
+const FLEET_DEFAULT_EMPLOYMENT_TYPE =
+  process.env.FLEET_DEFAULT_EMPLOYMENT_TYPE || "selfemployed"; // самозанятый
+const FLEET_DEFAULT_TRANSMISSION =
+  process.env.FLEET_DEFAULT_TRANSMISSION || "automatic";
+const FLEET_DEFAULT_FUEL_TYPE =
+  process.env.FLEET_DEFAULT_FUEL_TYPE || "petrol";
+
+// базовый URL API Флита
+const FLEET_API_BASE_URL =
+  (FLEET_API_URL && FLEET_API_URL.replace(/\/$/, "")) ||
+  "https://fleet-api.taxi.yandex.net";
 
 if (!TELEGRAM_TOKEN) {
   console.error("TG_BOT_TOKEN is not set (telegram-asr-bot.js)");
@@ -47,10 +72,9 @@ function cancelStatusReminders(chatId) {
 }
 
 function scheduleStatusReminders(chatId) {
-  // очищаем старые таймеры для этого чата
   cancelStatusReminders(chatId);
 
-  const delaysMinutes = [5, 10, 15]; // можно менять (5/10/15 минут)
+  const delaysMinutes = [5, 10, 15];
   const text =
     "ℹ️ Eslatma: agar hali ro‘yxatdan o‘tish holatini tekshirmagan bo‘lsangiz, " +
     '"🔄 Ro‘yxatdan o‘tish holatini tekshirish" tugmasini bosib ko‘rishingiz mumkin.';
@@ -86,12 +110,13 @@ function getSession(chatId) {
       carModelCode: null,
       carModelLabel: null,
       carColor: null,
+      carColorCode: null,
 
       isCargo: false,
-      cargoSizeCode: null, // S/M/L/XL/XXL
+      cargoSizeCode: null, // S/M/L/XL/XXL label
       cargoDimensions: null, // {length,width,height}
 
-      assignedTariffs: [], // ['start','comfort',...]
+      assignedTariffs: [], // ['Start','Comfort',...]
       registerWithoutCar: false,
 
       // AI-распознанные документы
@@ -109,6 +134,11 @@ function getSession(chatId) {
       editIndex: 0,
       editAwaitingValue: false,
       currentFieldKey: null,
+
+      // hunter / delivery (из ТЗ)
+      isHunterReferral: false,
+      hunterCode: null,
+      wantsDelivery: false,
     });
   }
   return sessions.get(chatId);
@@ -119,7 +149,7 @@ function resetSession(chatId) {
   cancelStatusReminders(chatId);
 }
 
-// ===== ВСПОМОГАТЕЛЬНОЕ: кодирование строк =====
+// ===== утилиты =====
 
 function makeCarCode(label) {
   return label
@@ -133,9 +163,29 @@ function makeCarCode(label) {
     .slice(0, 60);
 }
 
+// парсинг /start payload для hunter и других меток
+function applyStartPayloadToSession(session, payloadRaw) {
+  if (!payloadRaw) return;
+  const payload = String(payloadRaw).trim();
+
+  // пример: /start hunter_12345
+  if (payload.toLowerCase().startsWith("hunter_")) {
+    session.isHunterReferral = true;
+    session.hunterCode = payload.slice("hunter_".length);
+    return;
+  }
+
+  if (payload.toLowerCase().startsWith("hunter:")) {
+    session.isHunterReferral = true;
+    session.hunterCode = payload.slice("hunter:".length);
+    return;
+  }
+
+  // другие варианты реферальных меток можно обработать здесь
+}
+
 // ===== МАРКИ / МОДЕЛИ / ГРУЗОВЫЕ =====
 
-// Бренды (включая «Грузовые» — специальный случай)
 const CAR_BRANDS = [
   { code: "CHEVROLET", label: "Chevrolet" },
   { code: "RAVON", label: "Ravon" },
@@ -151,7 +201,6 @@ const CAR_BRANDS = [
   { code: "CARGO", label: "Грузовые" },
 ];
 
-// Модели по брендам (короткий список из ТЗ; остальные можно дописать по аналогии)
 const CAR_MODELS_BY_BRAND = {
   CHEVROLET: [
     "Cobalt",
@@ -305,7 +354,6 @@ const CAR_MODELS_BY_BRAND = {
   ],
 };
 
-// Подготовим структуру с кодами моделей
 const CAR_MODELS_INDEX = {};
 for (const brand of CAR_BRANDS) {
   const list = CAR_MODELS_BY_BRAND[brand.code] || [];
@@ -326,8 +374,7 @@ const CARGO_SIZES = {
   XXL: { code: "XXL", label: "XXL — 450×210×210 см", length: 450, width: 210, height: 210 },
 };
 
-// ===== ТАРИФЫ: правила (структура; нужно дополнять) =====
-// Ключ: brandCode → модель → объект с minYear для каждой группы тарифов.
+// ===== ТАРИФЫ: правила (по ТЗ) =====
 const TARIFF_RULES = {
   CHEVROLET: {
     Cobalt: {
@@ -342,6 +389,82 @@ const TARIFF_RULES = {
       start: true,
       comfort: { minYear: 2015 },
     },
+    Lacetti: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Spark: {
+      start: true,
+    },
+    Onix: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Epica: {
+      start: true,
+      comfort: { minYear: 2006 },
+    },
+    Cruze: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Orlando: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Menlo: {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 2020 },
+      electro: true,
+    },
+    Monza: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    "Bolt EV": {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 2019 },
+      electro: true,
+    },
+    Volt: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2012 },
+      electro: true,
+    },
+    Tracker: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 2021 },
+    },
+    Tahoe: {
+      start: true,
+    },
+    Captiva: {
+      start: true,
+    },
+    Trailblazer: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Traverse: {
+      start: true,
+      comfort: { minYear: 2008 },
+      comfortPlus: { minYear: 2010 },
+    },
+    Equinox: {
+      start: true,
+      comfortPlus: { minYear: 2012 },
+    },
+    Colorado: {
+      start: true,
+    },
+    Evanda: {
+      start: true,
+    },
     Malibu: {
       start: true,
       comfort: { minYear: 2006 },
@@ -354,48 +477,494 @@ const TARIFF_RULES = {
       comfortPlus: { minYear: 2012 },
       business: { minYear: 2018 },
     },
-    Spark: {
+  },
+
+  RAVON: {
+    "Nexia R3": {
       start: true,
+      comfort: { minYear: 2019 },
     },
-    Onix: {
+    R4: {
       start: true,
       comfort: { minYear: 2019 },
     },
-    Tracker: {
+    Gentra: {
       start: true,
-      comfort: { minYear: 2019 },
-      comfortPlus: { minYear: 2021 },
+      comfort: { minYear: 2015 },
     },
-    "Bolt EV": {
+  },
+
+  DAEWOO: {
+    Matiz: {
+      start: true,
+    },
+    Tico: {
+      // только Delivery по ТЗ, но здесь это только Start
+      start: true,
+    },
+    Damas: {
+      // Delivery / Cargo по ТЗ
+      start: true,
+    },
+    Labo: {
+      // Delivery / Cargo по ТЗ
+      start: true,
+    },
+    "Gentra (доузб.)": {
+      start: true,
+    },
+    Kalos: {
+      start: true,
+    },
+    "Lacetti (старый)": {
+      start: true,
+    },
+    Lanos: {
+      start: true,
+    },
+    Leganza: {
+      start: true,
+      comfort: { minYear: 2004 },
+    },
+    Magnus: {
+      start: true,
+      comfort: { minYear: 2006 },
+    },
+    Nubira: {
+      start: true,
+    },
+    Tacuma: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Winstorm: {
+      start: true,
+      comfort: { minYear: 2006 },
+    },
+    Sens: {
+      start: true,
+    },
+  },
+
+  BYD: {
+    E2: {
       start: true,
       comfort: { minYear: 2019 },
-      comfortPlus: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
       electro: true,
     },
-    Menlo: {
+    Chazor: {
+      start: true,
+      comfort: { minYear: 2022 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    "Qin Plus": {
+      start: true,
+      comfort: { minYear: 2018 },
+      comfortPlus: { minYear: 0 },
+    },
+    "Qin Pro": {
+      start: true,
+    },
+    Han: {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      business: { minYear: 2020 },
+      electro: true,
+    },
+    Seagull: {
+      start: true,
+      electro: true,
+    },
+    "Song Plus": {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      // EV-версия — электро; в рамках одной модели считаем как Electro
+      electro: true,
+    },
+    Tang: {
+      start: true,
+      comfort: { minYear: 2015 },
+      comfortPlus: { minYear: 0 },
+    },
+    Yuan: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+  },
+
+  CHERY: {
+    "Arrizo 6 Pro": {
+      start: true,
+      comfort: { minYear: 2023 },
+    },
+    "Arrizo 7": {
+      start: true,
+      comfort: { minYear: 2013 },
+    },
+    "Tiggo 2": {
+      start: true,
+    },
+    "Tiggo 3": {
+      start: true,
+    },
+    "Tiggo 4": {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Tiggo 4 Pro": {
+      start: true,
+      comfort: { minYear: 2020 },
+    },
+    "Tiggo 7": {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Tiggo 7 Pro": {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    "Tiggo 7 Pro Max": {
+      start: true,
+      comfortPlus: { minYear: 2022 },
+    },
+    "Tiggo 8": {
+      start: true,
+      comfort: { minYear: 2018 },
+    },
+    "Tiggo 8 Pro": {
+      start: true,
+      comfort: { minYear: 2021 },
+      comfortPlus: { minYear: 2021 },
+      business: { minYear: 2021 },
+    },
+    "Tiggo 8 Pro Max": {
+      start: true,
+      comfortPlus: { minYear: 2022 },
+    },
+    EQ5: {
       start: true,
       comfort: { minYear: 2020 },
       comfortPlus: { minYear: 2020 },
       electro: true,
     },
-    Volt: {
+    eQ7: {
       start: true,
-      comfort: { minYear: 2012 },
-      comfortPlus: { minYear: 2012 },
+      comfortPlus: { minYear: 2023 },
+      business: { minYear: 2023 }, // "частично" в ТЗ
       electro: true,
     },
-    // ... остальные модели Chevrolet можно дописать по таблице
   },
-  RAVON: {
-    "Nexia R3": { start: true, comfort: { minYear: 2019 } },
-    R4: { start: true, comfort: { minYear: 2019 } },
-    Gentra: { start: true, comfort: { minYear: 2015 } },
+
+  CHANGAN: {
+    Alsvin: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    CS35: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "CS35 Plus": {
+      start: true,
+    },
+    CS55: {
+      start: true,
+      comfort: { minYear: 2017 },
+      comfortPlus: { minYear: 2018 },
+    },
+    CS75: {
+      start: true,
+      comfort: { minYear: 2014 },
+      business: { minYear: 2021 },
+    },
+    Eado: {
+      start: true,
+      comfort: { minYear: 2013 },
+      comfortPlus: { minYear: 2018 },
+    },
+    "UNI-T": {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    "New Van": {
+      start: true,
+    },
+    "A600 EV": {
+      start: true,
+      electro: true,
+    },
   },
-  // ... остальные бренды (Daewoo, BYD, Chery, Changan, JAC, Geely, Hyundai, Kia, Leapmotor)
-  // заполняются по тому же принципу, как в ТЗ
+
+  JAC: {
+    J5: {
+      start: true,
+      comfort: { minYear: 2014 },
+    },
+    J7: {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    JS4: {
+      start: true,
+    },
+    S3: {
+      start: true,
+      comfort: { minYear: 2014 },
+    },
+    S5: {
+      start: true,
+      comfort: { minYear: 2013 },
+    },
+    iEV7S: {
+      start: true,
+      electro: true,
+    },
+  },
+
+  GEELY: {
+    Atlas: {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Atlas Pro": {
+      start: true,
+      comfort: { minYear: 2021 },
+    },
+    Coolray: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Emgrand 7": {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Emgrand EC7": {
+      start: true,
+      comfort: { minYear: 2009 },
+    },
+    "Emgrand GT": {
+      start: true,
+      comfort: { minYear: 2015 },
+      business: { minYear: 2015 }, // частично
+    },
+    "Geometry C": {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    Tugella: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
+      business: { minYear: 2019 },
+    },
+    TX4: {
+      start: true,
+    },
+  },
+
+  HYUNDAI: {
+    Accent: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Accent Blue": {
+      start: true,
+    },
+    Avante: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Elantra: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Sonata: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    "Sonata Turbo": {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    i30: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    i40: {
+      start: true,
+      comfort: { minYear: 2011 },
+      comfortPlus: { minYear: 2012 },
+    },
+    Tucson: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    "Santa Fe": {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Creta: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Venue: {
+      start: true,
+    },
+    Getz: {
+      start: true,
+    },
+    Grandeur: {
+      start: true,
+      comfort: { minYear: 2010 },
+      comfortPlus: { minYear: 2010 },
+      business: { minYear: 2019 },
+    },
+    Equus: {
+      start: true,
+      comfortPlus: { minYear: 2010 },
+      business: { minYear: 2015 },
+    },
+    Ioniq: {
+      start: true,
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    "Ioniq 5": {
+      start: true,
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    Staria: {
+      start: true,
+    },
+  },
+
+  KIA: {
+    Rio: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Optima: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+    },
+    K5: {
+      start: true,
+      comfort: { minYear: 2010 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    K3: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Cerato: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Forte: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Cadenza: {
+      start: true,
+    },
+    K7: {
+      start: true,
+    },
+    K8: {
+      start: true,
+      comfortPlus: { minYear: 2021 },
+    },
+    Sorento: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Sportage: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Soul: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Soul EV": {
+      start: true,
+      electro: true,
+    },
+    Seltos: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Stinger: {
+      start: true,
+      comfortPlus: { minYear: 2017 },
+      business: { minYear: 2021 },
+    },
+    Carnival: {
+      start: true,
+      comfort: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Carens: {
+      start: true,
+    },
+    Bongo: {
+      start: true,
+    },
+  },
+
+  LEAPMOTOR: {
+    C01: {
+      start: true,
+      comfort: { minYear: 2022 },
+      comfortPlus: { minYear: 2022 },
+      business: { minYear: 2022 },
+      electro: true,
+    },
+    C10: {
+      start: true,
+      electro: true,
+    },
+    C11: {
+      start: true,
+      comfort: { minYear: 2021 },
+      comfortPlus: { minYear: 2021 },
+      business: { minYear: 2021 },
+      electro: true,
+    },
+    T03: {
+      start: true,
+      electro: true,
+    },
+  },
 };
 
-// Маппинг наших внутренних названий тарифов → категории Флита
+
+// Маппинг внутренних тарифов → категории Флита
 const TARIFF_CATEGORY_MAP = {
   Start: "econom",
   Comfort: "comfort",
@@ -418,27 +987,22 @@ function getTariffsForCar(brandCode, modelLabel, carYearRaw) {
     rulesByBrand[String(modelLabel).replace(/\s+\(.+\)$/, "").trim()];
   if (!rules) return { tariffs: [], hasRules: false };
 
-  // Start
   if (rules.start) tariffs.push("Start");
-  // Comfort
   if (rules.comfort && (!year || year >= rules.comfort.minYear)) {
     tariffs.push("Comfort");
   }
-  // Comfort+
   if (rules.comfortPlus && (!year || year >= rules.comfortPlus.minYear)) {
     tariffs.push("Comfort+");
   }
-  // Business
   if (rules.business && (!year || year >= rules.business.minYear)) {
     tariffs.push("Business");
   }
-  // Electro
   if (rules.electro) tariffs.push("Electro");
 
   return { tariffs, hasRules: true };
 }
 
-// ===== СПИСОК ЦВЕТОВ =====
+// ===== СПИСОК ЦВЕТОВ (бот) =====
 
 const CAR_COLORS = [
   { code: "WHITE", label: "Oq" },
@@ -456,6 +1020,63 @@ const CAR_COLORS = [
   { code: "ORANGE", label: "To‘q sariq" },
   { code: "PURPLE", label: "Binafsha" },
 ];
+
+// маппинг в ColorEnum Яндекса (значения на русском из документации)
+function mapColorToYandex(session) {
+  if (session.carColorCode) {
+    switch (session.carColorCode) {
+      case "WHITE":
+        return "Белый";
+      case "BLACK":
+        return "Черный";
+      case "GRAY":
+        return "Серый";
+      case "SILVER":
+        return "Серый";
+      case "BLUE":
+      case "DARK_BLUE":
+        return "Синий";
+      case "RED":
+      case "BURGUNDY":
+        return "Красный";
+      case "YELLOW":
+        return "Желтый";
+      case "GREEN":
+        return "Зеленый";
+      case "BROWN":
+        return "Коричневый";
+      case "BEIGE":
+        return "Бежевый";
+      case "ORANGE":
+        return "Оранжевый";
+      case "PURPLE":
+        return "Фиолетовый";
+      default:
+        return "Белый";
+    }
+  }
+
+  const txt = (session.carColor || "").toLowerCase();
+  if (!txt) return "Белый";
+
+  if (txt.includes("oq") || txt.includes("white")) return "Белый";
+  if (txt.includes("qora") || txt.includes("black")) return "Черный";
+  if (txt.includes("kul") || txt.includes("gray") || txt.includes("grey"))
+    return "Серый";
+  if (txt.includes("kumush") || txt.includes("silver")) return "Серый";
+  if (txt.includes("ko‘k") || txt.includes("kök") || txt.includes("blue"))
+    return "Синий";
+  if (txt.includes("qizil") || txt.includes("red") || txt.includes("bordo"))
+    return "Красный";
+  if (txt.includes("sariq") || txt.includes("yellow")) return "Желтый";
+  if (txt.includes("yashil") || txt.includes("green")) return "Зеленый";
+  if (txt.includes("jigar") || txt.includes("brown")) return "Коричневый";
+  if (txt.includes("bej") || txt.includes("beige")) return "Бежевый";
+  if (txt.includes("to‘q sariq") || txt.includes("orange")) return "Оранжевый";
+  if (txt.includes("binafsha") || txt.includes("purple")) return "Фиолетовый";
+
+  return "Белый";
+}
 
 // ===== поля для редактирования =====
 
@@ -497,27 +1118,6 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
-async function editReplyMarkup(chatId, messageId, replyMarkup) {
-  if (!TELEGRAM_API || !chatId || !messageId) return;
-  try {
-    const res = await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        reply_markup: replyMarkup,
-      }),
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      console.error("editMessageReplyMarkup error:", res.status, txt);
-    }
-  } catch (e) {
-    console.error("editReplyMarkup exception:", e);
-  }
-}
-
 async function answerCallbackQuery(callbackQueryId) {
   if (!TELEGRAM_API || !callbackQueryId) return;
   try {
@@ -548,7 +1148,7 @@ async function sendOperatorAlert(text) {
   }
 }
 
-// ===== отправка альбома документов операторам =====
+// ===== формирование сводок для операторов / водителя =====
 
 function humanDocTitle(docType) {
   if (docType === "vu_front") return "Водительское удостоверение (лицевая)";
@@ -572,7 +1172,8 @@ function splitCarBrandModel(source) {
 }
 
 function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
-  const { phone, tg_id, carModel, carColor, tariffs, isCargo, cargoSize } = commonMeta;
+  const { phone, tg_id, carModel, carColor, tariffs, isCargo, cargoSize } =
+    commonMeta;
   const { note } = options;
 
   const vu = docs.find((d) => d.docType === "vu_front");
@@ -588,7 +1189,6 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
     (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) ||
     {};
 
-  // ФИО
   let fam = "";
   let name = "";
   if (fVu.driver_name) {
@@ -597,25 +1197,20 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
     name = parts[1] || "";
   }
 
-  // ВУ
   const licenseSeries = (fVu.license_series || "").trim() || null;
   const issuedDate = fVu.issued_date || "—";
   const expiryDate = fVu.expiry_date || "—";
 
-  // ПИНФЛ из лицевой техпаспорта
   const pinfl = fTf.pinfl || "—";
 
-  // Авто
   const plateNumber = fTf.plate_number || "—";
   const carModelSource = fTf.car_model_text || carModel || "";
   const { brand, model } = splitCarBrandModel(carModelSource);
   const colorDocOrForm = fTf.car_color_text || carColor || "—";
 
-  // Год выпуска и кузов
   const carYear = fTb.car_year || "—";
   const bodyNumber = fTb.body_number || "—";
 
-  // Серия техпаспорта
   const techSeries = (fTb.tech_series || "").trim() || "—";
 
   const lines = [];
@@ -661,9 +1256,6 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   return lines.join("\n");
 }
 
-/**
- * Сводка для водителя (узбекский)
- */
 function formatSummaryForDriverUz(docs, commonMeta = {}) {
   const { carModel, carColor, isCargo, cargoSize, tariffs } = commonMeta;
 
@@ -818,7 +1410,7 @@ async function sendDocsToOperators(chatId, session, options = {}) {
   }
 }
 
-// ===== upload-doc =====
+// ===== upload-doc интеграция =====
 
 async function forwardDocToUploadDoc(telegramUpdate, meta) {
   if (!UPLOAD_DOC_URL) {
@@ -833,7 +1425,7 @@ async function forwardDocToUploadDoc(telegramUpdate, meta) {
         source: "telegram_bot",
         telegram_update: telegramUpdate,
         meta: meta || {},
-        previewOnly: true, // распознаём / не шлём сразу операторам
+        previewOnly: true,
       }),
     });
 
@@ -969,15 +1561,8 @@ function setFieldValue(session, key, value) {
   }
 }
 
-// ===== YANDEX FLEET API (реальная интеграция для ПРОВЕРКИ/РЕГИСТРАЦИИ) =====
+// ===== YANDEX FLEET API HELPERS =====
 
-const FLEET_API_BASE_URL =
-  (FLEET_API_URL && FLEET_API_URL.replace(/\/$/, "")) ||
-  "https://fleet-api.taxi.yandex.net";
-
-/**
- * Проверяем, что заданы ключи для Fleet API.
- */
 function ensureFleetConfigured() {
   if (!FLEET_CLIENT_ID || !FLEET_API_KEY || !FLEET_PARK_ID) {
     return {
@@ -989,9 +1574,6 @@ function ensureFleetConfigured() {
   return { ok: true };
 }
 
-/**
- * Общий POST в Yandex Fleet (без идемпотентности).
- */
 async function callFleetPost(path, payload) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, message: cfg.message };
@@ -1005,6 +1587,7 @@ async function callFleetPost(path, payload) {
         "Content-Type": "application/json",
         "X-Client-ID": FLEET_CLIENT_ID,
         "X-API-Key": FLEET_API_KEY,
+        "X-Park-ID": FLEET_PARK_ID,
       },
       body: JSON.stringify(payload || {}),
     });
@@ -1012,9 +1595,7 @@ async function callFleetPost(path, payload) {
     let json = null;
     try {
       json = await res.json();
-    } catch (e) {
-      // если ответ не JSON, просто оставим raw = null
-    }
+    } catch (e) {}
 
     if (!res.ok) {
       return {
@@ -1033,9 +1614,6 @@ async function callFleetPost(path, payload) {
   }
 }
 
-/**
- * Идемпотентный POST в Yandex Fleet (для создания сущностей).
- */
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, message: cfg.message };
@@ -1052,6 +1630,7 @@ async function callFleetPostIdempotent(path, payload, idempotencyKey) {
         "Content-Type": "application/json",
         "X-Client-ID": FLEET_CLIENT_ID,
         "X-API-Key": FLEET_API_KEY,
+        "X-Park-ID": FLEET_PARK_ID,
         "X-Idempotency-Token": key,
       },
       body: JSON.stringify(payload || {}),
@@ -1060,9 +1639,7 @@ async function callFleetPostIdempotent(path, payload, idempotencyKey) {
     let json = null;
     try {
       json = await res.json();
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
 
     if (!res.ok) {
       return {
@@ -1082,83 +1659,179 @@ async function callFleetPostIdempotent(path, payload, idempotencyKey) {
 }
 
 /**
- * Нормализация телефона под формат, который обычно хранится в Яндексе.
+ * Привязка авто к водителю через /v1/parks/driver-profiles/car-bindings (PUT)
+ */
+async function bindCarToDriver(driverId, vehicleId) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) return { ok: false, error: cfg.message };
+
+  if (!driverId || !vehicleId) {
+    return {
+      ok: false,
+      error: "Нет driverId или vehicleId для привязки авто к водителю",
+    };
+  }
+
+  const url = `${FLEET_API_BASE_URL}/v1/parks/driver-profiles/car-bindings?park_id=${encodeURIComponent(
+    FLEET_PARK_ID
+  )}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client-ID": FLEET_CLIENT_ID,
+        "X-API-Key": FLEET_API_KEY,
+        "X-Park-ID": FLEET_PARK_ID,
+      },
+      body: JSON.stringify({
+        driver_profile_id: driverId,
+        car_id: vehicleId,
+      }),
+    });
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {}
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error:
+          (json && (json.message || json.code)) ||
+          `Yandex Fleet API xatosi: ${res.status}`,
+        raw: json,
+      };
+    }
+
+    return { ok: true, data: json };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+/**
+ * Нормализация телефона
  */
 function normalizePhoneForYandex(phone) {
   if (!phone) return null;
   const digits = String(phone).replace(/[^\d]/g, "");
   if (!digits) return null;
 
-  // Узбекистан: 998XXXXXXXXX → +998XXXXXXXXX
   if (digits.startsWith("998")) {
     return `+${digits}`;
   }
 
-  // Россия: 89XXXXXXXXX → +79XXXXXXXXX
   if (digits.length === 11 && digits[0] === "8") {
     return `+7${digits.slice(1)}`;
   }
 
-  // Если уже с кодом страны — просто добавим +
   if (digits.length >= 11) {
     return `+${digits}`;
   }
 
-  // fallback — как есть
   return phone;
 }
 
 /**
- * Создание водителя в Яндекс Флит через /v2/parks/contractors/driver-profile.
- *
- * Здесь мы используем только безопасный минимум:
- *  - ФИО
- *  - телефон
- *  - данные В/У
- *
- * Условия работы, схемы выплат, work_rule_id и т.п. по твоей просьбе
- * пока НЕ заполняем — ты добавишь по доке, когда договоритесь с Яндексом.
+ * Создание водителя через /v2/parks/contractors/driver-profile
  */
 async function createDriverInFleet(driverPayload) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
 
+  const workRuleDefault = FLEET_WORK_RULE_ID_DEFAULT;
+  const workRuleHunter = FLEET_WORK_RULE_ID_HUNTER;
+  let workRuleId = workRuleDefault;
+
+  if (driverPayload.isHunter && workRuleHunter) {
+    workRuleId = workRuleHunter;
+  }
+
+  if (!workRuleId) {
+    return {
+      ok: false,
+      error:
+        "Не задан FLEET_WORK_RULE_ID_DEFAULT (и FLEET_WORK_RULE_ID_HUNTER). Нужно создать условия работы в таксопарке и записать их ID в переменные окружения.",
+    };
+  }
+
   const phoneNorm = normalizePhoneForYandex(driverPayload.phone);
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   const idempotencyKey = `driver-${FLEET_PARK_ID}-${phoneNorm || ""}`;
 
-  // Минимальный контрактор-профиль
+  const fullName = {
+    first_name: driverPayload.first_name || driverPayload.firstName || "",
+    last_name: driverPayload.last_name || driverPayload.lastName || "",
+  };
+  if (driverPayload.middle_name || driverPayload.middleName) {
+    fullName.middle_name =
+      driverPayload.middle_name || driverPayload.middleName;
+  }
+
+  const driverLicenseNumber =
+    driverPayload.licenseFull ||
+    `${driverPayload.licenseSeries || ""} ${
+      driverPayload.licenseNumber || ""
+    }`.trim();
+
+  const license = driverLicenseNumber
+    ? {
+        number: driverLicenseNumber,
+        country: FLEET_DEFAULT_LICENSE_COUNTRY.toLowerCase(),
+        issue_date: driverPayload.issuedDate || undefined,
+        expiry_date: driverPayload.expiryDate || undefined,
+        birth_date: driverPayload.birthDate || undefined,
+      }
+    : undefined;
+
+  const totalSince =
+    driverPayload.issuedDate ||
+    driverPayload.expiryDate ||
+    driverPayload.birthDate ||
+    "2005-01-01";
+
+  // 👇 тут ключевое: account без payment_service_id по умолчанию
+  const account = {
+    balance_limit: "0",
+    block_orders_on_balance_below_limit: false,
+    work_rule_id: workRuleId,
+  };
+
+  // если FLEET_PAYMENT_SERVICE_ID задан в env — добавим его,
+  // если нет — Яндекс сам подставит платежный сервис
+  if (FLEET_PAYMENT_SERVICE_ID) {
+    account.payment_service_id = FLEET_PAYMENT_SERVICE_ID;
+  }
+
   const body = {
-    park_id: FLEET_PARK_ID,
-    contractor_profile: {
-      // person
-      person: {
-        first_name: driverPayload.first_name || driverPayload.firstName || "",
-        last_name: driverPayload.last_name || driverPayload.lastName || "",
-        middle_name:
-          driverPayload.middle_name || driverPayload.middleName || "",
-      },
-      // телефон(ы)
-      phones: phoneNorm
-        ? [
-            {
-              number: phoneNorm,
-              type: "mobile",
-              is_default: true,
-            },
-          ]
-        : [],
-      // водительское удостоверение
-      driver_license: driverPayload.licenseFull
+    account,
+    order_provider: {
+      partner: true,
+      platform: true,
+    },
+    person: {
+      full_name: fullName,
+      contact_info: phoneNorm
         ? {
-            number: driverPayload.licenseFull,
-            country: "UZB",
-            issue_date: driverPayload.issuedDate || undefined,
-            expiration_date: driverPayload.expiryDate || undefined,
+            phone: phoneNorm,
           }
         : undefined,
-      // статус; можно сразу активным сделать, если политика парка позволяет
+      driver_license: license,
+      driver_license_experience: {
+        total_since_date: totalSince,
+      },
+      employment_type: FLEET_DEFAULT_EMPLOYMENT_TYPE,
+      tax_identification_number: driverPayload.taxId || undefined,
+    },
+    profile: {
+      hire_date: todayIso,
       work_status: "working",
-      // TODO: здесь позже можно добавить work_rule_id, payout_details и т.п.
+      comment: driverPayload.comment || undefined,
     },
   };
 
@@ -1169,13 +1842,16 @@ async function createDriverInFleet(driverPayload) {
   );
 
   if (!res.ok) {
-    return { ok: false, error: res.message || "driver create error", raw: res.raw };
+    return {
+      ok: false,
+      error: res.message || "driver create error",
+      raw: res.raw,
+    };
   }
 
   const data = res.data || {};
-  const profile =
-    data.contractor_profile || data.driver_profile || data.profile || {};
-  const driverId = profile.id || data.id || null;
+  const profile = data.profile || data.contractor_profile || {};
+  const driverId = data.id || profile.id || null;
 
   if (!driverId) {
     return { ok: false, error: "Yandex Fleet не вернул id водителя", raw: data };
@@ -1184,41 +1860,105 @@ async function createDriverInFleet(driverPayload) {
   return { ok: true, driverId, raw: data };
 }
 
+
 /**
- * Создание авто в Яндекс Флит через /v2/parks/cars/car.
- *
- * Маппим на минимальные поля: марка/модель, госномер, год, цвет, категории.
+ * Создание автомобиля через /v2/parks/vehicles/car
  */
-async function createCarInFleet(carPayload) {
+async function createCarInFleet(carPayload, session) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
 
+  const yandexColor = mapColorToYandex(session);
+
+  // категоризации по тарифам + Delivery
+  const baseTariffs = Array.isArray(carPayload.tariffs)
+    ? carPayload.tariffs
+    : [];
+  const categories = baseTariffs
+    .map((t) => TARIFF_CATEGORY_MAP[t])
+    .filter(Boolean);
+
+  if (session.wantsDelivery) {
+    if (!categories.includes("express")) {
+      categories.push("express");
+    }
+  }
+
+  const yearInt = parseInt(carPayload.year, 10);
+  const nowYear = new Date().getFullYear();
+  if (!yearInt || yearInt < 1980 || yearInt > nowYear + 1) {
+    return {
+      ok: false,
+      error:
+        "Год выпуска авто не распознан или выходит за допустимые рамки. Авто нельзя автоматически создать, его нужно будет добавить оператору вручную.",
+      code: "car_year_invalid",
+    };
+  }
+
+  if (!carPayload.plate_number) {
+    return {
+      ok: false,
+      error:
+        "Госномер не распознан. Авто нельзя автоматически создать, его нужно будет добавить оператору вручную.",
+      code: "plate_missing",
+    };
+  }
+
+  const vehicle = {
+    brand: carPayload.brand || "",
+    model: carPayload.model || "",
+    color: yandexColor,
+    year: yearInt,
+    vin: carPayload.body_number || undefined,
+    transmission: FLEET_DEFAULT_TRANSMISSION,
+  };
+
+  const parkProfile = {
+    callsign: carPayload.call_sign || undefined,
+    status: "working",
+    categories: categories.length ? categories : undefined,
+    fuel_type: carPayload.fuel_type || FLEET_DEFAULT_FUEL_TYPE,
+    ownership_type: "park",
+    is_park_property: false,
+  };
+
+  if (carPayload.is_cargo && carPayload.cargo_dimensions) {
+    let carrying = 500;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("M")) carrying = 800;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("L")) carrying = 1500;
+    if (session.cargoSizeCode === "XL") carrying = 2000;
+    if (session.cargoSizeCode === "XXL") carrying = 2500;
+
+    parkProfile.cargo = {
+      carrying_capacity: carrying,
+      cargo_hold_dimensions: {
+        x: carPayload.cargo_dimensions.length,
+        y: carPayload.cargo_dimensions.width,
+        z: carPayload.cargo_dimensions.height,
+      },
+      allow_passengers: false,
+    };
+  }
+
+  if (session.wantsDelivery) {
+    parkProfile.amenities = ["delivery"];
+  }
+
+  const vehicleLicenses = {
+    licence_plate_number: carPayload.plate_number,
+    registration_certificate: carPayload.tech_full || carPayload.tech_number || "",
+  };
+
   const idempotencyKey = `car-${FLEET_PARK_ID}-${carPayload.plate_number || ""}`;
 
-  const categories =
-    Array.isArray(carPayload.tariffs) && carPayload.tariffs.length
-      ? carPayload.tariffs
-          .map((t) => TARIFF_CATEGORY_MAP[t])
-          .filter(Boolean)
-      : [];
-
   const body = {
-    park_id: FLEET_PARK_ID,
-    car: {
-      brand_name: carPayload.brand || "",
-      model_name: carPayload.model || "",
-      color: carPayload.color || "",
-      state_number: carPayload.plate_number || carPayload.plates_number || "",
-      vin: carPayload.body_number || "",
-      year: carPayload.year ? Number(carPayload.year) : undefined,
-      call_sign: carPayload.call_sign || undefined,
-      categories: categories.length ? categories : undefined,
-      // Для грузовых можно позже добавить поля кузова по доке
-    },
+    vehicle,
+    park_profile: parkProfile,
+    vehicle_licenses: vehicleLicenses,
   };
 
   const res = await callFleetPostIdempotent(
-    "/v2/parks/cars/car",
+    "/v2/parks/vehicles/car",
     body,
     idempotencyKey
   );
@@ -1228,8 +1968,7 @@ async function createCarInFleet(carPayload) {
   }
 
   const data = res.data || {};
-  const car = data.car || {};
-  const carId = car.id || data.id || null;
+  const carId = data.vehicle_id || data.id || null;
 
   if (!carId) {
     return { ok: false, error: "Yandex Fleet не вернул id автомобиля", raw: data };
@@ -1239,8 +1978,7 @@ async function createCarInFleet(carPayload) {
 }
 
 /**
- * Поиск водителя по телефону (через /v1/parks/driver-profiles/list).
- * Мы забираем список профилей и фильтруем телефоны на своей стороне.
+ * Поиск водителя по телефону
  */
 async function findDriverByPhone(phoneRaw) {
   const normalizedPhone = normalizePhoneForYandex(phoneRaw);
@@ -1261,7 +1999,6 @@ async function findDriverByPhone(phoneRaw) {
       park: {
         id: FLEET_PARK_ID,
       },
-      // при желании можно добавить фильтры по work_status и т.д.
     },
   };
 
@@ -1287,7 +2024,6 @@ async function findDriverByPhone(phoneRaw) {
       const numDigits = num.replace(/[^\d]/g, "");
       if (!numDigits) continue;
 
-      // сравниваем по окончанию, чтобы 998xx совпал с +998xx
       if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
         const fullName =
           [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") ||
@@ -1313,13 +2049,7 @@ async function findDriverByPhone(phoneRaw) {
 }
 
 /**
- * Поиск водителя по номеру В/У.
- *
- * Важно: схема поля с номером В/У в driver_profile может отличаться
- * в зависимости от версии API/настроек. Я закладываю несколько типичных
- * вариантов (license / license.number / licenses[].number).
- *
- * Если у тебя в ответе поле называется иначе — просто поправь маппинг ниже.
+ * Поиск водителя по номеру В/У (двойная проверка после загрузки ВУ)
  */
 async function findDriverByLicense(licenseVariants) {
   const cfg = ensureFleetConfigured();
@@ -1334,7 +2064,8 @@ async function findDriverByLicense(licenseVariants) {
         "last_name",
         "middle_name",
         "phones",
-        // "license", // <- если по доке нужно явно запросить поле с В/У — добавь его сюда
+        "license",
+        "licenses",
       ],
       current_status: ["status"],
     },
@@ -1369,7 +2100,6 @@ async function findDriverByLicense(licenseVariants) {
     const dp = (item && item.driver_profile) || {};
     const rawLicenses = [];
 
-    // несколько потенциальных вариантов хранения номера В/У
     if (typeof dp.license === "string") rawLicenses.push(dp.license);
     if (dp.license && typeof dp.license.number === "string") {
       rawLicenses.push(dp.license.number);
@@ -1415,7 +2145,7 @@ async function findDriverByLicense(licenseVariants) {
 }
 
 /**
- * Проверка статуса (для меню и кнопки "Проверить статус").
+ * Проверка статуса для кнопки "Проверить статус"
  */
 async function checkYandexStatus(phone) {
   const found = await findDriverByPhone(phone);
@@ -1504,16 +2234,28 @@ async function handleMenuAction(chatId, session, action) {
         );
         return;
       }
-      if (res.status === "registered") {
+      if (res.status === "working" || res.status === "registered") {
         await sendTelegramMessage(
           chatId,
           "✅ Sizning hisobingiz Yandex tizimida *faol*.\nYo‘llarda omad! 🚕",
           { parse_mode: "Markdown" }
         );
-      } else {
+      } else if (res.status === "pending") {
         await sendTelegramMessage(
           chatId,
           "Sizning ro‘yxatdan o‘tishingiz hali yakunlanmagan. Birozdan keyin yana tekshirib ko‘ring."
+        );
+      } else if (res.status === "fired") {
+        await sendTelegramMessage(
+          chatId,
+          "❗️ Hisobingiz holati: *Uvol qilingan* (fired).\nBatafsil ma'lumot uchun operator bilan bog‘laning.",
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        await sendTelegramMessage(
+          chatId,
+          `Holatingiz bo‘yicha ma'lumot: *${res.status}*. Batafsil ma'lumot uchun operator bilan bog‘laning.`,
+          { parse_mode: "Markdown" }
         );
       }
       break;
@@ -1526,7 +2268,8 @@ async function handleMenuAction(chatId, session, action) {
           "• Делайте фото при хорошем освещении, без бликов.\n" +
           "• Лицо полностью видно, без очков и головных уборов.\n" +
           "• Номер автомобиля должен быть читаемым.\n" +
-          "Если фотоконтроль не проходит — напишите оператору."
+          "Если фотоконтроль не проходит — напишите оператору: @AsrTaxiAdmin",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1536,21 +2279,23 @@ async function handleMenuAction(chatId, session, action) {
         chatId,
         "📍 *GPS ошибки*\n\n" +
           "1. Включите геолокацию на телефоне.\n" +
-          "2. Разрешите доступ к геоданным для приложения Яндекс Про.\n" +
+          "2. Разрешите доступ к геоданным для приложения Yandex Pro.\n" +
           "3. Включите режим высокой точности.\n" +
           "4. Перезапустите приложение.\n\n" +
-          "Если проблема не решилась — напишите оператору."
+          "Если проблема не решилась — напишите оператору: @AsrTaxiAdmin",
+        { parse_mode: "Markdown" }
       );
       break;
     }
 
     case "goals": {
-      // TODO: реальное получение целей из Fleet API
       await sendTelegramMessage(
         chatId,
-        "🎯 Активные цели\n\n" +
-          "Интеграция с бонусами Yandex Fleet ещё настраивается.\n" +
-          "В ближайшее время здесь будут показаны ваши цели, бонусы и прогресс."
+        "🎯 *Активные цели и бонусы*\n\n" +
+          "• В приложении Yandex Pro в разделе *«Цели»* вы видите персональные бонусы.\n" +
+          "• Выполняйте нужное количество поездок и зарабатывайте дополнительные выплаты.\n" +
+          "• По всем вопросам по целям и бонусам можно обратиться к оператору: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1558,12 +2303,13 @@ async function handleMenuAction(chatId, session, action) {
     case "topup": {
       await sendTelegramMessage(
         chatId,
-        "💳 Пополнение баланса\n\n" +
+        "💳 *Пополнение баланса*\n\n" +
           "Вы можете пополнить баланс следующими способами:\n\n" +
           "• PayMe\n" +
           "• PayNet\n" +
           "• @AsrPulBot — через бот самозанятости и карты.\n\n" +
-          "Подробную инструкцию уточняйте у оператора."
+          "Точный способ и реквизиты уточняйте у оператора: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1571,9 +2317,11 @@ async function handleMenuAction(chatId, session, action) {
     case "withdraw": {
       await sendTelegramMessage(
         chatId,
-        "💸 Вывод средств\n\n" +
+        "💸 *Вывод средств*\n\n" +
           "Вывод денег осуществляется *только через* @AsrPulBot.\n" +
-          "Перейдите в бота и следуйте инструкции по выводу средств."
+          "Перейдите в бота и следуйте инструкции по выводу средств.\n\n" +
+          "Если возникнут вопросы — напишите оператору: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1581,9 +2329,14 @@ async function handleMenuAction(chatId, session, action) {
     case "license": {
       await sendTelegramMessage(
         chatId,
-        "📄 Лицензия / ОСГОП\n\n" +
-          "Здесь будет размещена подробная инструкция и ссылки на оформление лицензии и ОСГОП.\n" +
-          "Пока вы можете уточнить все вопросы у оператора."
+        "📄 *Лицензия и ОСГОП*\n\n" +
+          "Для работы в парке вам требуется действующая лицензия и ОСГОП.\n\n" +
+          "Общий порядок:\n" +
+          "1. Оформляете самозанятость через @AsrPulBot.\n" +
+          "2. Получаете лицензию и ОСГОП по инструкции от парка.\n" +
+          "3. Передаёте документы оператору для проверки и загрузки в систему.\n\n" +
+          "Подробную персональную инструкцию уточните у оператора: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1591,11 +2344,13 @@ async function handleMenuAction(chatId, session, action) {
     case "invite": {
       await sendTelegramMessage(
         chatId,
-        "🤝 Пригласить друга\n\n" +
+        "🤝 *Пригласить друга*\n\n" +
           "Акция: *100 000 сум за 50 заказов* приглашённого водителя.\n\n" +
           "1. Пригласите друга зарегистрироваться через этот бот.\n" +
           "2. Сообщите оператору его номер телефона.\n" +
-          "3. После того как он выполнит 50 заказов — вы получите бонус."
+          "3. После того как он выполнит 50 заказов — вы получите бонус.\n\n" +
+          "Детали уточняйте у оператора: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1603,9 +2358,11 @@ async function handleMenuAction(chatId, session, action) {
     case "video": {
       await sendTelegramMessage(
         chatId,
-        "🎥 Видео-инструкция\n\n" +
-          "Здесь будет ссылка на видео-инструкцию по пользованию ботом ASR TAXI.\n" +
-          "Пока что, если есть вопросы — напишите оператору."
+        "🎥 *Видео-инструкция*\n\n" +
+          "Основные шаги регистрации и подключения описаны в этом боте.\n" +
+          "Как только будет готово отдельное видео с подробной инструкцией, оператор отправит вам ссылку.\n\n" +
+          "Если нужна помощь уже сейчас — напишите оператору: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
       );
       break;
     }
@@ -1613,8 +2370,13 @@ async function handleMenuAction(chatId, session, action) {
     case "operator": {
       await sendTelegramMessage(
         chatId,
-        "👨‍💼 Связаться с оператором\n\n" +
-          "Для быстрой связи напишите оператору в Telegram: @AsrTaxiAdmin"
+        "👨‍💼 *Связаться с оператором*\n\n" +
+          "Для быстрой связи напишите оператору в Telegram: @AsrTaxiAdmin",
+        { parse_mode: "Markdown" }
+      );
+      await sendOperatorAlert(
+        "*Запрос связи с оператором из бота ASR TAXI*\n\n" +
+          `Chat ID: \`${chatId}\``
       );
       break;
     }
@@ -1626,8 +2388,7 @@ async function handleMenuAction(chatId, session, action) {
 
 // ===== ЛОГИКА ШАГОВ РЕГИСТРАЦИИ =====
 
-async function handleStart(chatId) {
-  const session = getSession(chatId);
+async function handleStart(chatId, session) {
   session.step = "waiting_phone";
 
   const text =
@@ -1700,7 +2461,6 @@ async function askCarModelForBrand(chatId, session) {
       chatId,
       "Bu marka uchun modellarning ichki ro‘yxati topilmadi. Operator avtomobilingizni qo‘lda qo‘shadi."
     );
-    // сразу идём к техпаспорту
     await askDocTechFront(chatId, session);
     return;
   }
@@ -1779,8 +2539,8 @@ async function askCargoSize(chatId, session) {
 
   const text =
     "🚚 Выбор размера кузова\n\n" +
-    "Если указать кузов больше реального — *Яндекс может заблокировать аккаунт*.\n\n" +
-    "Выберите *размер кузова* точно, как в реальности:";
+    "Если указать кузов больше реального — *Yandex аккаунтni blok qilishi mumkin*.\n\n" +
+    "Kuzov o‘lchamini *aniq* tanlang:";
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
@@ -1815,6 +2575,29 @@ async function askDocTechBack(chatId, session) {
     "📄 Va nihoyat, texpasportning *orqa tomonini* yuboring.\n\n" +
     "Bu yerdan avtomobil yili, kuzov raqami va boshqa ma'lumotlar olinadi.";
   await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+}
+
+// Вопрос про Delivery (включение только по желанию водителя)
+async function askDeliveryOption(chatId, session) {
+  session.step = "waiting_delivery_choice";
+
+  const text =
+    "📦 *Delivery (dostavka) opsiyasi*\n\n" +
+    "Siz taksi bilan bir qatorda *Delivery* (yetkazib berish) buyurtmalarini ham qabul qilishingiz mumkin.\n\n" +
+    "Delivery faqat sizning roziligingiz bilan yoqiladi.\n\n" +
+    "Delivery ulashni xohlaysizmi?";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Ha, Delivery ni ulash", callback_data: "delivery_yes" },
+          { text: "❌ Yo‘q, faqat taksi", callback_data: "delivery_no" },
+        ],
+      ],
+    },
+  });
 }
 
 // ===== подтверждение и редактирование =====
@@ -1924,7 +2707,7 @@ async function askNextEditField(chatId, session) {
   });
 }
 
-// ===== АВТО-РЕГИСТРАЦИЯ В ЯНДЕКС ФЛИТ =====
+// ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET =====
 
 async function autoRegisterInYandexFleet(chatId, session) {
   const d = session.data || {};
@@ -1936,26 +2719,40 @@ async function autoRegisterInYandexFleet(chatId, session) {
   let tariffsInfo = { tariffs: [], hasRules: false };
 
   if (brandCode && !session.isCargo) {
-    // пассажирский / легковой
     const shortModel =
       (session.carModelLabel || "").replace(`${brandLabel} `, "").trim();
     tariffsInfo = getTariffsForCar(brandCode, shortModel, d.carYear);
     session.assignedTariffs = tariffsInfo.tariffs || [];
   } else if (session.isCargo) {
-    // Грузовые → тариф Cargo
     session.assignedTariffs = ["Cargo"];
     tariffsInfo = { tariffs: ["Cargo"], hasRules: true };
   }
 
   if (!tariffsInfo.hasRules) {
-    // Модель не найдена в базе тарифов → регистрация без авто
     session.registerWithoutCar = true;
   }
 
-  // Создание водителя (наш внутренний payload → дальше адаптируем к API)
+  const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
+  const nowYear = new Date().getFullYear();
+  const carYearInt = parseInt(d.carYear, 10);
+
+  let canCreateCar = !session.registerWithoutCar;
+  if (canCreateCar) {
+    if (!brand || !d.plateNumber) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+  if (canCreateCar) {
+    if (!carYearInt || carYearInt < 1980 || carYearInt > nowYear + 1) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+
+  // Создание водителя
   const driverPayload = {
     phone,
-    park_id: FLEET_PARK_ID,
     full_name: d.driverName,
     last_name: d.lastName,
     first_name: d.firstName,
@@ -1966,8 +2763,8 @@ async function autoRegisterInYandexFleet(chatId, session) {
     pinfl: d.pinfl,
     issuedDate: d.issuedDate,
     expiryDate: d.expiryDate,
-    // по условиям работы (3% и т.п.) пока ничего сюда НЕ передаём,
-    // только пользовательские данные
+    birthDate: d.birthDate,
+    isHunter: session.isHunterReferral,
   };
 
   const driverRes = await createDriverInFleet(driverPayload);
@@ -1986,15 +2783,13 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   session.driverFleetId = driverRes.driverId || null;
 
-  // Если есть авто (не "без авто")
-  if (!session.registerWithoutCar) {
-    const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
+  let carId = null;
+
+  if (canCreateCar) {
     const pozivnoiSource = String(phone || "").replace(/[^\d]/g, "");
     const pozivnoi = pozivnoiSource.slice(-7) || null;
 
     const carPayload = {
-      // внутренний payload, маппим в createCarInFleet
-      park_id: FLEET_PARK_ID,
       brand,
       model,
       year: d.carYear,
@@ -2005,32 +2800,45 @@ async function autoRegisterInYandexFleet(chatId, session) {
       tariffs: session.assignedTariffs,
       is_cargo: session.isCargo,
       cargo_dimensions: session.cargoDimensions || null,
+      tech_full: d.techFull,
+      tech_number: d.techNumber,
     };
 
-    const carRes = await createCarInFleet(carPayload);
+    const carRes = await createCarInFleet(carPayload, session);
     if (!carRes.ok) {
       await sendTelegramMessage(
         chatId,
-        "⚠️ Haydovchi ro‘yxatdan o‘tdi, ammo avtomobilni qo‘shishda xatolik yuz berdi. Operator bilan bog‘laning."
+        "⚠️ Haydovchi ro‘yxatdan o‘tdi, ammo avtomobilni avtomatik qo‘shib bo‘lmadi. Operator avtomobilni qo‘lda qo‘shadi."
       );
       await sendOperatorAlert(
         "*Ошибка добавления автомобиля в Yandex Fleet*\n\n" +
           `Телефон: \`${phone || "—"}\`\n` +
           `Xato: ${carRes.error || "noma'lum"}`
       );
+      session.registerWithoutCar = true;
     } else {
-      session.carFleetId = carRes.carId || null;
+      carId = carRes.carId || null;
+      session.carFleetId = carId;
     }
   }
 
-  // Оповещение оператора
+  if (session.driverFleetId && carId) {
+    const bindRes = await bindCarToDriver(session.driverFleetId, carId);
+    if (!bindRes.ok) {
+      await sendOperatorAlert(
+        "*Ошибка привязки автомобиля к водителю в Yandex Fleet*\n\n" +
+          `Телефон: \`${phone || "—"}\`\n` +
+          `Xato: ${bindRes.error || "noma'lum"}`
+      );
+    }
+  }
+
   await sendDocsToOperators(chatId, session, {
     note: session.registerWithoutCar
-      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (модель не найдена в тарифной базе)."
-      : "Новый водитель автоматически зарегистрирован в Yandex Fleet.",
+      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (недостаточно данных по авто или модель не найдена в тарифной базе)."
+      : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
 
-  // Сообщение водителю
   const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
   let finishText =
@@ -2038,9 +2846,14 @@ async function autoRegisterInYandexFleet(chatId, session) {
     `Ulanilgan tariflar: *${tariffStr}*.\n\n` +
     "Endi sizga faqat *@AsrPulBot* orqali samozanyatlikdan o‘tish qoladi.";
 
+  if (session.wantsDelivery) {
+    finishText +=
+      "\n\n📦 Sizga qo‘shimcha ravishda *Delivery (yetkazib berish)* buyurtmalari ham yoqilgan bo‘lishi mumkin (park siyosatiga qarab).";
+  }
+
   if (session.registerWithoutCar) {
     finishText +=
-      "\n\n⚠️ Avtomobilingiz modeli tariflar bazasida topilmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
+      "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
       "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
   }
 
@@ -2049,16 +2862,12 @@ async function autoRegisterInYandexFleet(chatId, session) {
     reply_markup: {
       keyboard: [
         [{ text: "🔄 Ro‘yxatdan o‘tish holatini tekshirish" }],
-
-
-
         [{ text: "🚕 Открыть личный кабинет" }],
       ],
       resize_keyboard: true,
     },
   });
 
-  // напоминания о проверке статуса
   scheduleStatusReminders(chatId);
   session.step = "driver_menu";
 }
@@ -2140,7 +2949,7 @@ async function handleDocumentPhoto(update, session, docType) {
   recomputeDerived(session);
 
   if (docType === "vu_front") {
-    // ===== ШАГ 1 — двойная проверка В/У в Яндекс.Флит =====
+    // двойная проверка В/У
     const d = session.data || {};
     const base =
       d.licenseFull ||
@@ -2155,7 +2964,7 @@ async function handleDocumentPhoto(update, session, docType) {
       return;
     }
 
-    const variant1 = cleanBase; // AF1234567
+    const variant1 = cleanBase;
     const variant2 = cleanBase.startsWith("UZ") ? cleanBase : `UZ${cleanBase}`;
 
     const checkRes = await findDriverByLicense([variant1, variant2]);
@@ -2169,7 +2978,6 @@ async function handleDocumentPhoto(update, session, docType) {
     }
 
     if (checkRes.found && checkRes.driver) {
-      // В/У уже зарегистрировано
       const driverPhone = checkRes.driver.phone || "noma'lum";
       await sendTelegramMessage(
         chatId,
@@ -2181,14 +2989,13 @@ async function handleDocumentPhoto(update, session, docType) {
 
       await sendDocsToOperators(chatId, session, {
         note:
-          "❗️ Повторная попытка регистрации по В/У. Документы для проверки у оператора.",
+          "❗️ Повторная попытка регистрации по В/У. Документы отправлены оператору для проверки.",
       });
 
       session.step = "idle";
       return;
     }
 
-    // В/У не найдено → продолжаем регистрацию
     await sendTelegramMessage(
       chatId,
       "✅ Haydovchilik guvohnomasi bo‘yicha Yandex tizimida ro‘yxatdan o‘tmagan.\nEndi avtomobil ma'lumotlarini kiritamiz."
@@ -2198,11 +3005,9 @@ async function handleDocumentPhoto(update, session, docType) {
   } else if (docType === "tech_front") {
     await askDocTechBack(chatId, session);
   } else if (docType === "tech_back") {
-    // после техпаспорта — если грузовой, спрашиваем кузов; иначе — считаем тарифы и идём к подтверждению
     if (session.isCargo) {
       await askCargoSize(chatId, session);
     } else {
-      // сразу вычислим тарифы до подтверждения
       if (session.carBrandCode && !session.isCargo) {
         const d = session.data || {};
         const shortModel =
@@ -2218,9 +3023,11 @@ async function handleDocumentPhoto(update, session, docType) {
       }
       await sendTelegramMessage(
         chatId,
-        "✅ Barcha kerakli hujjatlar qabul qilindi. Endi sizga yig‘ilgan ma'lumotlarni tekshirish uchun yuboraman."
+        "✅ Barcha kerakli hujjatlar qabul qilindi."
       );
-      await startFirstConfirmation(chatId, session);
+
+      // перед подтверждением спрашиваем про Delivery
+      await askDeliveryOption(chatId, session);
     }
   }
 }
@@ -2237,7 +3044,6 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
     parse_mode: "Markdown",
   });
 
-  // Проверяем в Yandex.Fleet
   await sendTelegramMessage(
     chatId,
     "🔍 Yandex tizimida mazkur telefon raqami bo‘yicha haydovchi mavjudligini tekshiryapman..."
@@ -2257,7 +3063,6 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
   }
 
   if (found.found && found.driver) {
-    // Зарегистрированный водитель → открываем личный кабинет
     await sendTelegramMessage(
       chatId,
       "✅ Siz Yandex tizimida allaqachon ro‘yxatdan o‘tgan ekansiz.\n" +
@@ -2265,7 +3070,6 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
     );
     await openDriverCabinet(chatId, session, found.driver);
   } else {
-    // Новый водитель → запускаем регистрацию
     await sendTelegramMessage(
       chatId,
       "ℹ️ Bu telefon raqami bo‘yicha Yandex tizimida haydovchi topilmadi.\n" +
@@ -2299,7 +3103,6 @@ exports.handler = async (event) => {
     const cq = update.callback_query;
     const data = cq.data || "";
     const chatId = cq.message?.chat?.id;
-    const messageId = cq.message?.message_id;
 
     if (!chatId) {
       await answerCallbackQuery(cq.id);
@@ -2368,7 +3171,6 @@ exports.handler = async (event) => {
         { parse_mode: "Markdown" }
       );
 
-      // после марки+модели → цвет
       await askCarColor(chatId, session);
 
       await answerCallbackQuery(cq.id);
@@ -2381,6 +3183,7 @@ exports.handler = async (event) => {
       const color = CAR_COLORS.find((c) => c.code === code);
       if (color) {
         session.carColor = color.label;
+        session.carColorCode = color.code;
         session.data = session.data || {};
         session.data.carColor = session.carColor;
         await sendTelegramMessage(
@@ -2409,7 +3212,7 @@ exports.handler = async (event) => {
           "Kuzov o‘lchamini aniqlashning imkoni bo‘lmadi. Iltimos, qaytadan tanlang."
         );
       } else {
-        session.cargoSizeCode = size.label;
+        session.cargoSizeCode = size.code;
         session.cargoDimensions = {
           length: size.length,
           width: size.width,
@@ -2422,15 +3225,38 @@ exports.handler = async (event) => {
           { parse_mode: "Markdown" }
         );
 
-        // можно сразу назначить тариф Cargo
         session.assignedTariffs = ["Cargo"];
 
         await sendTelegramMessage(
           chatId,
-          "✅ Barcha kerakli hujjatlar qabul qilindi. Endi sizga yig‘ilgan ma'lumotlarni tekshirish uchun yuboraman."
+          "✅ Barcha kerakli hujjatlar qabul qilindi."
         );
-        await startFirstConfirmation(chatId, session);
+        await askDeliveryOption(chatId, session);
       }
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // выбор Delivery
+    if (data === "delivery_yes") {
+      session.wantsDelivery = true;
+      await sendTelegramMessage(
+        chatId,
+        "📦 Delivery ulashga rozilik berdingiz. Yetkazib berish buyurtmalari park siyosatiga qarab sizga ochiladi.",
+        { parse_mode: "Markdown" }
+      );
+      await startFirstConfirmation(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+    if (data === "delivery_no") {
+      session.wantsDelivery = false;
+      await sendTelegramMessage(
+        chatId,
+        "🚕 Siz faqat taksi buyurtmalarini qabul qilasiz.",
+        { parse_mode: "Markdown" }
+      );
+      await startFirstConfirmation(chatId, session);
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
@@ -2497,7 +3323,6 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // статус (кнопка)
     if (data === "check_status") {
       await handleMenuAction(chatId, session, "status");
       await answerCallbackQuery(cq.id);
@@ -2521,12 +3346,19 @@ exports.handler = async (event) => {
 
   const chatId = msg.chat.id;
   const text = msg.text || "";
-  const session = getSession(chatId);
+  let session = getSession(chatId);
 
-  // /start
-  if (text === "/start") {
+  // /start с payload
+  if (text && text.startsWith("/start")) {
     resetSession(chatId);
-    await handleStart(chatId);
+    session = getSession(chatId);
+
+    const parts = text.split(" ");
+    if (parts[1]) {
+      applyStartPayloadToSession(session, parts[1]);
+    }
+
+    await handleStart(chatId, session);
     return { statusCode: 200, body: "OK" };
   }
 
@@ -2555,7 +3387,6 @@ exports.handler = async (event) => {
       await handlePhoneCaptured(chatId, session, msg.contact.phone_number);
       return { statusCode: 200, body: "OK" };
     } else {
-      // Исключительная ситуация 8.1 — номер отправлен не по сценарию
       await sendOperatorAlert(
         "*Номер телефона отправлен водителем вне сценария*\n\n" +
           `Chat ID: \`${chatId}\`\n` +
@@ -2579,6 +3410,7 @@ exports.handler = async (event) => {
   // выбор цвета текстом
   if (session.step === "waiting_car_color" && text) {
     session.carColor = text.trim();
+    session.carColorCode = null;
     session.data = session.data || {};
     session.data.carColor = session.carColor;
     await sendTelegramMessage(
@@ -2647,11 +3479,11 @@ exports.handler = async (event) => {
 
   // если сессия idle — повторно показываем старт
   if (session.step === "idle") {
-    await handleStart(chatId);
+    await handleStart(chatId, session);
     return { statusCode: 200, body: "OK" };
   }
 
-  // подсказки по шагам
+  // подсказки по шагам, если пользователь пишет "не туда"
   if (session.step === "waiting_vu_front") {
     await sendTelegramMessage(
       chatId,
@@ -2668,6 +3500,12 @@ exports.handler = async (event) => {
     await sendTelegramMessage(
       chatId,
       "Hozir *texpasportning orqa tomoni* suratini yuborishingiz kerak.",
+      { parse_mode: "Markdown" }
+    );
+  } else if (session.step === "waiting_delivery_choice") {
+    await sendTelegramMessage(
+      chatId,
+      "Delivery bo‘yicha savolga javob berish uchun tugmalardan foydalaning.",
       { parse_mode: "Markdown" }
     );
   }

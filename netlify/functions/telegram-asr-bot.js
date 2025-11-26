@@ -1213,6 +1213,58 @@ async function callFleetPost(path, payload) {
     return { ok: false, message: String(e) };
   }
 }
+async function callFleetGet(path, query) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    console.error("callFleetGet: fleet not configured:", cfg.message);
+    return { ok: false, message: cfg.message };
+  }
+
+  let url = `${FLEET_API_BASE_URL}${path}`;
+  if (query && Object.keys(query).length) {
+    const qs = Object.entries(query)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+    if (qs) url += `?${qs}`;
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client-ID": FLEET_CLIENT_ID,
+        "X-API-Key": FLEET_API_KEY,
+        "X-Park-ID": FLEET_PARK_ID,
+      },
+    });
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      // ignore
+    }
+
+    if (!res.ok) {
+      console.error("callFleetGet error:", res.status, json);
+      return {
+        ok: false,
+        status: res.status,
+        message:
+          (json && (json.message || json.code)) ||
+          `Yandex Fleet API xatosi: ${res.status}`,
+        raw: json,
+      };
+    }
+
+    return { ok: true, data: json };
+  } catch (e) {
+    console.error("callFleetGet exception:", e);
+    return { ok: false, message: String(e) };
+  }
+}
 
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   const cfg = ensureFleetConfigured();
@@ -1637,12 +1689,27 @@ async function createCarInFleet(carPayload, session) {
   };
 
   const idempotencyKey = `car-${FLEET_PARK_ID}-${carPayload.plate_number || ""}`;
+  const vehicleSpecifications = {};
+
+  // Если грузовой — имеет смысл сразу пробросить размеры кузова
+  if (carPayload.is_cargo && carPayload.cargo_dimensions) {
+    vehicleSpecifications.cargo_hold_dimensions = {
+      x: carPayload.cargo_dimensions.length,
+      y: carPayload.cargo_dimensions.width,
+      z: carPayload.cargo_dimensions.height,
+    };
+  }
+
+  // Для легковых сейчас можно ничего не задавать,
+  // главное — чтобы сам объект существовал
 
   const body = {
     vehicle,
     park_profile: parkProfile,
     vehicle_licenses: vehicleLicenses,
+    vehicle_specifications: vehicleSpecifications, // 🔴 добавили
   };
+
 
   const res = await callFleetPostIdempotent(
     "/v2/parks/vehicles/car",
@@ -1821,8 +1888,15 @@ async function findDriverByLicense(licenseVariants) {
 /**
  * Проверка статуса по телефону
  */
+/**
+ * Проверка статуса по телефону + простой чек по балансу
+ */
+/**
+ * Проверка статуса по телефону + вытягивание баланса, если водитель найден
+ */
 async function checkYandexStatus(phone) {
   const found = await findDriverByPhone(phone);
+
   if (!found.ok) {
     return {
       ok: false,
@@ -1830,6 +1904,7 @@ async function checkYandexStatus(phone) {
       message: found.error || "Yandex Fleet bilan bog‘lanib bo‘lmadi",
     };
   }
+
   if (!found.found) {
     return {
       ok: true,
@@ -1838,13 +1913,26 @@ async function checkYandexStatus(phone) {
     };
   }
 
+  let balanceInfo = null;
+  if (found.driver && found.driver.id) {
+    balanceInfo = await getDriverBalanceInfo(found.driver.id);
+  }
+
   return {
     ok: true,
     status: (found.driver && found.driver.status) || "registered",
     driver: found.driver,
+    balance: balanceInfo && balanceInfo.ok ? balanceInfo.balance : null,
+    blocked: balanceInfo && balanceInfo.ok ? balanceInfo.blocked : null,
+    balanceDetails:
+      balanceInfo && balanceInfo.ok ? balanceInfo.details : null,
+    balanceError: balanceInfo && !balanceInfo.ok ? balanceInfo.error : null,
   };
 }
 
+
+
+// ===== ЛОГИКА МЕНЮ ВОДИТЕЛЯ =====
 // ===== ЛОГИКА МЕНЮ ВОДИТЕЛЯ =====
 
 // 🔧 НОВОЕ: стандартное reply-меню (не inline)
@@ -1852,7 +1940,7 @@ function buildDriverMenuKeyboard() {
   return {
     keyboard: [
       [
-        { text: "🔄 Ro‘yxatdan o‘tish holatini tekshirish" },
+        { text: "🩺 Hisob diagnostikasi" },
         { text: "📸 Fotokontrol bo‘yicha yordam" },
       ],
       [
@@ -1876,6 +1964,7 @@ function buildDriverMenuKeyboard() {
   };
 }
 
+
 // 🔧 НОВОЕ: если телефон не сохранён (после рестарта), просим его заново
 async function ensurePhoneForStatus(chatId, session) {
   const existing =
@@ -1886,7 +1975,7 @@ async function ensurePhoneForStatus(chatId, session) {
 
   await sendTelegramMessage(
     chatId,
-    "Holatingizni tekshirish uchun telefon raqamingiz kerak.\n" +
+    "Hisobingiz bo‘yicha diagnostika qilish uchun telefon raqamingiz kerak.\n" +
       "Iltimos, quyidagi tugma orqali telefon raqamingizni yuboring.",
     {
       reply_markup: {
@@ -1906,6 +1995,7 @@ async function ensurePhoneForStatus(chatId, session) {
 
   return null;
 }
+
 
 async function openDriverCabinet(chatId, session, driverInfo) {
   if (driverInfo) {
@@ -1931,53 +2021,104 @@ async function openDriverCabinet(chatId, session, driverInfo) {
 async function handleMenuAction(chatId, session, action) {
   switch (action) {
     case "status": {
+      // диагностика "всё ли в порядке"
       let phone =
         session.phone || (session.data && session.data.phone);
 
       if (!phone) {
-        // если телефон забыли (новый инстанс) — запросим его
+        // если телефона нет (новый инстанс функции) — просим его
         await ensurePhoneForStatus(chatId, session);
         return;
       }
 
       await sendTelegramMessage(
         chatId,
-        "⏳ Yandex tizimida holatingizni tekshiryapman..."
+        "⏳ Hisobingiz bo‘yicha diagnostika o‘tkazilyapti (Yandex tizimi bilan bog‘lanmoqdaman)..."
       );
+
       const res = await checkYandexStatus(phone);
+
       if (!res.ok) {
         await sendTelegramMessage(
           chatId,
-          `Holatni olishda xatolik: ${res.message || ""}`
+          `❗️ Diagnostika vaqtida xatolik yuz berdi: ${res.message || ""}\n\n` +
+            "Iltimos, birozdan keyin yana urinib ko‘ring yoki operatorga yozing: @AsrTaxiAdmin."
         );
         return;
       }
+
+      const baseAdvice =
+        "\n\nAgar baribir buyurtmalar kelmasa, ilovadagi *«Diagnostika»* bo‘limini tekshirib chiqing va quyidagilarni ko‘ring:\n" +
+        "• GPS yoqilganmi va aniqlik rejimida ishlayaptimi\n" +
+        "• Selfi-fotokontrol talab qilinmaganmi\n" +
+        "• Oxirgi 7 kun ichida onlayn bo‘lganmisiz\n" +
+        "• Balansingiz manfiy holatga tushib qolmaganmi\n\n" +
+        "Qiyinchilik bo‘lsa — operatorga murojaat qiling: @AsrTaxiAdmin.";
+
+      const fmtMoney = (v) =>
+        v === null || v === undefined ? "—" : String(v);
+
+      let balancePart = "";
+      if (res.balance !== null && res.balance !== undefined) {
+        balancePart =
+          "\n\n💳 *Balans ma'lumotlari:*\n" +
+          `• Joriy balans: ${fmtMoney(res.balance)}\n` +
+          `• Bloklangan balans: ${fmtMoney(res.blocked)}`;
+
+        if (res.balanceDetails) {
+          const d = res.balanceDetails;
+          balancePart +=
+            "\n" +
+            `  – Bonuslar (blocked_bonuses): ${fmtMoney(d.blockedBonuses)}\n` +
+            `  – Naqd pulsiz tushum (blocked_cashless): ${fmtMoney(d.blockedCashless)}\n` +
+            `  – Moliyaviy hisobotlar (blocked_financial_statements): ${fmtMoney(d.blockedFinancialStatements)}\n` +
+            `  – Yopuvchi hujjatlar (blocked_closing_documents): ${fmtMoney(d.blockedClosingDocuments)}\n` +
+            `  – Choypuli (blocked_tips): ${fmtMoney(d.blockedTips)}`;
+        }
+      }
+
+      const statusHuman = humanizeDriverStatusUz(res.status);
+
       if (res.status === "working" || res.status === "registered") {
         await sendTelegramMessage(
           chatId,
-          "✅ Sizning hisobingiz Yandex tizimida *faol*.\nYo‘llarda omad! 🚕",
+          "✅ *Diagnostika: hisobingiz faol, buyurtmalarni qabul qilishga tayyor.*\n" +
+            `Joriy holat: *${statusHuman}*.` +
+            balancePart +
+            baseAdvice,
           { parse_mode: "Markdown" }
         );
       } else if (res.status === "pending") {
         await sendTelegramMessage(
           chatId,
-          "Sizning ro‘yxatdan o‘tishingiz hali yakunlanmagan. Birozdan keyin yana tekshirib ko‘ring."
+          "ℹ️ *Bu telefon raqami bo‘yicha parkda faol haydovchi topilmadi.*\n" +
+            "Agar hali ulanish jarayonini tugatmagan bo‘lsangiz — botdagi ro‘yxatdan o‘tish bosqichlarini yakunlang.\n" +
+            "Agar siz allaqachon ishlayotgan bo‘lsangiz, telefon raqamingizni tekshirtirish uchun operatorga yozing: @AsrTaxiAdmin.",
+          { parse_mode: "Markdown" }
         );
       } else if (res.status === "fired") {
         await sendTelegramMessage(
           chatId,
-          "❗️ Hisobingiz holati: *bloklangan (fired)*.\nBatafsil ma'lumot uchun operator bilan bog‘laning.",
+          "❗️ *Diagnostika: hisobingiz parkda bloklangan (status: fired).* \n" +
+            `Holat: *${statusHuman}*.` +
+            balancePart +
+            "\n\nTafsilotlar uchun operatorga murojaat qiling: @AsrTaxiAdmin.",
           { parse_mode: "Markdown" }
         );
       } else {
         await sendTelegramMessage(
           chatId,
-          `Holatingiz bo‘yicha ma'lumot: *${res.status}*.\nBatafsil ma'lumot uchun operator bilan bog‘laning.`,
+          `ℹ️ *Diagnostika natijasi:* \`${res.status}\` ( ${statusHuman} ).` +
+            balancePart +
+            baseAdvice,
           { parse_mode: "Markdown" }
         );
       }
+
       break;
     }
+
+
 
     case "photocontrol": {
       await sendTelegramMessage(
@@ -2063,15 +2204,16 @@ async function handleMenuAction(chatId, session, action) {
       await sendTelegramMessage(
         chatId,
         "🤝 *Do‘stni taklif qilish*\n\n" +
-          "Aksiya: *har bir taklif qilingan haydovchi 50 ta buyurtma bajargandan so‘ng siz bonus olasiz*.\n\n" +
+          "Aksiya: *har bir taklif qilingan haydovchi 50 ta buyurtma bajargandan so‘ng siz 100 000 so‘m bonus olasiz*.\n\n" +
           "1. Do‘stingizni shu bot orqali ro‘yxatdan o‘tishga taklif qiling.\n" +
           "2. Uning telefon raqamini operatorga yuboring.\n" +
-          "3. U 50 ta buyurtma bajargach — siz bonus olasiz.\n\n" +
+          "3. U 50 ta buyurtma bajargach — sizga 100 000 so‘m bonus beriladi.\n\n" +
           "Batafsil shartlar uchun: @AsrTaxiAdmin.",
         { parse_mode: "Markdown" }
       );
       break;
     }
+
 
     case "video": {
       await sendTelegramMessage(
@@ -2578,15 +2720,16 @@ async function autoRegisterInYandexFleet(chatId, session) {
     parse_mode: "Markdown",
     reply_markup: {
       keyboard: [
-        [{ text: "🔄 Ro‘yxatdan o‘tish holatini tekshirish" }],
+        [{ text: "🩺 Hisob diagnostikasi" }],
         [{ text: "🚕 Shaxsiy kabinetni ochish" }],
       ],
       resize_keyboard: true,
     },
   });
 
-  scheduleStatusReminders(chatId);
+  // После успешной регистрации больше не спамим напоминаниями про статус
   session.step = "driver_menu";
+
 }
 
 // ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
@@ -2765,6 +2908,86 @@ async function handleDocumentPhoto(update, session, docType) {
     }
   }
 }
+/**
+ * Получение баланса и заблокированного баланса водителя
+ * GET /v1/parks/contractors/blocked-balance
+ * contractor_id — это id профиля водителя (driverId из Fleet).
+ */
+async function getDriverBalanceInfo(driverId) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, error: cfg.message };
+  }
+
+  if (!driverId) {
+    return { ok: false, error: "driverId не передан" };
+  }
+
+const res = await callFleetGet(
+  "/v1/parks/contractors/blocked-balance",
+  { contractor_id: driverId, park_id: FLEET_PARK_ID }
+);
+
+
+  if (!res.ok) {
+    console.error("getDriverBalanceInfo fleet error:", res);
+    return {
+      ok: false,
+      error: res.message || "fleet balance error",
+      raw: res.raw,
+    };
+  }
+
+  const data = res.data || {};
+
+  const parseNumber = (v) => {
+    if (v === null || v === undefined) return null;
+    const n = parseFloat(String(v).replace(",", "."));
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const balance = parseNumber(data.balance);
+  const blocked = parseNumber(data.blocked_balance);
+
+  const detailsRaw = data.details || {};
+  const details = {
+    blockedTips: parseNumber(detailsRaw.blocked_tips),
+    blockedCashless: parseNumber(detailsRaw.blocked_cashless),
+    blockedBonuses: parseNumber(detailsRaw.blocked_bonuses),
+    blockedFinancialStatements: parseNumber(
+      detailsRaw.blocked_financial_statements
+    ),
+    blockedClosingDocuments: parseNumber(
+      detailsRaw.blocked_closing_documents
+    ),
+  };
+
+  return {
+    ok: true,
+    balance,
+    blocked,
+    details,
+    raw: data,
+  };
+}
+
+
+/**
+ * Человечное описание статуса водителя (узбекский + оригинальный код)
+ */
+function humanizeDriverStatusUz(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "working") return "ishlayapti (working)";
+  if (s === "not_on_line" || s === "offline") return "oflayn (onlayn emas)";
+  if (s === "fired" || s === "blocked") return "bloklangan (fired)";
+  if (s === "on_pause") return "pauza (on_pause)";
+
+  if (!status) return "noma'lum holat";
+
+  return status;
+}
+
 
 // ===== ОБРАБОТКА НОМЕРА ТЕЛЕФОНА =====
 
@@ -3097,27 +3320,72 @@ exports.handler = async (event) => {
   }
 
   // Кнопка "Проверить статус регистрации"
-  if (
-    text === "🔄 Ro‘yxatdan o‘tish holatini tekshirish" ||
-    text === "🔄 Проверить статус регистрации" ||
-    text.toLowerCase().includes("status")
-  ) {
-    await handleMenuAction(chatId, session, "status");
-    return { statusCode: 200, body: "OK" };
-  }
+// Кнопка диагностики "vse li v poryadke"
+if (
+  text === "🩺 Hisob diagnostikasi" ||
+  text === "🩺 Диагностика" ||
+  // поддерживаем старые подписи, если они ещё остались в клавиатуре
+  text === "🔄 Ro‘yxatdan o‘tish holatini tekshirish" ||
+  text === "🔄 Проверить статус регистрации" ||
+  text.toLowerCase().includes("status") ||
+  text.toLowerCase().includes("diag")
+) {
+  await handleMenuAction(chatId, session, "status");
+  return { statusCode: 200, body: "OK" };
+}
 
-  // Кнопка "Shaxsiy kabinetni ochish"
-  if (
-    text === "🚕 Shaxsiy kabinetni ochish" ||
-    text === "🚕 Открыть личный кабинет"
-  ) {
-    await openDriverCabinet(chatId, session, {
-      id: session.driverFleetId,
-      name: session.driverName,
-    });
-    return { statusCode: 200, body: "OK" };
-  }
 
+  // Кнопки меню личного кабинета водителя
+  if (session.step === "driver_menu") {
+    switch (text) {
+      case "📸 Fotokontrol bo‘yicha yordam":
+        await handleMenuAction(chatId, session, "photocontrol");
+        return { statusCode: 200, body: "OK" };
+
+      case "📍 GPS xatoliklari":
+        await handleMenuAction(chatId, session, "gps");
+        return { statusCode: 200, body: "OK" };
+
+      case "🎯 Maqsadlar va bonuslar":
+        await handleMenuAction(chatId, session, "goals");
+        return { statusCode: 200, body: "OK" };
+
+      case "💳 Balansni to‘ldirish":
+        await handleMenuAction(chatId, session, "topup");
+        return { statusCode: 200, body: "OK" };
+
+      case "💸 Mablag‘ni yechib olish":
+        await handleMenuAction(chatId, session, "withdraw");
+        return { statusCode: 200, body: "OK" };
+
+      case "📄 Litsenziya va OSAGO":
+        await handleMenuAction(chatId, session, "license");
+        return { statusCode: 200, body: "OK" };
+
+      case "🤝 Do‘stni taklif qilish":
+        await handleMenuAction(chatId, session, "invite");
+        return { statusCode: 200, body: "OK" };
+
+      case "🎥 Video qo‘llanma":
+        await handleMenuAction(chatId, session, "video");
+        return { statusCode: 200, body: "OK" };
+
+      case "👨‍💼 Operator bilan aloqa":
+        await handleMenuAction(chatId, session, "operator");
+        return { statusCode: 200, body: "OK" };
+
+      // Кнопка "Шaxsiy kabinetni ochish" после успешной регистрации
+      case "🚕 Shaxsiy kabinetni ochish":
+        await openDriverCabinet(chatId, session, {
+          id: session.driverFleetId || null,
+          name: session.driverName || null,
+        });
+        return { statusCode: 200, body: "OK" };
+
+      default:
+        break;
+    }
+  }
 
   // 1) Сначала — если ждём телефон и пришёл текст
 if (
@@ -3152,7 +3420,7 @@ if (
 if (msg.contact) {
   const contactPhone = msg.contact.phone_number;
 
-  // Телефон просили только для проверки статуса
+  // 1) Просили телефон только для проверки статуса
   if (session.step === "waiting_phone_for_status") {
     session.phone = contactPhone;
     session.data = session.data || {};
@@ -3170,7 +3438,13 @@ if (msg.contact) {
     return { statusCode: 200, body: "OK" };
   }
 
-  // Номер пришёл «не по сценарию» → кейс 8.1 ТЗ
+  // 2) Нормальный сценарий регистрации
+  if (session.step === "waiting_phone") {
+    await handlePhoneCaptured(chatId, session, contactPhone);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // 3) Номер пришёл «не по сценарию» → кейс 8.1 ТЗ
   await sendOperatorAlert(
     "*Haydovchi telefon raqamini kutilmagan vaqtda yubordi*\n\n" +
       `Chat ID: \`${chatId}\`\n` +
@@ -3184,6 +3458,34 @@ if (msg.contact) {
   return { statusCode: 200, body: "OK" };
 }
 
+
+// Режим редактирования отдельного поля
+if (
+  session.step === "editing_field" &&
+  session.editAwaitingValue &&
+  text
+) {
+  const value = text.trim();
+  const key = session.currentFieldKey;
+
+  if (key) {
+    // сохраняем новое значение
+    setFieldValue(session, key, value);
+    recomputeDerived(session);
+    applySessionDataToDocs(session);
+  }
+
+  session.editAwaitingValue = false;
+  session.editIndex = (session.editIndex || 0) + 1;
+
+  await sendTelegramMessage(
+    chatId,
+    "✅ Qiymat saqlandi. Keyingi maydonni tekshiramiz."
+  );
+
+  await askNextEditField(chatId, session);
+  return { statusCode: 200, body: "OK" };
+}
 
 
   // фото документов

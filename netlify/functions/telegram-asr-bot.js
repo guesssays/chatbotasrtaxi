@@ -1617,6 +1617,7 @@ async function createCarInFleet(carPayload, session) {
     .map((t) => TARIFF_CATEGORY_MAP[t])
     .filter(Boolean);
 
+  // если водитель хочет Delivery — добавляем категорию express
   if (session.wantsDelivery) {
     if (!categories.includes("express")) {
       categories.push("express");
@@ -1643,14 +1644,22 @@ async function createCarInFleet(carPayload, session) {
     };
   }
 
-  const vehicle = {
-    brand: carPayload.brand || "",
-    model: carPayload.model || "",
-    color: yandexColor,
-    year: yearInt,
-    vin: carPayload.body_number || undefined,
-    transmission: FLEET_DEFAULT_TRANSMISSION,
+  // 🔴 ТЕПЕРЬ ПРАВИЛЬНЫЙ ОБЪЕКТ vehicle_specifications (обязательные поля)
+  const vehicleSpecifications = {
+    brand: carPayload.brand || "",          // Марка ТС (обязательно)
+    model: carPayload.model || "",          // Модель ТС (обязательно)
+    color: yandexColor,                     // Цвет ТС из ColorEnum (обязательно)
+    year: yearInt,                          // Год выпуска (обязательно)
+    transmission: FLEET_DEFAULT_TRANSMISSION || "automatic", // Transmission (обязательно)
   };
+
+  // Необязательные, но полезные поля
+  if (carPayload.body_number) {
+    vehicleSpecifications.body_number = carPayload.body_number;
+  }
+  if (carPayload.vin) {
+    vehicleSpecifications.vin = carPayload.vin;
+  }
 
   const parkProfile = {
     callsign: carPayload.call_sign || undefined,
@@ -1661,24 +1670,7 @@ async function createCarInFleet(carPayload, session) {
     is_park_property: false,
   };
 
-  if (carPayload.is_cargo && carPayload.cargo_dimensions) {
-    let carrying = 500;
-    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("M")) carrying = 800;
-    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("L")) carrying = 1500;
-    if (session.cargoSizeCode === "XL") carrying = 2000;
-    if (session.cargoSizeCode === "XXL") carrying = 2500;
-
-    parkProfile.cargo = {
-      carrying_capacity: carrying,
-      cargo_hold_dimensions: {
-        x: carPayload.cargo_dimensions.length,
-        y: carPayload.cargo_dimensions.width,
-        z: carPayload.cargo_dimensions.height,
-      },
-      allow_passengers: false,
-    };
-  }
-
+  // Если включали Delivery — отмечаем это в amenities
   if (session.wantsDelivery) {
     parkProfile.amenities = ["delivery"];
   }
@@ -1689,27 +1681,36 @@ async function createCarInFleet(carPayload, session) {
   };
 
   const idempotencyKey = `car-${FLEET_PARK_ID}-${carPayload.plate_number || ""}`;
-  const vehicleSpecifications = {};
 
-  // Если грузовой — имеет смысл сразу пробросить размеры кузова
+  // 🔴 Отдельный объект cargo по спецификации Яндекса
+  let cargo = undefined;
   if (carPayload.is_cargo && carPayload.cargo_dimensions) {
-    vehicleSpecifications.cargo_hold_dimensions = {
-      x: carPayload.cargo_dimensions.length,
-      y: carPayload.cargo_dimensions.width,
-      z: carPayload.cargo_dimensions.height,
+    let carrying = 500;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("M")) carrying = 800;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("L")) carrying = 1500;
+    if (session.cargoSizeCode === "XL") carrying = 2000;
+    if (session.cargoSizeCode === "XXL") carrying = 2500;
+
+    cargo = {
+      carrying_capacity: carrying,
+      cargo_hold_dimensions: {
+        length: carPayload.cargo_dimensions.length,
+        width: carPayload.cargo_dimensions.width,
+        height: carPayload.cargo_dimensions.height,
+      },
     };
   }
 
-  // Для легковых сейчас можно ничего не задавать,
-  // главное — чтобы сам объект существовал
-
+  // 🔴 Финальное тело запроса РОВНО по схеме /v2/parks/vehicles/car
   const body = {
-    vehicle,
     park_profile: parkProfile,
     vehicle_licenses: vehicleLicenses,
-    vehicle_specifications: vehicleSpecifications, // 🔴 добавили
+    vehicle_specifications: vehicleSpecifications,
   };
 
+  if (cargo) {
+    body.cargo = cargo;
+  }
 
   const res = await callFleetPostIdempotent(
     "/v2/parks/vehicles/car",
@@ -1718,18 +1719,27 @@ async function createCarInFleet(carPayload, session) {
   );
 
   if (!res.ok) {
-    return { ok: false, error: res.message || "car create error", raw: res.raw };
+    return {
+      ok: false,
+      error: res.message || "car create error",
+      raw: res.raw,
+    };
   }
 
   const data = res.data || {};
   const carId = data.vehicle_id || data.id || null;
 
   if (!carId) {
-    return { ok: false, error: "Yandex Fleet не вернул id автомобиля", raw: data };
+    return {
+      ok: false,
+      error: "Yandex Fleet не вернул id автомобиля",
+      raw: data,
+    };
   }
 
   return { ok: true, carId, raw: data };
 }
+
 
 /**
  * Поиск водителя по телефону
@@ -1932,30 +1942,33 @@ async function checkYandexStatus(phone) {
 
 
 
-// ===== ЛОГИКА МЕНЮ ВОДИТЕЛЯ =====
-// ===== ЛОГИКА МЕНЮ ВОДИТЕЛЯ =====
-
-// 🔧 НОВОЕ: стандартное reply-меню (не inline)
 function buildDriverMenuKeyboard() {
   return {
     keyboard: [
+      // 📊 Раздел "Счет и баланс"
+      [{ text: "📊 Hisob va balans" }],
       [
         { text: "🩺 Hisob diagnostikasi" },
-        { text: "📸 Fotokontrol bo‘yicha yordam" },
-      ],
-      [
-        { text: "📍 GPS xatoliklari" },
-        { text: "🎯 Maqsadlar va bonuslar" },
-      ],
-      [
         { text: "💳 Balansni to‘ldirish" },
         { text: "💸 Mablag‘ni yechib olish" },
       ],
+
+      // 🚕 Раздел "Работа и заказы"
+      [{ text: "🚕 Buyurtmalar va ish" }],
       [
-        { text: "📄 Litsenziya va OSAGO" },
-        { text: "🤝 Do‘stni taklif qilish" },
+        { text: "📸 Fotokontrol bo‘yicha yordam" },
+        { text: "📍 GPS xatoliklari" },
+        { text: "🎯 Maqsadlar va bonuslar" },
       ],
+
+      // 📄 Раздел "Документы"
+      [{ text: "📄 Hujjatlar" }],
+      [{ text: "📄 Litsenziya va OSAGO" }],
+
+      // 🤝 Раздел "Связь и бонусы"
+      [{ text: "🤝 Aloqa va bonuslar" }],
       [
+        { text: "🤝 Do‘stni taklif qilish" },
         { text: "🎥 Video qo‘llanma" },
         { text: "👨‍💼 Operator bilan aloqa" },
       ],
@@ -1963,6 +1976,7 @@ function buildDriverMenuKeyboard() {
     resize_keyboard: true,
   };
 }
+
 
 
 // 🔧 НОВОЕ: если телефон не сохранён (после рестарта), просим его заново
@@ -2716,19 +2730,18 @@ async function autoRegisterInYandexFleet(chatId, session) {
       "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
   }
 
-  await sendTelegramMessage(chatId, finishText, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      keyboard: [
-        [{ text: "🩺 Hisob diagnostikasi" }],
-        [{ text: "🚕 Shaxsiy kabinetni ochish" }],
-      ],
-      resize_keyboard: true,
-    },
-  });
+await sendTelegramMessage(chatId, finishText, {
+  parse_mode: "Markdown",
+  reply_markup: {
+    keyboard: [
+      [{ text: "🚕 Shaxsiy kabinetni ochish" }],
+    ],
+    resize_keyboard: true,
+  },
+});
 
-  // После успешной регистрации больше не спамим напоминаниями про статус
-  session.step = "driver_menu";
+session.step = "driver_menu";
+
 
 }
 
@@ -3338,6 +3351,56 @@ if (
   // Кнопки меню личного кабинета водителя
   if (session.step === "driver_menu") {
     switch (text) {
+     
+         case "📊 Hisob va balans":
+      await sendTelegramMessage(
+        chatId,
+        "📊 *Hisob va balans* bo‘limi:\n\n" +
+          "Bu yerda balans bo‘yicha barcha funksiyalar joylashgan:\n" +
+          "• 🩺 Hisob diagnostikasi\n" +
+          "• 💳 Balansni to‘ldirish\n" +
+          "• 💸 Mablag‘ni yechib olish\n\n" +
+          "Kerakli funksiyani pastdagi tugmalardan tanlang.",
+        { parse_mode: "Markdown" }
+      );
+      return { statusCode: 200, body: "OK" };
+
+    case "🚕 Buyurtmalar va ish":
+      await sendTelegramMessage(
+        chatId,
+        "🚕 *Buyurtmalar va ish* bo‘limi:\n\n" +
+          "Bu yerda ish jarayoni bo‘yicha yordam bor:\n" +
+          "• 📸 Fotokontrol bo‘yicha yordam\n" +
+          "• 📍 GPS xatoliklari\n" +
+          "• 🎯 Maqsadlar va bonuslar\n\n" +
+          "Kerakli tugmani pastdan tanlang.",
+        { parse_mode: "Markdown" }
+      );
+      return { statusCode: 200, body: "OK" };
+
+    case "📄 Hujjatlar":
+      await sendTelegramMessage(
+        chatId,
+        "📄 *Hujjatlar* bo‘limi:\n\n" +
+          "Bu yerda Litsenziya va OSAGO bo‘yicha ma'lumot olasiz.\n\n" +
+          "👉 \"📄 Litsenziya va OSAGO\" tugmasini bosing.",
+        { parse_mode: "Markdown" }
+      );
+      return { statusCode: 200, body: "OK" };
+
+    case "🤝 Aloqa va bonuslar":
+      await sendTelegramMessage(
+        chatId,
+        "🤝 *Aloqa va bonuslar* bo‘limi:\n\n" +
+          "Bu yerda quyidagilar mavjud:\n" +
+          "• 🤝 Do‘stni taklif qilish\n" +
+          "• 🎥 Video qo‘llanma\n" +
+          "• 👨‍💼 Operator bilan aloqa\n\n" +
+          "Kerakli bo‘limni pastdagi tugmalardan tanlang.",
+        { parse_mode: "Markdown" }
+      );
+      return { statusCode: 200, body: "OK" };
+
       case "📸 Fotokontrol bo‘yicha yordam":
         await handleMenuAction(chatId, session, "photocontrol");
         return { statusCode: 200, body: "OK" };

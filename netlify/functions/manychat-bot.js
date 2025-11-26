@@ -131,9 +131,12 @@ exports.handler = async (event) => {
     console.log("AI result:", aiResult);
 
     // ==================================
-    try {
+      try {
       if (aiResult && aiResult.handover) {
-        let alertText = "🟡 Новый диалог из Instagram\n\n";
+        // используем ManyChat ID как номер диалога, а если его нет — время
+        const dialogNumber = contactId || Math.floor(Date.now() / 1000);
+
+        let alertText = `🟡 Новый диалог #${dialogNumber} из Instagram\n\n`;
 
         if (contactName) {
           alertText += `Имя: ${contactName}\n`;
@@ -158,6 +161,7 @@ exports.handler = async (event) => {
     } catch (e) {
       console.error("Failed to send operator alert:", e);
     }
+
     // ====================================================================
 
 

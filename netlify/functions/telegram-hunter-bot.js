@@ -479,20 +479,30 @@ function normalizePhoneForYandex(phone) {
   const digits = String(phone).replace(/[^\d]/g, "");
   if (!digits) return null;
 
-  if (digits.startsWith("998")) {
+  // Узбекистан: локальный формат 9 цифр → +998XXXXXXXXX
+  if (digits.length === 9) {
+    return `+998${digits}`;
+  }
+
+  // Уже с кодом страны 998
+  if (digits.startsWith("998") && (digits.length === 12 || digits.length === 13)) {
     return `+${digits}`;
   }
 
+  // Россия старого формата 8XXXXXXXXXX → +7XXXXXXXXXX
   if (digits.length === 11 && digits[0] === "8") {
     return `+7${digits.slice(1)}`;
   }
 
+  // Любой другой номер ≥ 11 цифр — просто добавляем +
   if (digits.length >= 11) {
     return `+${digits}`;
   }
 
+  // На всякий случай возвращаем оригинал, чтобы не ломать экзотические кейсы
   return phone;
 }
+
 
 function normalizeDateToISO(dateStr) {
   if (!dateStr) return undefined;
@@ -760,6 +770,7 @@ const CAR_COLORS = [
 ];
 
 // ===== Поиск водителя по телефону в Fleet =====
+// ===== Поиск водителя по телефону в Fleet =====
 async function findDriverByPhone(phoneRaw) {
   const normalizedPhone = normalizePhoneForYandex(phoneRaw);
   const cfg = ensureFleetConfigured();
@@ -767,13 +778,19 @@ async function findDriverByPhone(phoneRaw) {
     return { ok: false, found: false, error: cfg.message };
   }
 
+  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
+  if (!phoneDigits) {
+    return { ok: true, found: false };
+  }
+
   const body = {
-    limit: 50,
+    // Берём максимальный разумный лимит, чтобы реально пройтись по базе
+    limit: 1000,
     offset: 0,
     query: {
       park: { id: FLEET_PARK_ID },
     },
-    // ВАЖНО: просим вернуть поля driver_profile с phones
+    // Просим у API максимум полезной инфы по профилю
     fields: {
       driver_profile: [
         "id",
@@ -781,6 +798,8 @@ async function findDriverByPhone(phoneRaw) {
         "last_name",
         "middle_name",
         "phones",
+        "phone",
+        "contact_phone",
       ],
     },
   };
@@ -791,34 +810,52 @@ async function findDriverByPhone(phoneRaw) {
     return { ok: false, found: false, error: res.message };
   }
 
-  // 🔍 ВРЕМЕННЫЙ ЛОГ – посмотреть, что там вообще приходит
-  try {
-    const sample = (res.data && res.data.driver_profiles && res.data.driver_profiles[0]) || null;
-    console.log("findDriverByPhone sample profile:", JSON.stringify(sample, null, 2));
-  } catch (e) {
-    console.error("findDriverByPhone log sample error:", e);
-  }
-
   const profiles = (res.data && res.data.driver_profiles) || [];
   if (!profiles.length) {
     return { ok: true, found: false };
   }
 
-  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
-  if (!phoneDigits) return { ok: true, found: false };
-
   for (const item of profiles) {
     const dp = (item && item.driver_profile) || {};
-    const phones = Array.isArray(dp.phones) ? dp.phones : [];
+    const phonesRaw = [];
 
-    for (const p of phones) {
-      const num = (p && (p.number || p.phone)) || "";
-      const numDigits = num.replace(/[^\d]/g, "");
+    // Вариант 1: массив phones
+    if (Array.isArray(dp.phones)) {
+      for (const p of dp.phones) {
+        if (!p) continue;
+        if (typeof p === "string") {
+          phonesRaw.push(p);
+        } else if (p.number || p.phone) {
+          phonesRaw.push(p.number || p.phone);
+        }
+      }
+    }
+
+    // Вариант 2: одиночные поля
+    if (typeof dp.phone === "string") {
+      phonesRaw.push(dp.phone);
+    }
+    if (typeof dp.contact_phone === "string") {
+      phonesRaw.push(dp.contact_phone);
+    }
+    if (dp.contact_info && typeof dp.contact_info.phone === "string") {
+      phonesRaw.push(dp.contact_info.phone);
+    }
+
+    for (const num of phonesRaw) {
+      const numDigits = String(num).replace(/[^\d]/g, "");
       if (!numDigits) continue;
 
-      if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
+      // Сравниваем «по хвосту», чтобы пережить разные форматы (+998..., 998..., 8...)
+      if (
+        numDigits === phoneDigits ||
+        numDigits.endsWith(phoneDigits) ||
+        phoneDigits.endsWith(numDigits)
+      ) {
         const fullName =
-          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") || null;
+          [dp.last_name, dp.first_name, dp.middle_name]
+            .filter(Boolean)
+            .join(" ") || null;
         const status =
           (item.current_status && item.current_status.status) || null;
 
@@ -836,6 +873,7 @@ async function findDriverByPhone(phoneRaw) {
     }
   }
 
+  // Если ничего не нашли — считаем, что такого телефона в Fleet нет (или телефон недоступен через API)
   return { ok: true, found: false };
 }
 

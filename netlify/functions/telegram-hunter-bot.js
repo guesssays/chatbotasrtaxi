@@ -15,6 +15,13 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
+// upload-doc endpoint (как в основном боте водителей)
+const UPLOAD_DOC_URL =
+  process.env.UPLOAD_DOC_URL ||
+  (process.env.URL &&
+    `${process.env.URL.replace(/\/$/, "")}/.netlify/functions/upload-doc`) ||
+  null;
+
 // ===== Yandex Fleet API (Park) =====
 const FLEET_API_URL = process.env.FLEET_API_URL || null;
 const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
@@ -45,6 +52,9 @@ const FLEET_API_BASE_URL =
 
 if (!TELEGRAM_TOKEN) {
   console.error("TG_HUNTER_BOT_TOKEN / TG_BOT_TOKEN is not set (telegram-hunter-bot.js)");
+}
+if (!UPLOAD_DOC_URL) {
+  console.error("UPLOAD_DOC_URL is not set and URL is not available (hunter-bot)");
 }
 
 // ================== SIMPLE IN-MEMORY SESSIONS ==================
@@ -165,6 +175,53 @@ async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   }
 }
 
+async function callFleetPost(path, payload) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    console.error("callFleetPost: fleet not configured:", cfg.message);
+    return { ok: false, message: cfg.message };
+  }
+
+  const url = `${FLEET_API_BASE_URL}${path}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client-ID": FLEET_CLIENT_ID,
+        "X-API-Key": FLEET_API_KEY,
+        "X-Park-ID": FLEET_PARK_ID,
+      },
+      body: JSON.stringify(payload || {}),
+    });
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      // ignore
+    }
+
+    if (!res.ok) {
+      console.error("callFleetPost error:", res.status, json);
+      return {
+        ok: false,
+        status: res.status,
+        message:
+          (json && (json.message || json.code)) ||
+          `Yandex Fleet API xatosi: ${res.status}`,
+        raw: json,
+      };
+    }
+
+    return { ok: true, data: json };
+  } catch (e) {
+    console.error("callFleetPost exception:", e);
+    return { ok: false, message: String(e) };
+  }
+}
+
 async function bindCarToDriver(driverId, vehicleId) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
@@ -221,7 +278,7 @@ async function bindCarToDriver(driverId, vehicleId) {
   }
 }
 
-// ===== Normalization helpers (адаптация из основного бота) =====
+// ===== Normalization helpers =====
 
 function normalizePhoneForYandex(phone) {
   if (!phone) return null;
@@ -317,7 +374,478 @@ function mapColorToYandexFromText(txt) {
   return "Белый";
 }
 
-// ===== Создание водителя в Fleet (hunter-правило) =====
+// ===== Поиск водителя по телефону в Fleet =====
+async function findDriverByPhone(phoneRaw) {
+  const normalizedPhone = normalizePhoneForYandex(phoneRaw);
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, found: false, error: cfg.message };
+  }
+
+  const body = {
+    limit: 500,
+    offset: 0,
+    query: {
+      park: {
+        id: FLEET_PARK_ID,
+      },
+    },
+  };
+
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    console.error("findDriverByPhone: fleet error:", res);
+    return { ok: false, found: false, error: res.message };
+  }
+
+  const profiles = (res.data && res.data.driver_profiles) || [];
+  if (!profiles.length) {
+    return { ok: true, found: false };
+  }
+
+  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
+  if (!phoneDigits) return { ok: true, found: false };
+
+  for (const item of profiles) {
+    const dp = (item && item.driver_profile) || {};
+    const phones = Array.isArray(dp.phones) ? dp.phones : [];
+
+    for (const p of phones) {
+      const num = (p && (p.number || p.phone)) || "";
+      const numDigits = num.replace(/[^\d]/g, "");
+      if (!numDigits) continue;
+
+      if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
+        const fullName =
+          [dp.last_name, dp.first_name, dp.middle_name]
+            .filter(Boolean)
+            .join(" ") || null;
+        const status =
+          (item.current_status && item.current_status.status) || null;
+
+        return {
+          ok: true,
+          found: true,
+          driver: {
+            id: dp.id || null,
+            name: fullName,
+            phone: num || normalizedPhone || phoneRaw,
+            status,
+          },
+        };
+      }
+    }
+  }
+
+  return { ok: true, found: false };
+}
+
+// ================== upload-doc интеграция ==================
+async function forwardDocToUploadDoc(telegramUpdate, meta) {
+  if (!UPLOAD_DOC_URL) {
+    console.error("forwardDocToUploadDoc: no UPLOAD_DOC_URL");
+    return null;
+  }
+  try {
+    const res = await fetch(UPLOAD_DOC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "telegram_hunter_bot",
+        telegram_update: telegramUpdate,
+        meta: meta || {},
+        previewOnly: true,
+      }),
+    });
+
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      console.error("forwardDocToUploadDoc failed:", res.status, text);
+      return { ok: false, status: res.status, raw: text };
+    }
+
+    return json || { ok: true, raw: text };
+  } catch (e) {
+    console.error("forwardDocToUploadDoc exception:", e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// ================== GOOGLE SHEETS STUB ==================
+async function appendDriverToGoogleSheetsStub(draft, result) {
+  // Заглушка — в реале здесь будет запрос в Google Sheets API / Apps Script
+  console.log("Google Sheets stub: append row", { draft, result });
+}
+
+// ================== FLOW: HUNTER START & MENU ==================
+async function handleStart(chatId, session, from) {
+  session.step = "waiting_hunter_contact";
+  session.hunter = null;
+  session.driverDraft = null;
+
+  const name = from?.first_name || "друг";
+
+  const text =
+    `👋 Привет, *${name}*!\n\n` +
+    "Это бот для *хантеров ASR TAXI*.\n\n" +
+    "Через этого бота ты можешь регистрировать водителей, и для каждого водителя " +
+    "будет автоматически создаваться профиль в *Yandex Fleet*.\n\n" +
+    "Сначала привяжем твой аккаунт:\n" +
+    "нажми кнопку ниже и отправь *свой номер телефона*.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      keyboard: [
+        [
+          {
+            text: "📲 Отправить телефон",
+            request_contact: true,
+          },
+        ],
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    },
+  });
+}
+
+async function handleHunterContact(chatId, session, contact) {
+  const phone = contact.phone_number;
+  const tgName = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
+
+  session.hunter = {
+    chatId,
+    phone,
+    name: tgName || contact.first_name || "Без имени",
+    username: contact.user_id ? undefined : undefined, // тут username из contact не приходит
+    createdAt: new Date().toISOString(),
+  };
+
+  session.step = "main_menu";
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ Контакт привязан.\n\nТы зарегистрирован как *хантер ASR TAXI*.\n\n` +
+      "Теперь можешь регистрировать водителей через меню ниже.",
+    {
+      parse_mode: "Markdown",
+      reply_markup: mainMenuKeyboard(),
+    }
+  );
+
+  await sendOperatorAlert(
+    "*Новый хантер подключился к боту*\n\n" +
+      `Chat ID: \`${chatId}\`\n` +
+      `Телефон: \`${phone}\`\n` +
+      `Имя: ${session.hunter.name}`
+  );
+}
+
+// ================== FLOW: DRIVER REGISTRATION (НОВЫЙ) ==================
+
+async function beginDriverRegistration(chatId, session) {
+  if (!session.hunter) {
+    await sendTelegramMessage(
+      chatId,
+      "Сначала нужно привязать твой контакт. Нажми /start и отправь свой номер."
+    );
+    session.step = "idle";
+    return;
+  }
+
+  session.driverDraft = {
+    hunterChatId: session.hunter.chatId,
+    hunterPhone: session.hunter.phone,
+    hunterName: session.hunter.name,
+    createdAt: new Date().toISOString(),
+  };
+
+  session.step = "driver_phone";
+
+  await sendTelegramMessage(
+    chatId,
+    "➕ *Регистрация нового водителя*\n\n" +
+      "1/7. Введи *номер телефона водителя* в любом удобном формате.\n\n" +
+      "Сначала я проверю в Yandex, есть ли этот водитель в базе.",
+    { parse_mode: "Markdown" }
+  );
+}
+
+async function handleDriverPhone(chatId, session, value) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+  draft.driverPhone = value;
+
+  await sendTelegramMessage(
+    chatId,
+    `📞 Номер водителя: *${value}*\n\nПроверяю в Yandex Fleet...`,
+    { parse_mode: "Markdown" }
+  );
+
+  const found = await findDriverByPhone(value);
+
+  if (!found.ok) {
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Не удалось проверить номер в Yandex Fleet (ошибка соединения).\n" +
+        "Продолжим регистрацию как нового водителя."
+    );
+  } else if (found.found && found.driver) {
+    await sendTelegramMessage(
+      chatId,
+      "✅ Этот номер уже есть в Yandex Fleet.\n\n" +
+        `Имя: *${found.driver.name || "не указано"}*\n` +
+        `Телефон в базе: *${found.driver.phone || value}*\n` +
+        `Статус: \`${found.driver.status || "unknown"}\`\n\n` +
+        "Повторно регистрировать такого водителя не нужно.\n" +
+        "Возвращаю тебя в главное меню.",
+      { parse_mode: "Markdown" }
+    );
+
+    await sendOperatorAlert(
+      "*Хантер попытался зарегистрировать уже существующего водителя*\n\n" +
+        `Хантер: ${session.hunter.name} (chat_id=${session.hunter.chatId})\n` +
+        `Телефон водителя: \`${value}\`\n` +
+        `Имя в Fleet: ${found.driver.name || "—"}\n` +
+        `ID: \`${found.driver.id || "—"}\``
+    );
+
+    session.driverDraft = null;
+    session.step = "main_menu";
+    await sendTelegramMessage(chatId, "Выбери действие в меню.", {
+      reply_markup: mainMenuKeyboard(),
+    });
+    return;
+  }
+
+  // если не найден — продолжаем
+  session.step = "driver_vu_front";
+
+  await sendTelegramMessage(
+    chatId,
+    "2/7. Отправь *фото водительского удостоверения* (лицевая сторона).\n\n" +
+      "Фото должно быть чётким, без бликов, чтобы хорошо читались ФИО, серия и номер.",
+    { parse_mode: "Markdown" }
+  );
+}
+
+// обработка всех текстовых шагов (кроме номера телефона)
+async function handleDriverStep(chatId, session, text) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+  const value = (text || "").trim();
+
+  switch (session.step) {
+    case "driver_phone": {
+      await handleDriverPhone(chatId, session, value);
+      break;
+    }
+
+    case "driver_car_brand_model": {
+      // простое разбиение: первое слово — марка, остальное — модель
+      const parts = value.split(/\s+/);
+      draft.carBrand = parts[0] || "";
+      draft.carModel = parts.slice(1).join(" ") || "";
+      draft.carBrandModelRaw = value;
+
+      session.step = "driver_car_year";
+      await sendTelegramMessage(
+        chatId,
+        "4/7. Введи *год выпуска авто* (например, 2019).",
+        { parse_mode: "Markdown" }
+      );
+      break;
+    }
+
+    case "driver_car_year": {
+      draft.carYear = value;
+      session.step = "driver_car_plate";
+      await sendTelegramMessage(
+        chatId,
+        "5/7. Введи *госномер авто* (например, 01A123BC).",
+        { parse_mode: "Markdown" }
+      );
+      break;
+    }
+
+    case "driver_car_plate": {
+      draft.carPlate = value;
+      session.step = "driver_car_color";
+      await sendTelegramMessage(
+        chatId,
+        "6/7. Введи *цвет авто* (например, oq, qora, seryy, blue и т.п.).",
+        { parse_mode: "Markdown" }
+      );
+      break;
+    }
+
+    case "driver_car_color": {
+      draft.carColor = value;
+      session.step = "driver_tech_passport";
+      await sendTelegramMessage(
+        chatId,
+        "7/7. Введи *серии/номер техпаспорта* (например: AAF4222435).\n\n" +
+          "Если не знаешь — всё равно напиши то, что есть, чтобы парку было проще.",
+        { parse_mode: "Markdown" }
+      );
+      break;
+    }
+
+    case "driver_tech_passport": {
+      draft.techPassport = value;
+      await finalizeDriverRegistration(chatId, session);
+      break;
+    }
+
+    default: {
+      // если почему-то шаг неизвестен — начинаем заново
+      session.step = "main_menu";
+      await sendTelegramMessage(
+        chatId,
+        "Что-то пошло не так с шагами регистрации. Давай начнём заново из меню.",
+        { reply_markup: mainMenuKeyboard() }
+      );
+      break;
+    }
+  }
+}
+
+// ================== ОБРАБОТКА ФОТО ВУ ==================
+
+async function handleDriverVuPhoto(update, session) {
+  const msg =
+    update.message ||
+    update.edited_message ||
+    update.channel_post ||
+    update.edited_channel_post;
+
+  const chatId = msg.chat.id;
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  let fileId = null;
+  if (Array.isArray(msg.photo) && msg.photo.length) {
+    fileId = msg.photo[msg.photo.length - 1].file_id;
+  } else if (
+    msg.document &&
+    msg.document.mime_type &&
+    msg.document.mime_type.startsWith("image/")
+  ) {
+    fileId = msg.document.file_id;
+  }
+
+  if (!fileId) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось получить файл. Попробуй ещё раз отправить фото водительского удостоверения."
+    );
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    "✅ Фото получено. Читаю данные с водительского удостоверения, подожди несколько секунд..."
+  );
+
+  const meta = {
+    tg_id: chatId,
+    hunter_chat_id: session.hunter?.chatId,
+    hunter_phone: session.hunter?.phone,
+    driver_phone: draft.driverPhone,
+    docType: "vu_front",
+  };
+
+  const resp = await forwardDocToUploadDoc(update, meta);
+
+  if (!resp || resp.ok === false) {
+    await sendTelegramMessage(
+      chatId,
+      "❗ Не получилось прочитать данные с фото. Попробуй сделать более чёткий снимок и отправить ещё раз."
+    );
+    return;
+  }
+
+  let parsedDoc = null;
+  if (resp.mode === "single" && resp.doc) {
+    parsedDoc = resp.doc;
+  } else if (resp.doc) {
+    parsedDoc = resp.doc;
+  }
+
+  if (!parsedDoc || !parsedDoc.result || !parsedDoc.result.parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось распознать текст на фото. Сделай фото крупнее и без бликов и отправь ещё раз."
+    );
+    return;
+  }
+
+  const fields = parsedDoc.result.parsed.fields || {};
+
+  draft.vuFrontFileId = fileId;
+
+  // ФИО
+  if (fields.driver_name) {
+    draft.driverFullName = fields.driver_name;
+    const parts = String(fields.driver_name).trim().split(/\s+/);
+    draft.driverLastName = parts[0] || "";
+    draft.driverFirstName = parts[1] || "";
+    draft.driverMiddleName = parts.slice(2).join(" ") || "";
+  }
+
+  // ВУ
+  if (fields.license_series) draft.licenseSeries = fields.license_series;
+  if (fields.license_number) draft.licenseNumber = fields.license_number;
+  if (fields.license_full)
+    draft.licenseFull = fields.license_full;
+
+  // даты
+  if (fields.issued_date) draft.licenseIssuedDate = fields.issued_date;
+  if (fields.expiry_date) draft.licenseExpiryDate = fields.expiry_date;
+
+  // PINFL если есть
+  if (fields.pinfl || fields.driver_pinfl) {
+    draft.driverPinfl = fields.pinfl || fields.driver_pinfl;
+  }
+
+  const lines = [];
+  lines.push("📄 *Нашёл такие данные в водительском удостоверении:*");
+  lines.push("");
+  lines.push(`ФИО: ${draft.driverFullName || "—"}`);
+  lines.push(
+    `ВУ: ${(draft.licenseSeries || "") + " " + (draft.licenseNumber || "")}`.trim() ||
+      "—"
+  );
+  lines.push(
+    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${draft.licenseExpiryDate ||
+      "—"}`
+  );
+  lines.push(`PINFL (если найден): ${draft.driverPinfl || "—"}`);
+  lines.push("");
+  lines.push(
+    "Если что-то распозналось с ошибкой — оператор парка сможет это скорректировать вручную."
+  );
+
+  await sendTelegramMessage(chatId, lines.join("\n"), {
+    parse_mode: "Markdown",
+  });
+
+  // Переходим к выбору машины
+  session.step = "driver_car_brand_model";
+
+  await sendTelegramMessage(
+    chatId,
+    "3/7. Теперь введи *марку и модель авто* (например: `Chevrolet Cobalt`).",
+    { parse_mode: "Markdown" }
+  );
+}
+
+// ================== СОЗДАНИЕ ВОДИТЕЛЯ (hunter rule) ==================
 async function createDriverInFleetForHunter(draft) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
@@ -366,7 +894,7 @@ async function createDriverInFleetForHunter(draft) {
       country: countryCode,
       issue_date: issuedISO,
       expiry_date: expiryISO,
-      birth_date: undefined, // здесь hunter руками не вводит дату рождения
+      birth_date: undefined, // хантер дату рождения не вводит
     };
   }
 
@@ -379,14 +907,6 @@ async function createDriverInFleetForHunter(draft) {
   }
 
   const taxDigits = (draft.driverPinfl || "").replace(/\D/g, "");
-  if (!taxDigits) {
-    return {
-      ok: false,
-      error:
-        "Для регистрации водителя в Yandex Fleet нужно указать PINFL (tax_identification_number).",
-      code: "missing_pinfl_for_driver",
-    };
-  }
 
   const account = {
     balance_limit: "5000",
@@ -399,12 +919,16 @@ async function createDriverInFleetForHunter(draft) {
     account.payment_service_id = FLEET_PAYMENT_SERVICE_ID;
   }
 
+  const fullName = {
+    first_name: firstName,
+    last_name: lastName,
+  };
+  if (middleName) {
+    fullName.middle_name = middleName;
+  }
+
   const person = {
-    full_name: {
-      first_name: firstName,
-      last_name: lastName,
-      middle_name: middleName,
-    },
+    full_name: fullName,
     contact_info: phoneNorm
       ? {
           phone: phoneNorm,
@@ -415,8 +939,11 @@ async function createDriverInFleetForHunter(draft) {
       total_since_date: totalSince,
     },
     employment_type: employmentType,
-    tax_identification_number: taxDigits,
   };
+
+  if (taxDigits) {
+    person.tax_identification_number = taxDigits;
+  }
 
   const body = {
     account,
@@ -436,7 +963,7 @@ async function createDriverInFleetForHunter(draft) {
 
   const idempotencyKey = `hunter-driver-${FLEET_PARK_ID}-${
     phoneNorm || ""
-  }-${taxDigits}`;
+  }-${taxDigits || "no-pinfl"}`;
 
   const res = await callFleetPostIdempotent(
     "/v2/parks/contractors/driver-profile",
@@ -561,257 +1088,7 @@ async function createCarInFleetForHunter(draft) {
   return { ok: true, carId, raw: data };
 }
 
-// ================== GOOGLE SHEETS STUB ==================
-async function appendDriverToGoogleSheetsStub(draft, result) {
-  // Заглушка — в реале здесь будет запрос в Google Sheets API / Apps Script
-  console.log("Google Sheets stub: append row", { draft, result });
-}
-
-// ================== FLOW: HUNTER START & MENU ==================
-async function handleStart(chatId, session, from) {
-  session.step = "waiting_hunter_contact";
-  session.hunter = null;
-  session.driverDraft = null;
-
-  const name = from?.first_name || "друг";
-
-  const text =
-    `👋 Привет, *${name}*!\n\n` +
-    "Это бот для *хантеров ASR TAXI*.\n\n" +
-    "Через этого бота ты можешь регистрировать водителей, и для каждого водителя " +
-    "будет автоматически создаваться профиль в *Yandex Fleet*.\n\n" +
-    "Сначала привяжем твой аккаунт:\n" +
-    "нажми кнопку ниже и отправь *свой номер телефона*.";
-
-  await sendTelegramMessage(chatId, text, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      keyboard: [
-        [
-          {
-            text: "📲 Отправить телефон",
-            request_contact: true,
-          },
-        ],
-      ],
-      resize_keyboard: true,
-      one_time_keyboard: true,
-    },
-  });
-}
-
-async function handleHunterContact(chatId, session, contact) {
-  const phone = contact.phone_number;
-  const tgName = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
-
-  session.hunter = {
-    chatId,
-    phone,
-    name: tgName || contact.first_name || "Без имени",
-    username: contact.user_id ? undefined : undefined, // Telegram contact не даёт username
-    createdAt: new Date().toISOString(),
-  };
-
-  session.step = "main_menu";
-
-  await sendTelegramMessage(
-    chatId,
-    `✅ Контакт привязан.\n\nТы зарегистрирован как *хантер ASR TAXI*.\n\n` +
-      "Теперь можешь регистрировать водителей через меню ниже.",
-    {
-      parse_mode: "Markdown",
-      reply_markup: mainMenuKeyboard(),
-    }
-  );
-
-  await sendOperatorAlert(
-    "*Новый хантер подключился к боту*\n\n" +
-      `Chat ID: \`${chatId}\`\n` +
-      `Телефон: \`${phone}\`\n` +
-      `Имя: ${session.hunter.name}`
-  );
-}
-
-// ================== FLOW: DRIVER REGISTRATION (ШАГ ЗА ШАГОМ) ==================
-
-async function beginDriverRegistration(chatId, session) {
-  if (!session.hunter) {
-    await sendTelegramMessage(
-      chatId,
-      "Сначала нужно привязать твой контакт. Нажми /start и отправь свой номер."
-    );
-    session.step = "idle";
-    return;
-  }
-
-  session.driverDraft = {
-    hunterChatId: session.hunter.chatId,
-    hunterPhone: session.hunter.phone,
-    hunterName: session.hunter.name,
-    createdAt: new Date().toISOString(),
-  };
-
-  session.step = "driver_full_name";
-
-  await sendTelegramMessage(
-    chatId,
-    "➕ *Регистрация нового водителя*\n\n" +
-      "1/11. Введи *ФИО водителя* полностью, как в водительском удостоверении.",
-    { parse_mode: "Markdown" }
-  );
-}
-
-async function handleDriverStep(chatId, session, text) {
-  const draft = session.driverDraft || (session.driverDraft = {});
-  const value = (text || "").trim();
-
-  switch (session.step) {
-    case "driver_full_name": {
-      draft.driverFullName = value;
-      session.step = "driver_phone";
-      await sendTelegramMessage(
-        chatId,
-        "2/11. Введи *номер телефона водителя* в любом удобном формате.",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_phone": {
-      draft.driverPhone = value;
-      session.step = "driver_pinfl";
-      await sendTelegramMessage(
-        chatId,
-        "3/11. Введи *PINFL (JShShIR)* водителя (14 цифр).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_pinfl": {
-      draft.driverPinfl = value;
-      session.step = "driver_license_series";
-      await sendTelegramMessage(
-        chatId,
-        "4/11. Введи *СЕРИЮ* водительского удостоверения (например, AF).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_license_series": {
-      draft.licenseSeries = value;
-      session.step = "driver_license_number";
-      await sendTelegramMessage(
-        chatId,
-        "5/11. Введи *НОМЕР* водительского удостоверения (7 цифр).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_license_number": {
-      draft.licenseNumber = value;
-      session.step = "driver_license_issue_date";
-      await sendTelegramMessage(
-        chatId,
-        "6/11. Введи *дату выдачи ВУ* (например, 01.03.2018).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_license_issue_date": {
-      draft.licenseIssuedDate = value;
-      session.step = "driver_license_expiry_date";
-      await sendTelegramMessage(
-        chatId,
-        "7/11. Введи *дату окончания ВУ* (например, 01.03.2028).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_license_expiry_date": {
-      draft.licenseExpiryDate = value;
-      session.step = "driver_car_brand_model";
-      await sendTelegramMessage(
-        chatId,
-        "8/11. Введи *марку и модель авто* (например: `Chevrolet Cobalt`).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_car_brand_model": {
-      // простое разбиение: первое слово — марка, остальное — модель
-      const parts = value.split(/\s+/);
-      draft.carBrand = parts[0] || "";
-      draft.carModel = parts.slice(1).join(" ") || "";
-      draft.carBrandModelRaw = value;
-
-      session.step = "driver_car_year";
-      await sendTelegramMessage(
-        chatId,
-        "9/11. Введи *год выпуска авто* (например, 2019).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_car_year": {
-      draft.carYear = value;
-      session.step = "driver_car_plate";
-      await sendTelegramMessage(
-        chatId,
-        "10/11. Введи *госномер авто* (например, 01A123BC).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_car_plate": {
-      draft.carPlate = value;
-      session.step = "driver_car_color";
-      await sendTelegramMessage(
-        chatId,
-        "11/11. Введи *цвет авто* (например, oq, qora, seryy, blue и т.п.).",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_car_color": {
-      draft.carColor = value;
-      session.step = "driver_tech_passport";
-      await sendTelegramMessage(
-        chatId,
-        "Дополнительно: введи *серии/номер техпаспорта* (например: AAF4222435).\n\n" +
-          "Если не знаешь — всё равно напиши то, что есть, чтобы парку было проще.",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_tech_passport": {
-      draft.techPassport = value;
-      await finalizeDriverRegistration(chatId, session);
-      break;
-    }
-
-    default: {
-      // если почему-то шаг неизвестен — начинаем заново
-      session.step = "main_menu";
-      await sendTelegramMessage(
-        chatId,
-        "Что-то пошло не так с шагами регистрации. Давай начнём заново из меню.",
-        { reply_markup: mainMenuKeyboard() }
-      );
-      break;
-    }
-  }
-}
-
+// ================== ФИНАЛИЗАЦИЯ РЕГИСТРАЦИИ ==================
 async function finalizeDriverRegistration(chatId, session) {
   const draft = session.driverDraft;
   if (!draft) {
@@ -1008,6 +1285,18 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
+  // Если ждём фото ВУ
+  if (
+    session.step === "driver_vu_front" &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    await handleDriverVuPhoto(update, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
   // главное меню
   if (session.step === "main_menu") {
     if (text === "➕ Зарегистрировать водителя") {
@@ -1024,14 +1313,25 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // шаги регистрации водителя
+  // шаги регистрации водителя (все driver_* кроме driver_vu_front, где ждём фото)
   if (
     session.step &&
     session.step.startsWith("driver_") &&
+    session.step !== "driver_vu_front" &&
     typeof text === "string" &&
     text.trim()
   ) {
     await handleDriverStep(chatId, session, text);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // подсказка, если на шаге driver_vu_front присылают текст
+  if (session.step === "driver_vu_front" && text) {
+    await sendTelegramMessage(
+      chatId,
+      "Сейчас нужно отправить *фото водительского удостоверения (передняя сторона)*.",
+      { parse_mode: "Markdown" }
+    );
     return { statusCode: 200, body: "OK" };
   }
 

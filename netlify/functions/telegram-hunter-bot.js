@@ -1895,7 +1895,8 @@ async function createDriverInFleetForHunter(draft) {
 
   const data = res.data || {};
 
-  const driverId =
+  // --- ИЗМЕНЕНО: пытаемся получить id, а если его нет — ищем водителя по телефону ---
+  let driverId =
     data.id ||
     data.driver_profile_id ||
     (data.profile && data.profile.id) ||
@@ -1903,6 +1904,19 @@ async function createDriverInFleetForHunter(draft) {
     null;
 
   if (!driverId) {
+    // Яндекс мог не вернуть id из-за проверки по телефону (водитель уже есть).
+    // В этом случае пробуем найти его по номеру телефона.
+    const lookup = await findDriverByPhone(draft.driverPhone);
+    if (lookup.ok && lookup.found && lookup.driver && lookup.driver.id) {
+      return {
+        ok: true,
+        driverId: lookup.driver.id,
+        raw: data,
+        alreadyExisted: true,
+      };
+    }
+
+    // Если по телефону тоже не нашли — считаем ошибкой, как раньше
     return {
       ok: false,
       error: "Yandex Fleet haydovchi identifikatorini (id) qaytarmadi",
@@ -1911,7 +1925,7 @@ async function createDriverInFleetForHunter(draft) {
     };
   }
 
-  return { ok: true, driverId, raw: data };
+  return { ok: true, driverId, raw: data, alreadyExisted: false };
 }
 
 // ===== Создание авто в Fleet (минимально, под эконом) =====
@@ -2164,8 +2178,13 @@ async function finalizeDriverRegistration(chatId, session) {
     parse_mode: "Markdown",
   });
 
+  // --- ИЗМЕНЕНО: шапка оповещения в зависимости от того, новый водитель или уже существовал ---
+  const operatorHeader = driverRes.alreadyExisted
+    ? "🟢 Водитель найден в Yandex Fleet и привязан через hunter-бот\n\n"
+    : "✅ Новый водитель зарегистрирован через hunter-бот\n\n";
+
   await sendOperatorAlert(
-    "✅ Новый водитель зарегистрирован через hunter-бот\n\n" +
+    operatorHeader +
       `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
       `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
       `PINFL: ${draft.driverPinfl || "—"}\n` +
@@ -2336,7 +2355,7 @@ async function handleMyDriversSection(chatId, session) {
   if (!drivers.length) {
     await sendTelegramMessage(
       chatId,
-      "Hozircha ushbu bot orqali Sizga biriktirilgan haydovchilar topilmadi.",
+      "Hozircha ushbu bot orqali Sizga biriktirilган haydovchilar topilmadi.",
       { reply_markup: mainMenuKeyboard() }
     );
     return;

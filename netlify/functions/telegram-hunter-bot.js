@@ -768,12 +768,20 @@ async function findDriverByPhone(phoneRaw) {
   }
 
   const body = {
-    limit: 500,
+    limit: 50,
     offset: 0,
     query: {
-      park: {
-        id: FLEET_PARK_ID,
-      },
+      park: { id: FLEET_PARK_ID },
+    },
+    // ВАЖНО: просим вернуть поля driver_profile с phones
+    fields: {
+      driver_profile: [
+        "id",
+        "first_name",
+        "last_name",
+        "middle_name",
+        "phones",
+      ],
     },
   };
 
@@ -781,6 +789,14 @@ async function findDriverByPhone(phoneRaw) {
   if (!res.ok) {
     console.error("findDriverByPhone: fleet error:", res);
     return { ok: false, found: false, error: res.message };
+  }
+
+  // 🔍 ВРЕМЕННЫЙ ЛОГ – посмотреть, что там вообще приходит
+  try {
+    const sample = (res.data && res.data.driver_profiles && res.data.driver_profiles[0]) || null;
+    console.log("findDriverByPhone sample profile:", JSON.stringify(sample, null, 2));
+  } catch (e) {
+    console.error("findDriverByPhone log sample error:", e);
   }
 
   const profiles = (res.data && res.data.driver_profiles) || [];
@@ -802,9 +818,7 @@ async function findDriverByPhone(phoneRaw) {
 
       if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
         const fullName =
-          [dp.last_name, dp.first_name, dp.middle_name]
-            .filter(Boolean)
-            .join(" ") || null;
+          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") || null;
         const status =
           (item.current_status && item.current_status.status) || null;
 
@@ -824,6 +838,7 @@ async function findDriverByPhone(phoneRaw) {
 
   return { ok: true, found: false };
 }
+
 
 // ====== Список "моих" водителей для хантера ======
 async function listMyDriversForHunter(hunterChatId) {

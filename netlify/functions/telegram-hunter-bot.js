@@ -146,6 +146,7 @@ async function answerCallbackQuery(callbackQueryId) {
   }
 }
 
+// ⚠️ Оповещения операторам — БЕЗ Markdown, чтобы не ловить ошибки парсинга
 async function sendOperatorAlert(text) {
   const targets = new Set();
   for (const id of ADMIN_CHAT_IDS) {
@@ -155,7 +156,7 @@ async function sendOperatorAlert(text) {
   if (!targets.size) return;
 
   for (const chatId of targets) {
-    await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+    await sendTelegramMessage(chatId, text); // без parse_mode
   }
 }
 
@@ -230,14 +231,31 @@ function ensureFleetConfigured() {
   return { ok: true };
 }
 
+// генератор корректного idempotency-токена (16–64 символов, ASCII)
+function makeIdempotencyKey(prefix = "idemp") {
+  const ts = Date.now().toString(16); // 10–13 символов
+  const rand = Math.random().toString(16).slice(2, 10); // 8 символов
+  let key = `${prefix}-${ts}-${rand}`; // обычно ~25–30 символов
+
+  if (key.length < 16) {
+    key = key.padEnd(16, "x");
+  }
+  if (key.length > 64) {
+    key = key.slice(0, 64);
+  }
+  return key;
+}
+
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, message: cfg.message };
 
   const url = `${FLEET_API_BASE_URL}${path}`;
-  const key =
-    idempotencyKey ||
-    `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  // гарантируем длину 16–64
+  let key = idempotencyKey || makeIdempotencyKey();
+  if (key.length < 16) key = key.padEnd(16, "x");
+  if (key.length > 64) key = key.slice(0, 64);
 
   try {
     const res = await fetch(url, {
@@ -897,8 +915,8 @@ async function handleHunterContact(chatId, session, contact) {
 
   await sendOperatorAlert(
     "*Новый хантер подключился к боту*\n\n" +
-      `Chat ID: \`${chatId}\`\n` +
-      `Телефон: \`${phone}\`\n` +
+      `Chat ID: ${chatId}\n` +
+      `Телефон: ${phone}\n` +
       `Имя: ${session.hunter.name}`
   );
 }
@@ -1100,9 +1118,9 @@ async function handleDriverPhone(chatId, session, value) {
     await sendOperatorAlert(
       "*Хантер попытался зарегистрировать уже существующего водителя*\n\n" +
         `Хантер: ${session.hunter.name} (chat_id=${session.hunter.chatId})\n` +
-        `Телефон водителя: \`${value}\`\n` +
+        `Телефон водителя: ${value}\n` +
         `Имя в Fleet: ${found.driver.name || "—"}\n` +
-        `ID: \`${found.driver.id || "—"}\``
+        `ID: ${found.driver.id || "—"}`
     );
 
     session.driverDraft = null;
@@ -1759,9 +1777,7 @@ async function createDriverInFleetForHunter(draft) {
     },
   };
 
-  const idempotencyKey = `hunter-driver-${FLEET_PARK_ID}-${
-    phoneNorm || ""
-  }-${taxDigits || "no-pinfl"}`;
+  const idempotencyKey = makeIdempotencyKey("hunter-driver");
 
   const res = await callFleetPostIdempotent(
     "/v2/parks/contractors/driver-profile",
@@ -1850,7 +1866,7 @@ async function createCarInFleetForHunter(draft) {
     registration_certificate: draft.techPassport || "",
   };
 
-  const idempotencyKey = `hunter-car-${FLEET_PARK_ID}-${draft.carPlate || ""}`;
+  const idempotencyKey = makeIdempotencyKey("hunter-car");
 
   const body = {
     park_profile: parkProfile,
@@ -1916,8 +1932,8 @@ async function finalizeDriverRegistration(chatId, session) {
     await sendOperatorAlert(
       "*Ошибка создания водителя (hunter-bot)*\n\n" +
         `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-        `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
-        `PINFL: \`${draft.driverPinfl || "—"}\`\n` +
+        `Телефон водителя: ${draft.driverPhone || "—"}\n` +
+        `PINFL: ${draft.driverPinfl || "—"}\n` +
         `Ошибка: ${driverRes.error || "неизвестно"}`
     );
 
@@ -1944,7 +1960,7 @@ async function finalizeDriverRegistration(chatId, session) {
     await sendOperatorAlert(
       "*Водитель создан, авто не добавлено (hunter-bot)*\n\n" +
         `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-        `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
+        `Телефон водителя: ${draft.driverPhone || "—"}\n` +
         `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
           draft.carYear || ""
         }, ${draft.carPlate || ""}\n` +
@@ -1960,7 +1976,7 @@ async function finalizeDriverRegistration(chatId, session) {
       await sendOperatorAlert(
         "*Ошибка привязки авто к водителю (hunter-bot)*\n\n" +
           `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-          `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
+          `Телефон водителя: ${draft.driverPhone || "—"}\n` +
           `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
             draft.carYear || ""
           }, ${draft.carPlate || ""}\n` +
@@ -2013,8 +2029,8 @@ async function finalizeDriverRegistration(chatId, session) {
   await sendOperatorAlert(
     "*Новый водитель зарегистрирован через hunter-bot*\n\n" +
       `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-      `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
-      `PINFL: \`${draft.driverPinfl || "—"}\`\n` +
+      `Телефон водителя: ${draft.driverPhone || "—"}\n` +
+      `PINFL: ${draft.driverPinfl || "—"}\n` +
       `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
         draft.carYear || ""
       }, ${draft.carPlate || ""}`
@@ -2252,8 +2268,8 @@ exports.handler = async (event) => {
 
     await sendOperatorAlert(
       "*Хантер отправил контакт вне сценария (hunter-bot)*\n\n" +
-        `Chat ID: \`${chatId}\`\n` +
-        `Телефон: \`${msg.contact.phone_number}\``
+        `Chat ID: ${chatId}\n` +
+        `Телефон: ${msg.contact.phone_number}`
     );
     await sendTelegramMessage(
       chatId,

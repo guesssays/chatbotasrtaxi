@@ -1,7 +1,7 @@
 // netlify/functions/upload-doc.js
 
 // ====== ENV ======
-const TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN;
+let TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN; // делаем let, чтобы можно было переключать по source
 const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID || "")
   .split(",")
   .map((id) => id.trim())
@@ -10,7 +10,7 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
 
-const TELEGRAM_API = TELEGRAM_TOKEN
+let TELEGRAM_API = TELEGRAM_TOKEN
   ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
   : null;
 
@@ -544,7 +544,7 @@ ${schema}
           {
             role: "system",
             content:
-              "Ты аккуратно извлекаешь данные из документов Узбекистана и возвращаешь СТРОГО один JSON-объект без пояснений."
+              "Ты аккуратно извлекаешь данные из документов Узбекистана и возвращаешь СТРОГО один JSON-объект без пояснений.",
           },
           {
             role: "user",
@@ -592,8 +592,6 @@ ${schema}
     };
   }
 }
-
-
 
 // ===== форматирование для операторов =====
 
@@ -773,6 +771,25 @@ exports.handler = async (event) => {
     console.error("upload-doc: invalid JSON body", e);
     return { statusCode: 400, body: "Invalid JSON" };
   }
+
+  // --- ВАЖНО: выбираем токен в зависимости от source (hunter-бот или обычный) ---
+  const source = payload?.source || payload?.meta?.source || null;
+
+  if (source === "telegram_hunter_bot") {
+    TELEGRAM_TOKEN =
+      process.env.TG_HUNTER_BOT_TOKEN || process.env.TG_BOT_TOKEN || null;
+  } else {
+    TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN || null;
+  }
+
+  TELEGRAM_API = TELEGRAM_TOKEN
+    ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
+    : null;
+
+  if (!TELEGRAM_TOKEN) {
+    console.error("upload-doc: TELEGRAM_TOKEN is not set for source:", source);
+  }
+  // -------------------------------------------------------------------------------
 
   let {
     images, // батч-формат: [{ image, docType, docTitle }, ...]

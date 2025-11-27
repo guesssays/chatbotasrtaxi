@@ -1,3 +1,5 @@
+// netlify/functions/telegram-hunter-bot.js
+
 // ================== ENV & TELEGRAM ==================
 const TELEGRAM_TOKEN =
   process.env.TG_HUNTER_BOT_TOKEN || process.env.TG_BOT_TOKEN || null;
@@ -27,7 +29,6 @@ const UPLOAD_DOC_URL =
   (process.env.URL &&
     `${process.env.URL.replace(/\/$/, "")}/.netlify/functions/upload-doc`) ||
   null;
-
 
 // ===== Yandex Fleet API (Park) =====
 const FLEET_API_URL = process.env.FLEET_API_URL || null;
@@ -772,7 +773,7 @@ async function handleDriverVuPhoto(update, session) {
     docType: "vu_front",
   };
 
-  // ВАЖНО: теперь отправляем САМО message, а не весь update
+  // ВАЖНО: отправляем САМО message (как апдейт), upload-doc выкачивает фото по file_id
   const resp = await forwardDocToUploadDoc(msg, meta);
 
   if (!resp || resp.ok === false) {

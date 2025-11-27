@@ -170,6 +170,36 @@ function mainMenuKeyboard() {
   };
 }
 
+// текст кнопки отмены регистрации
+const CANCEL_REG_TEXT = "❌ Ro‘yxatdan o‘tishni bekor qilish";
+
+// клавиатура во время процесса регистрации
+function registrationKeyboard() {
+  return {
+    keyboard: [[{ text: CANCEL_REG_TEXT }]],
+    resize_keyboard: true,
+  };
+}
+
+function isInDriverRegistration(session) {
+  if (!session) return false;
+  if (!session.driverDraft) return false;
+  const step = session.step || "";
+  return step.startsWith("driver_") || step === "edit_field";
+}
+
+async function cancelDriverRegistration(chatId, session) {
+  session.driverDraft = null;
+  session.editField = null;
+  session.step = "main_menu";
+
+  await sendTelegramMessage(
+    chatId,
+    "Haydovchini ro‘yxatdan o‘tkazish jarayoni bekor qilindi. Asosiy menyuga qaytdingiz.",
+    { reply_markup: mainMenuKeyboard() }
+  );
+}
+
 // отправка фото документов в лог-чат (как в основном боте)
 async function sendDocsToLogChat(draft) {
   if (!LOG_CHAT_ID) return;
@@ -900,27 +930,19 @@ async function handleHunterContact(chatId, session, contact) {
     chatId,
     phone,
     name: tgName || contact.first_name || "Ism ko‘rsatilmagan",
-    username: contact.user_id ? undefined : undefined,
+    username: undefined,
     createdAt: new Date().toISOString(),
   };
 
-  session.step = "main_menu";
+  // новый шаг: спрашиваем реальное имя хантера
+  session.step = "waiting_hunter_name";
 
   await sendTelegramMessage(
     chatId,
-    `✅ Kontakt muvaffaqiyatli bog‘landi.\n\nSiz *ASR TAXI hunteri* sifatida ro‘yxatdan o‘tdingiz.\n\n` +
-      "Endi menyudagi bo‘limlar orqali haydovchilarni ro‘yxatdan o‘tkazishingiz mumkin.",
-    {
-      parse_mode: "Markdown",
-      reply_markup: mainMenuKeyboard(),
-    }
-  );
-
-  await sendOperatorAlert(
-    "[hunter-bot] Yangi hunter ulandi\n\n" +
-      `Chat ID: ${chatId}\n` +
-      `Telefon: ${phone}\n` +
-      `Ism (Telegram): ${session.hunter.name}`
+    "✅ Kontakt muvaffaqiyatli bog‘landi.\n\n" +
+      "Endi iltimos, o‘zingizni *to‘liq ismingizni* kiriting (masalan, Ali Aliyev).\n" +
+      "Bu ism siz ro‘yxatdan o‘tkazgan haydovchilar kartasida hunter sifatida ko‘rinadi.",
+    { parse_mode: "Markdown" }
   );
 }
 
@@ -1039,7 +1061,9 @@ async function askVuPhoto(chatId, session) {
   const text =
     "5/6. 📄 Haydovchining *haydovchilik guvohnomasi (old tomoni)* fotosuratini yuboring.\n\n" +
     "Foto aniq bo‘lishi, chiziqlar va matn (F.I.Sh., seria va raqam) yaxshi o‘qilishi kerak.";
-  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+  });
 }
 
 async function askTechFrontPhoto(chatId, session) {
@@ -1085,7 +1109,7 @@ async function beginDriverRegistration(chatId, session) {
     "➕ *Yangi haydovchini ro‘yxatdan o‘tkazish*\n\n" +
       "1/6. Haydovchining *telefon raqamini* istalgan qulay formatda yuboring.\n\n" +
       "Avval Yandex Fleet bazasida ushbu raqam bo‘yicha mavjud haydovchi bor-yo‘qligi tekshiriladi.",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown", reply_markup: registrationKeyboard() }
   );
 }
 
@@ -2217,7 +2241,8 @@ async function handleHelpSection(chatId) {
     "4. Oxirgi bosqichda barcha maydonlarni ko‘rib chiqing, kerak bo‘lsa ularni tuzatish uchun tugmalardan foydalaning.\n" +
     "5. Agar hammasi to‘g‘ri bo‘lsa, «✅ Hammasi to‘g‘ri, parkka yuborish» tugmasini bosing.\n\n" +
     "*«👥 Mening haydovchilarim»* bo‘limida Siz ushbu bot orqali ro‘yxatdan o‘tkazgan haydovchilar ro‘yxatini ko‘rishingiz mumkin.\n\n" +
-    "Agar biror narsa ishlamasa yoki xatolik yuz bersa — iltimos, park operatoriga murojaat qiling.";
+    "Agar biror narsa ishlamasa yoki xatolik yuz bersa — iltimos, park operatoriga murojaat qiling.\n\n" +
+    "Ro‘yxatdan o‘tkazish jarayonida agar nimadir noto‘g‘ri ketsa, klaviaturadagi *«❌ Ro‘yxatdan o‘tishni bekor qilish»* tugmasi orqali jarayonni to‘xtatib, asosiy menyuga qaytishingiz mumkin.";
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
     reply_markup: mainMenuKeyboard(),
@@ -2258,8 +2283,9 @@ async function handleMyDriversSection(chatId, session) {
   lines.push("");
   drivers.slice(0, 30).forEach((d, idx) => {
     lines.push(
-      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — holat: \`${d.status ||
-        "unknown"}\``
+      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — holat: \`${
+        d.status || "unknown"
+      }\``
     );
   });
 
@@ -2312,6 +2338,52 @@ exports.handler = async (event) => {
     resetSession(chatId);
     session = getSession(chatId);
     await handleStart(chatId, session, msg.from);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // отмена регистрации по кнопке
+  if (
+    text === CANCEL_REG_TEXT &&
+    isInDriverRegistration(session)
+  ) {
+    await cancelDriverRegistration(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // этап — ожидание ввода имени хантера после отправки контакта
+  if (
+    session.step === "waiting_hunter_name" &&
+    typeof text === "string" &&
+    text.trim()
+  ) {
+    const realName = text.trim();
+    if (!session.hunter) {
+      session.hunter = {
+        chatId,
+        phone: null,
+        name: realName,
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      session.hunter.name = realName;
+    }
+
+    session.step = "main_menu";
+
+    await sendTelegramMessage(
+      chatId,
+      `✅ Rahmat, *${realName}*.\n\nSiz *ASR TAXI hunteri* sifatida ro‘yxatdan o‘tdingiz.\n\n` +
+        "Endi menyudagi bo‘limlar orqali haydovchilarni ro‘yxatdan o‘tkazishingiz mumkin.",
+      { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+    );
+
+    await sendOperatorAlert(
+      "[hunter-bot] Yangi hunter ulandi\n\n" +
+        `Chat ID: ${chatId}\n` +
+        `Telefon: ${session.hunter.phone || "—"}\n` +
+        `Ism (hunter): ${session.hunter.name}`
+    );
+
     return { statusCode: 200, body: "OK" };
   }
 

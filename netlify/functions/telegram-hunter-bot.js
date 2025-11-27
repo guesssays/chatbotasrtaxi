@@ -68,7 +68,9 @@ if (!UPLOAD_DOC_URL) {
 }
 
 // ================== PERSISTENT HUNTER STORAGE (Netlify Blobs) ==================
-const { getStore } = require("@netlify/blobs");
+// ВАЖНО: используем тот же helper, что и в основном боте (./bot/store),
+// чтобы в Functions v1 Blobs инициализировались через event.context.
+const { initBlobStore, getStore } = require("./bot/store");
 
 const HUNTER_STORE_NAME = "hunter-bot-hunters";
 
@@ -2361,6 +2363,14 @@ async function handleMyDriversSection(chatId, session) {
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 200, body: "OK" };
+  }
+
+  // ИНИЦИАЛИЗАЦИЯ Netlify Blobs для Functions v1
+  // ОБЯЗАТЕЛЬНО до любых вызовов loadHunterFromStorage/saveHunterToStorage
+  try {
+    initBlobStore(event);
+  } catch (e) {
+    console.error("initBlobStore error in telegram-hunter-bot:", e);
   }
 
   let update;

@@ -1,5 +1,3 @@
-// netlify/functions/telegram-hunter-bot.js
-
 // ================== ENV & TELEGRAM ==================
 const TELEGRAM_TOKEN =
   process.env.TG_HUNTER_BOT_TOKEN || process.env.TG_BOT_TOKEN || null;
@@ -8,12 +6,20 @@ const TELEGRAM_API = TELEGRAM_TOKEN
   ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
   : null;
 
-const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID || "")
+// ⚠️ ОТДЕЛЬНЫЕ переменные для hunter-бота
+const ADMIN_CHAT_IDS = (
+  process.env.ADMIN_CHAT_IDS_HUNTER ||      // только для hunter-бота
+  process.env.ADMIN_CHAT_IDS ||            // запасной вариант (как раньше)
+  process.env.ADMIN_CHAT_ID || ""
+)
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
 
-const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
+const LOG_CHAT_ID =
+  process.env.LOG_CHAT_ID_HUNTER ||         // отдельный лог-чат для hunter-бота
+  process.env.LOG_CHAT_ID ||                // старый общий лог
+  null;
 
 // upload-doc endpoint (как в основном боте водителей)
 const UPLOAD_DOC_URL =
@@ -21,6 +27,7 @@ const UPLOAD_DOC_URL =
   (process.env.URL &&
     `${process.env.URL.replace(/\/$/, "")}/.netlify/functions/upload-doc`) ||
   null;
+
 
 // ===== Yandex Fleet API (Park) =====
 const FLEET_API_URL = process.env.FLEET_API_URL || null;
@@ -441,11 +448,17 @@ async function findDriverByPhone(phoneRaw) {
 }
 
 // ================== upload-doc интеграция ==================
-async function forwardDocToUploadDoc(telegramUpdate, meta) {
+async function forwardDocToUploadDoc(message, meta) {
   if (!UPLOAD_DOC_URL) {
     console.error("forwardDocToUploadDoc: no UPLOAD_DOC_URL");
     return null;
   }
+
+  // ГАРАНТИРУЕМ структуру telegram_update.message, как от вебхука Telegram
+  const telegramUpdate = {
+    message,
+  };
+
   try {
     const res = await fetch(UPLOAD_DOC_URL, {
       method: "POST",
@@ -717,7 +730,6 @@ async function handleDriverStep(chatId, session, text) {
 }
 
 // ================== ОБРАБОТКА ФОТО ВУ ==================
-
 async function handleDriverVuPhoto(update, session) {
   const msg =
     update.message ||
@@ -760,7 +772,8 @@ async function handleDriverVuPhoto(update, session) {
     docType: "vu_front",
   };
 
-  const resp = await forwardDocToUploadDoc(update, meta);
+  // ВАЖНО: теперь отправляем САМО message, а не весь update
+  const resp = await forwardDocToUploadDoc(msg, meta);
 
   if (!resp || resp.ok === false) {
     await sendTelegramMessage(
@@ -801,8 +814,7 @@ async function handleDriverVuPhoto(update, session) {
   // ВУ
   if (fields.license_series) draft.licenseSeries = fields.license_series;
   if (fields.license_number) draft.licenseNumber = fields.license_number;
-  if (fields.license_full)
-    draft.licenseFull = fields.license_full;
+  if (fields.license_full) draft.licenseFull = fields.license_full;
 
   // даты
   if (fields.issued_date) draft.licenseIssuedDate = fields.issued_date;

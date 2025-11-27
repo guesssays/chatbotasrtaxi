@@ -67,6 +67,42 @@ if (!UPLOAD_DOC_URL) {
   console.error("UPLOAD_DOC_URL is not set and URL is not available (hunter-bot)");
 }
 
+// ================== PERSISTENT HUNTER STORAGE (Netlify Blobs) ==================
+const { getStore } = require("@netlify/blobs");
+
+const HUNTER_STORE_NAME = "hunter-bot-hunters";
+
+function getHunterStore() {
+  try {
+    return getStore(HUNTER_STORE_NAME);
+  } catch (e) {
+    console.error("getHunterStore error:", e);
+    return null;
+  }
+}
+
+async function loadHunterFromStorage(chatId) {
+  try {
+    const store = getHunterStore();
+    if (!store) return null;
+    const hunter = await store.get(`hunter:${chatId}`, { type: "json" });
+    return hunter || null;
+  } catch (e) {
+    console.error("loadHunterFromStorage error:", e);
+    return null;
+  }
+}
+
+async function saveHunterToStorage(hunter) {
+  try {
+    const store = getHunterStore();
+    if (!store) return;
+    await store.setJSON(`hunter:${hunter.chatId}`, hunter);
+  } catch (e) {
+    console.error("saveHunterToStorage error:", e);
+  }
+}
+
 // ================== SIMPLE IN-MEMORY SESSIONS ==================
 const sessions = new Map(); // chatId -> { step, hunter, driverDraft, editField }
 
@@ -930,9 +966,12 @@ async function handleHunterContact(chatId, session, contact) {
     chatId,
     phone,
     name: tgName || contact.first_name || "Ism ko‘rsatilmagan",
-    username: undefined,
+    username: contact.user_id ? contact.user_id : undefined,
     createdAt: new Date().toISOString(),
   };
+
+  // сразу сохраняем базовый профиль хантера
+  await saveHunterToStorage(session.hunter);
 
   // новый шаг: спрашиваем реальное имя хантера
   session.step = "waiting_hunter_name";
@@ -2315,6 +2354,18 @@ exports.handler = async (event) => {
     const chatId =
       (cq.message && cq.message.chat && cq.message.chat.id) || cq.from.id;
     let session = getSession(chatId);
+
+    // восстановление хантера из постоянного хранилища (после редеплоя/холодного старта)
+    if (!session.hunter) {
+      const storedHunter = await loadHunterFromStorage(chatId);
+      if (storedHunter) {
+        session.hunter = storedHunter;
+        if (!session.step || session.step === "idle") {
+          session.step = "main_menu";
+        }
+      }
+    }
+
     await handleCallback(chatId, session, cq);
     return { statusCode: 200, body: "OK" };
   }
@@ -2333,6 +2384,17 @@ exports.handler = async (event) => {
   const text = msg.text || "";
   let session = getSession(chatId);
 
+  // восстановление хантера из постоянного хранилища (после редеплоя/холодного старта)
+  if (!session.hunter) {
+    const storedHunter = await loadHunterFromStorage(chatId);
+    if (storedHunter) {
+      session.hunter = storedHunter;
+      if (!session.step || session.step === "idle") {
+        session.step = "main_menu";
+      }
+    }
+  }
+
   // /start
   if (text && text.startsWith("/start")) {
     resetSession(chatId);
@@ -2342,10 +2404,7 @@ exports.handler = async (event) => {
   }
 
   // отмена регистрации по кнопке
-  if (
-    text === CANCEL_REG_TEXT &&
-    isInDriverRegistration(session)
-  ) {
+  if (text === CANCEL_REG_TEXT && isInDriverRegistration(session)) {
     await cancelDriverRegistration(chatId, session);
     return { statusCode: 200, body: "OK" };
   }
@@ -2367,6 +2426,9 @@ exports.handler = async (event) => {
     } else {
       session.hunter.name = realName;
     }
+
+    // обновляем профиль в хранилище
+    await saveHunterToStorage(session.hunter);
 
     session.step = "main_menu";
 

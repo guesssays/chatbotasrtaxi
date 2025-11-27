@@ -10,8 +10,8 @@ const TELEGRAM_API = TELEGRAM_TOKEN
 
 // ⚠️ ОТДЕЛЬНЫЕ переменные для hunter-бота
 const ADMIN_CHAT_IDS = (
-  process.env.ADMIN_CHAT_IDS_HUNTER ||      // только для hunter-бота
-  process.env.ADMIN_CHAT_IDS ||            // запасной вариант (как раньше)
+  process.env.ADMIN_CHAT_IDS_HUNTER || // только для hunter-бота
+  process.env.ADMIN_CHAT_IDS || // запасной вариант (как раньше)
   process.env.ADMIN_CHAT_ID || ""
 )
   .split(",")
@@ -19,8 +19,8 @@ const ADMIN_CHAT_IDS = (
   .filter(Boolean);
 
 const LOG_CHAT_ID =
-  process.env.LOG_CHAT_ID_HUNTER ||         // отдельный лог-чат для hunter-бота
-  process.env.LOG_CHAT_ID ||                // старый общий лог
+  process.env.LOG_CHAT_ID_HUNTER || // отдельный лог-чат для hunter-бота
+  process.env.LOG_CHAT_ID || // старый общий лог
   null;
 
 // upload-doc endpoint (как в основном боте водителей)
@@ -59,14 +59,16 @@ const FLEET_API_BASE_URL =
   "https://fleet-api.taxi.yandex.net";
 
 if (!TELEGRAM_TOKEN) {
-  console.error("TG_HUNTER_BOT_TOKEN / TG_BOT_TOKEN is not set (telegram-hunter-bot.js)");
+  console.error(
+    "TG_HUNTER_BOT_TOKEN / TG_BOT_TOKEN is not set (telegram-hunter-bot.js)"
+  );
 }
 if (!UPLOAD_DOC_URL) {
   console.error("UPLOAD_DOC_URL is not set and URL is not available (hunter-bot)");
 }
 
 // ================== SIMPLE IN-MEMORY SESSIONS ==================
-const sessions = new Map(); // chatId -> { step, hunter, driverDraft }
+const sessions = new Map(); // chatId -> { step, hunter, driverDraft, editField }
 
 function getSession(chatId) {
   if (!sessions.has(chatId)) {
@@ -74,6 +76,7 @@ function getSession(chatId) {
       step: "idle",
       hunter: null,
       driverDraft: null,
+      editField: null,
     });
   }
   return sessions.get(chatId);
@@ -104,6 +107,45 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   }
 }
 
+async function sendTelegramMediaGroup(chatId, media) {
+  if (!TELEGRAM_API) {
+    console.error("sendTelegramMediaGroup: no TELEGRAM_API");
+    return;
+  }
+  if (!media || !media.length) return;
+
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendMediaGroup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, media }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("sendMediaGroup error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("sendTelegramMediaGroup exception:", e);
+  }
+}
+
+async function answerCallbackQuery(callbackQueryId) {
+  if (!TELEGRAM_API || !callbackQueryId) return;
+  try {
+    const res = await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("answerCallbackQuery error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("answerCallbackQuery exception:", e);
+  }
+}
+
 async function sendOperatorAlert(text) {
   const targets = new Set();
   for (const id of ADMIN_CHAT_IDS) {
@@ -119,9 +161,62 @@ async function sendOperatorAlert(text) {
 
 function mainMenuKeyboard() {
   return {
-    keyboard: [[{ text: "➕ Зарегистрировать водителя" }]],
+    keyboard: [
+      [{ text: "➕ Зарегистрировать водителя" }],
+      [{ text: "👥 Мои водители" }, { text: "ℹ️ Помощь" }],
+    ],
     resize_keyboard: true,
   };
+}
+
+// отправка фото документов в лог-чат (как в основном боте)
+async function sendDocsToLogChat(draft) {
+  if (!LOG_CHAT_ID) return;
+
+  const media = [];
+
+  if (draft.vuFrontFileId) {
+    media.push({
+      type: "photo",
+      media: draft.vuFrontFileId,
+    });
+  }
+  if (draft.techFrontFileId) {
+    media.push({
+      type: "photo",
+      media: draft.techFrontFileId,
+    });
+  }
+  if (draft.techBackFileId) {
+    media.push({
+      type: "photo",
+      media: draft.techBackFileId,
+    });
+  }
+
+  if (!media.length) return;
+
+  const captionLines = [];
+  captionLines.push("📄 *Набор документов от hunter-bot*");
+  captionLines.push("");
+  captionLines.push(`👤 Водитель: ${draft.driverFullName || "—"}`);
+  captionLines.push(`📞 Телефон: ${draft.driverPhone || "—"}`);
+  captionLines.push(
+    `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}${
+      draft.carYear ? " (" + draft.carYear + ")" : ""
+    }`
+  );
+  captionLines.push(`Госномер: ${draft.carPlate || "—"}`);
+  captionLines.push(`Техпаспорт: ${draft.techPassport || "—"}`);
+  captionLines.push("");
+  captionLines.push(
+    `Хантер: ${draft.hunterName || "—"} (chat_id=${draft.hunterChatId || "—"})`
+  );
+
+  media[0].caption = captionLines.join("\n");
+  media[0].parse_mode = "Markdown";
+
+  await sendTelegramMediaGroup(LOG_CHAT_ID, media);
 }
 
 // ================== YANDEX FLEET HELPERS ==================
@@ -382,6 +477,197 @@ function mapColorToYandexFromText(txt) {
   return "Белый";
 }
 
+// ===== СПИСКИ МАРОК / МОДЕЛЕЙ / ЦВЕТОВ (как в основном боте) =====
+
+function makeCarCode(label) {
+  return label
+    .normalize("NFKD")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/[\u0400-\u04FF]+/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 60);
+}
+
+const CAR_BRANDS = [
+  { code: "CHEVROLET", label: "Chevrolet" },
+  { code: "RAVON", label: "Ravon" },
+  { code: "DAEWOO", label: "Daewoo" },
+  { code: "BYD", label: "BYD" },
+  { code: "CHERY", label: "Chery" },
+  { code: "CHANGAN", label: "Changan" },
+  { code: "JAC", label: "JAC" },
+  { code: "GEELY", label: "Geely" },
+  { code: "HYUNDAI", label: "Hyundai" },
+  { code: "KIA", label: "Kia" },
+  { code: "LEAPMOTOR", label: "Leapmotor" },
+];
+
+const CAR_MODELS_BY_BRAND = {
+  CHEVROLET: [
+    "Cobalt",
+    "Nexia 3",
+    "Gentra",
+    "Lacetti",
+    "Malibu",
+    "Malibu Turbo",
+    "Onix",
+    "Spark",
+    "Tracker",
+    "Equinox",
+    "Epica",
+    "Cruze",
+    "Orlando",
+    "Bolt EV",
+    "Menlo",
+    "Monza",
+    "Traverse",
+    "Trailblazer",
+    "Tahoe",
+    "Captiva",
+    "Colorado",
+    "Evanda",
+  ],
+  RAVON: ["Nexia R3", "R4", "Gentra"],
+  DAEWOO: [
+    "Tico",
+    "Matiz",
+    "Damas",
+    "Labo",
+    "Gentra (доузб.)",
+    "Kalos",
+    "Lacetti (старый)",
+    "Lanos",
+    "Leganza",
+    "Magnus",
+    "Nubira",
+    "Tacuma",
+    "Winstorm",
+    "Sens",
+  ],
+  BYD: [
+    "E2",
+    "Chazor",
+    "Qin Plus",
+    "Qin Pro",
+    "Han",
+    "Seagull",
+    "Song Plus",
+    "Tang",
+    "Yuan",
+    "Geometry C",
+  ],
+  CHERY: [
+    "Arrizo 6 Pro",
+    "Arrizo 7",
+    "Tiggo 2",
+    "Tiggo 3",
+    "Tiggo 4",
+    "Tiggo 4 Pro",
+    "Tiggo 7",
+    "Tiggo 7 Pro",
+    "Tiggo 7 Pro Max",
+    "Tiggo 8",
+    "Tiggo 8 Pro",
+    "Tiggo 8 Pro Max",
+    "EQ5",
+    "eQ7",
+  ],
+  CHANGAN: [
+    "Alsvin",
+    "CS35",
+    "CS35 Plus",
+    "CS55",
+    "CS75",
+    "Eado",
+    "UNI-T",
+    "New Van",
+    "A600 EV",
+  ],
+  JAC: ["J5", "J7", "JS4", "S3", "S5", "iEV7S"],
+  GEELY: [
+    "Atlas",
+    "Atlas Pro",
+    "Coolray",
+    "Emgrand 7",
+    "Emgrand EC7",
+    "Emgrand GT",
+    "Geometry C",
+    "Tugella",
+    "TX4",
+  ],
+  HYUNDAI: [
+    "Accent",
+    "Accent Blue",
+    "Avante",
+    "Elantra",
+    "Sonata",
+    "Sonata Turbo",
+    "i30",
+    "i40",
+    "Tucson",
+    "Santa Fe",
+    "Creta",
+    "Venue",
+    "Getz",
+    "Grandeur",
+    "Equus",
+    "Ioniq",
+    "Ioniq 5",
+    "Staria",
+  ],
+  KIA: [
+    "Rio",
+    "Optima",
+    "K5",
+    "K3",
+    "Cerato",
+    "Forte",
+    "Cadenza",
+    "K7",
+    "K8",
+    "Sorento",
+    "Sportage",
+    "Soul",
+    "Soul EV",
+    "Seltos",
+    "Stinger",
+    "Carnival",
+    "Carens",
+    "Bongo",
+  ],
+  LEAPMOTOR: ["C01", "C10", "C11", "T03"],
+};
+
+const CAR_MODELS_INDEX = {};
+for (const brand of CAR_BRANDS) {
+  const list = CAR_MODELS_BY_BRAND[brand.code] || [];
+  CAR_MODELS_INDEX[brand.code] = list.map((label) => ({
+    code: makeCarCode(brand.code + "_" + label),
+    label,
+    fullLabel: `${brand.label} ${label}`,
+  }));
+}
+
+const CAR_COLORS = [
+  { code: "WHITE", label: "Oq" },
+  { code: "BLACK", label: "Qora" },
+  { code: "GRAY", label: "Kulrang" },
+  { code: "SILVER", label: "Kumushrang" },
+  { code: "BLUE", label: "Ko‘k" },
+  { code: "DARK_BLUE", label: "To‘q ko‘k" },
+  { code: "RED", label: "Qizil" },
+  { code: "BURGUNDY", label: "To‘q qizil (bordo)" },
+  { code: "YELLOW", label: "Sariq" },
+  { code: "GREEN", label: "Yashil" },
+  { code: "BROWN", label: "Jigarrang" },
+  { code: "BEIGE", label: "Bej" },
+  { code: "ORANGE", label: "To‘q sariq" },
+  { code: "PURPLE", label: "Binafsha" },
+];
+
 // ===== Поиск водителя по телефону в Fleet =====
 async function findDriverByPhone(phoneRaw) {
   const normalizedPhone = normalizePhoneForYandex(phoneRaw);
@@ -448,6 +734,61 @@ async function findDriverByPhone(phoneRaw) {
   return { ok: true, found: false };
 }
 
+// ====== Список "моих" водителей для хантера ======
+async function listMyDriversForHunter(hunterChatId) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, error: cfg.message };
+  }
+
+  const body = {
+    limit: 500,
+    offset: 0,
+    query: {
+      park: {
+        id: FLEET_PARK_ID,
+      },
+    },
+  };
+
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    return { ok: false, error: res.message || "fleet error" };
+  }
+
+  const profiles = (res.data && res.data.driver_profiles) || [];
+  const result = [];
+  const marker = `chat_id=${hunterChatId}`;
+
+  for (const item of profiles) {
+    const dp = (item && item.driver_profile) || {};
+    const profile = (item && item.profile) || {};
+    const currentStatus = (item && item.current_status) || {};
+
+    if (dp.comment && dp.comment.includes(marker)) {
+      const phones = Array.isArray(dp.phones) ? dp.phones : [];
+      let phone = null;
+      if (phones.length) {
+        phone = phones[0].number || phones[0].phone || null;
+      }
+
+      const fullName =
+        [dp.last_name, dp.first_name, dp.middle_name]
+          .filter(Boolean)
+          .join(" ") || "—";
+
+      result.push({
+        id: dp.id || null,
+        name: fullName,
+        phone: phone,
+        status: currentStatus.status || profile.work_status || "unknown",
+      });
+    }
+  }
+
+  return { ok: true, drivers: result };
+}
+
 // ================== upload-doc интеграция ==================
 async function forwardDocToUploadDoc(message, meta) {
   if (!UPLOAD_DOC_URL) {
@@ -455,7 +796,6 @@ async function forwardDocToUploadDoc(message, meta) {
     return null;
   }
 
-  // ГАРАНТИРУЕМ структуру telegram_update.message, как от вебхука Telegram
   const telegramUpdate = {
     message,
   };
@@ -494,7 +834,6 @@ async function forwardDocToUploadDoc(message, meta) {
 
 // ================== GOOGLE SHEETS STUB ==================
 async function appendDriverToGoogleSheetsStub(draft, result) {
-  // Заглушка — в реале здесь будет запрос в Google Sheets API / Apps Script
   console.log("Google Sheets stub: append row", { draft, result });
 }
 
@@ -503,6 +842,7 @@ async function handleStart(chatId, session, from) {
   session.step = "waiting_hunter_contact";
   session.hunter = null;
   session.driverDraft = null;
+  session.editField = null;
 
   const name = from?.first_name || "друг";
 
@@ -539,7 +879,7 @@ async function handleHunterContact(chatId, session, contact) {
     chatId,
     phone,
     name: tgName || contact.first_name || "Без имени",
-    username: contact.user_id ? undefined : undefined, // тут username из contact не приходит
+    username: contact.user_id ? undefined : undefined,
     createdAt: new Date().toISOString(),
   };
 
@@ -563,6 +903,139 @@ async function handleHunterContact(chatId, session, contact) {
   );
 }
 
+// ================== ВОПРОСЫ ПРО АВТО (как в основном боте) ==================
+
+async function askCarBrand(chatId, session) {
+  session.step = "driver_car_brand";
+
+  const rows = [];
+  for (let i = 0; i < CAR_BRANDS.length; i += 2) {
+    const row = [];
+    const b1 = CAR_BRANDS[i];
+    row.push({
+      text: b1.label,
+      callback_data: `car_brand:${b1.code}`,
+    });
+    if (CAR_BRANDS[i + 1]) {
+      const b2 = CAR_BRANDS[i + 1];
+      row.push({
+        text: b2.label,
+        callback_data: `car_brand:${b2.code}`,
+      });
+    }
+    rows.push(row);
+  }
+
+  const text =
+    "2/6. 🚗 Выбери *марку автомобиля* из списка ниже.\n\n" +
+    "Если нужной марки нет — выбери ближайшую, оператор скорректирует вручную.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: rows,
+    },
+  });
+}
+
+async function askCarModelForBrand(chatId, session) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+  const brandCode = draft.carBrandCode;
+  const brandLabel = draft.carBrandLabel || draft.carBrand;
+  const models = CAR_MODELS_INDEX[brandCode] || [];
+
+  session.step = "driver_car_model";
+
+  if (!models.length) {
+    await sendTelegramMessage(
+      chatId,
+      "Для этой марки нет внутреннего списка моделей. Ты можешь позже сообщить модель оператору парка."
+    );
+    await askCarColor(chatId, session);
+    return;
+  }
+
+  const rows = [];
+  for (let i = 0; i < models.length; i += 2) {
+    const row = [];
+    const m1 = models[i];
+    row.push({
+      text: m1.label,
+      callback_data: `car_model:${brandCode}:${m1.code}`,
+    });
+    if (models[i + 1]) {
+      const m2 = models[i + 1];
+      row.push({
+        text: m2.label,
+        callback_data: `car_model:${brandCode}:${m2.code}`,
+      });
+    }
+    rows.push(row);
+  }
+
+  const text =
+    `3/6. 🚗 Марка: *${brandLabel}*\n\n` +
+    "Теперь выбери *модель авто*:";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: rows,
+    },
+  });
+}
+
+async function askCarColor(chatId, session) {
+  session.step = "driver_car_color";
+
+  const rows = [];
+  for (let i = 0; i < CAR_COLORS.length; i += 2) {
+    const row = [];
+    const c1 = CAR_COLORS[i];
+    row.push({ text: c1.label, callback_data: `car_color:${c1.code}` });
+    if (CAR_COLORS[i + 1]) {
+      const c2 = CAR_COLORS[i + 1];
+      row.push({ text: c2.label, callback_data: `car_color:${c2.code}` });
+    }
+    rows.push(row);
+  }
+
+  const text =
+    "4/6. 🎨 Выбери *цвет авто*.\n\n" +
+    "Если нужного цвета нет — выбери ближайший, оператор поправит при необходимости.";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: rows,
+    },
+  });
+}
+
+async function askVuPhoto(chatId, session) {
+  session.step = "driver_vu_front";
+  const text =
+    "5/6. 📄 Отправь *фото водительского удостоверения* (лицевая сторона).\n\n" +
+    "Фото должно быть чётким, без бликов, чтобы хорошо читались ФИО, серия и номер.";
+  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+}
+
+async function askTechFrontPhoto(chatId, session) {
+  session.step = "driver_tech_front";
+  const text =
+    "6/6. 📄 Теперь отправь *фото техпаспорта (лицевая сторона)*.\n\n" +
+    "Фото сделай полностью, чтобы были видны номер и данные авто.";
+  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+}
+
+async function askTechBackPhoto(chatId, session) {
+  session.step = "driver_tech_back";
+  const text =
+    "📄 И последнее — отправь *фото техпаспорта (оборотная сторона)*.\n\n" +
+    "Оттуда я возьму серию техпаспорта и год выпуска авто.";
+  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+}
+
 // ================== FLOW: DRIVER REGISTRATION (НОВЫЙ) ==================
 
 async function beginDriverRegistration(chatId, session) {
@@ -581,13 +1054,14 @@ async function beginDriverRegistration(chatId, session) {
     hunterName: session.hunter.name,
     createdAt: new Date().toISOString(),
   };
+  session.editField = null;
 
   session.step = "driver_phone";
 
   await sendTelegramMessage(
     chatId,
     "➕ *Регистрация нового водителя*\n\n" +
-      "1/7. Введи *номер телефона водителя* в любом удобном формате.\n\n" +
+      "1/6. Введи *номер телефона водителя* в любом удобном формате.\n\n" +
       "Сначала я проверю в Yandex, есть ли этот водитель в базе.",
     { parse_mode: "Markdown" }
   );
@@ -640,17 +1114,137 @@ async function handleDriverPhone(chatId, session, value) {
   }
 
   // если не найден — продолжаем
-  session.step = "driver_vu_front";
-
-  await sendTelegramMessage(
-    chatId,
-    "2/7. Отправь *фото водительского удостоверения* (лицевая сторона).\n\n" +
-      "Фото должно быть чётким, без бликов, чтобы хорошо читались ФИО, серия и номер.",
-    { parse_mode: "Markdown" }
-  );
+  await askCarBrand(chatId, session);
 }
 
-// обработка всех текстовых шагов (кроме номера телефона)
+// ================== ПРЕДПРОСМОТР И РЕДАКТИРОВАНИЕ ПОЛЕЙ ==================
+
+function buildDriverDraftSummaryText(draft) {
+  const lines = [];
+  lines.push("📋 *Проверь данные водителя перед отправкой в парк:*");
+  lines.push("");
+  lines.push(`👤 ФИО: ${draft.driverFullName || "—"}`);
+  lines.push(`📞 Телефон: ${draft.driverPhone || "—"}`);
+  lines.push(`PINFL: ${draft.driverPinfl || "—"}`);
+  lines.push(
+    `ВУ: ${
+      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
+    }`.trim() || "—"
+  );
+  lines.push(
+    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${
+      draft.licenseExpiryDate || "—"
+    }`
+  );
+  lines.push("");
+  lines.push(
+    `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""} (${
+      draft.carYear || "год неизвестен"
+    })`
+  );
+  lines.push(`Госномер: ${draft.carPlate || "—"}`);
+  lines.push(`Цвет: ${draft.carColor || "—"}`);
+  lines.push(`Техпаспорт: ${draft.techPassport || "—"}`);
+  lines.push("");
+  lines.push(
+    "Если что-то распозналось с ошибкой — нажми на нужное поле ниже и исправь."
+  );
+  return lines.join("\n");
+}
+
+function buildDriverConfirmKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✏️ ФИО", callback_data: "edit:driverFullName" },
+        { text: "✏️ Телефон", callback_data: "edit:driverPhone" },
+      ],
+      [
+        { text: "✏️ PINFL", callback_data: "edit:driverPinfl" },
+        { text: "✏️ Год авто", callback_data: "edit:carYear" },
+      ],
+      [
+        { text: "✏️ Госномер", callback_data: "edit:carPlate" },
+        { text: "✏️ Техпаспорт", callback_data: "edit:techPassport" },
+      ],
+      [{ text: "✅ Всё верно, отправить в парк", callback_data: "confirm_driver" }],
+    ],
+  };
+}
+
+async function showDriverSummaryForConfirm(chatId, session) {
+  const draft = session.driverDraft;
+  if (!draft) {
+    await sendTelegramMessage(
+      chatId,
+      "Нет данных по водителю, начни регистрацию заново через меню."
+    );
+    session.step = "main_menu";
+    return;
+  }
+
+  session.step = "driver_confirm";
+  session.editField = null;
+
+  const text = buildDriverDraftSummaryText(draft);
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: buildDriverConfirmKeyboard(),
+  });
+}
+
+async function handleEditFieldText(chatId, session, value) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+  const field = session.editField;
+  const v = (value || "").trim();
+
+  if (!field) {
+    session.step = "driver_confirm";
+    await showDriverSummaryForConfirm(chatId, session);
+    return;
+  }
+
+  switch (field) {
+    case "driverFullName": {
+      draft.driverFullName = v;
+      const parts = v.split(/\s+/);
+      draft.driverLastName = parts[0] || "";
+      draft.driverFirstName = parts[1] || "";
+      draft.driverMiddleName = parts.slice(2).join(" ") || "";
+      break;
+    }
+    case "driverPhone": {
+      draft.driverPhone = v;
+      break;
+    }
+    case "driverPinfl": {
+      draft.driverPinfl = v.replace(/\D/g, "");
+      break;
+    }
+    case "carYear": {
+      draft.carYear = v.replace(/[^\d]/g, "");
+      break;
+    }
+    case "carPlate": {
+      draft.carPlate = v;
+      break;
+    }
+    case "techPassport": {
+      draft.techPassport = v;
+      break;
+    }
+    default:
+      break;
+  }
+
+  session.step = "driver_confirm";
+  session.editField = null;
+
+  await sendTelegramMessage(chatId, "✅ Обновил поле. Проверь данные ещё раз:");
+  await showDriverSummaryForConfirm(chatId, session);
+}
+
+// обработка всех текстовых шагов (кроме фото)
 async function handleDriverStep(chatId, session, text) {
   const draft = session.driverDraft || (session.driverDraft = {});
   const value = (text || "").trim();
@@ -661,28 +1255,26 @@ async function handleDriverStep(chatId, session, text) {
       break;
     }
 
+    // fallback: если по какой-то причине попали сюда на ввод бренда/модели текстом
     case "driver_car_brand_model": {
-      // простое разбиение: первое слово — марка, остальное — модель
       const parts = value.split(/\s+/);
       draft.carBrand = parts[0] || "";
       draft.carModel = parts.slice(1).join(" ") || "";
-      draft.carBrandModelRaw = value;
-
-      session.step = "driver_car_year";
-      await sendTelegramMessage(
-        chatId,
-        "4/7. Введи *год выпуска авто* (например, 2019).",
-        { parse_mode: "Markdown" }
-      );
+      draft.carBrandCode = null;
+      draft.carModelCode = null;
+      draft.carBrandLabel = draft.carBrand;
+      draft.carModelLabel = draft.carModel;
+      await askCarColor(chatId, session);
       break;
     }
 
+    // fallback: если техпаспорт не считался — ручной ввод
     case "driver_car_year": {
       draft.carYear = value;
       session.step = "driver_car_plate";
       await sendTelegramMessage(
         chatId,
-        "5/7. Введи *госномер авто* (например, 01A123BC).",
+        "Введите *госномер авто* (например, 01A123BC).",
         { parse_mode: "Markdown" }
       );
       break;
@@ -690,39 +1282,33 @@ async function handleDriverStep(chatId, session, text) {
 
     case "driver_car_plate": {
       draft.carPlate = value;
-      session.step = "driver_car_color";
+      session.step = "driver_tech_passport_manual";
       await sendTelegramMessage(
         chatId,
-        "6/7. Введи *цвет авто* (например, oq, qora, seryy, blue и т.п.).",
+        "Введите *серию/номер техпаспорта* (например: AAF4222435).",
         { parse_mode: "Markdown" }
       );
+      break;
+    }
+
+    case "driver_tech_passport_manual": {
+      draft.techPassport = value;
+      await showDriverSummaryForConfirm(chatId, session);
       break;
     }
 
     case "driver_car_color": {
+      // если человек всё-таки ввёл цвет текстом вместо кнопок
       draft.carColor = value;
-      session.step = "driver_tech_passport";
-      await sendTelegramMessage(
-        chatId,
-        "7/7. Введи *серии/номер техпаспорта* (например: AAF4222435).\n\n" +
-          "Если не знаешь — всё равно напиши то, что есть, чтобы парку было проще.",
-        { parse_mode: "Markdown" }
-      );
-      break;
-    }
-
-    case "driver_tech_passport": {
-      draft.techPassport = value;
-      await finalizeDriverRegistration(chatId, session);
+      await askVuPhoto(chatId, session);
       break;
     }
 
     default: {
-      // если почему-то шаг неизвестен — начинаем заново
       session.step = "main_menu";
       await sendTelegramMessage(
         chatId,
-        "Что-то пошло не так с шагами регистрации. Давай начнём заново из меню.",
+        "Что-то пошло не так с шагами регистрации. Давай начнем заново из меню.",
         { reply_markup: mainMenuKeyboard() }
       );
       break;
@@ -762,7 +1348,7 @@ async function handleDriverVuPhoto(update, session) {
 
   await sendTelegramMessage(
     chatId,
-    "✅ Фото получено. Читаю данные с водительского удостоверения, подожди несколько секунд..."
+    "✅ Фото ВУ получено. Читаю данные, подожди несколько секунд..."
   );
 
   const meta = {
@@ -773,7 +1359,6 @@ async function handleDriverVuPhoto(update, session) {
     docType: "vu_front",
   };
 
-  // ВАЖНО: отправляем САМО message (как апдейт), upload-doc выкачивает фото по file_id
   const resp = await forwardDocToUploadDoc(msg, meta);
 
   if (!resp || resp.ok === false) {
@@ -803,7 +1388,6 @@ async function handleDriverVuPhoto(update, session) {
 
   draft.vuFrontFileId = fileId;
 
-  // ФИО
   if (fields.driver_name) {
     draft.driverFullName = fields.driver_name;
     const parts = String(fields.driver_name).trim().split(/\s+/);
@@ -812,16 +1396,13 @@ async function handleDriverVuPhoto(update, session) {
     draft.driverMiddleName = parts.slice(2).join(" ") || "";
   }
 
-  // ВУ
   if (fields.license_series) draft.licenseSeries = fields.license_series;
   if (fields.license_number) draft.licenseNumber = fields.license_number;
   if (fields.license_full) draft.licenseFull = fields.license_full;
 
-  // даты
   if (fields.issued_date) draft.licenseIssuedDate = fields.issued_date;
   if (fields.expiry_date) draft.licenseExpiryDate = fields.expiry_date;
 
-  // PINFL если есть
   if (fields.pinfl || fields.driver_pinfl) {
     draft.driverPinfl = fields.pinfl || fields.driver_pinfl;
   }
@@ -831,12 +1412,14 @@ async function handleDriverVuPhoto(update, session) {
   lines.push("");
   lines.push(`ФИО: ${draft.driverFullName || "—"}`);
   lines.push(
-    `ВУ: ${(draft.licenseSeries || "") + " " + (draft.licenseNumber || "")}`.trim() ||
-      "—"
+    `ВУ: ${
+      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
+    }`.trim() || "—"
   );
   lines.push(
-    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${draft.licenseExpiryDate ||
-      "—"}`
+    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${
+      draft.licenseExpiryDate || "—"
+    }`
   );
   lines.push(`PINFL (если найден): ${draft.driverPinfl || "—"}`);
   lines.push("");
@@ -848,14 +1431,218 @@ async function handleDriverVuPhoto(update, session) {
     parse_mode: "Markdown",
   });
 
-  // Переходим к выбору машины
-  session.step = "driver_car_brand_model";
+  await askTechFrontPhoto(chatId, session);
+}
+
+// ================== ОБРАБОТКА ФОТО ТЕХПАСПОРТА ==================
+
+async function handleTechFrontPhoto(update, session) {
+  const msg =
+    update.message ||
+    update.edited_message ||
+    update.channel_post ||
+    update.edited_channel_post;
+
+  const chatId = msg.chat.id;
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  let fileId = null;
+  if (Array.isArray(msg.photo) && msg.photo.length) {
+    fileId = msg.photo[msg.photo.length - 1].file_id;
+  } else if (
+    msg.document &&
+    msg.document.mime_type &&
+    msg.document.mime_type.startsWith("image/")
+  ) {
+    fileId = msg.document.file_id;
+  }
+
+  if (!fileId) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось получить файл. Попробуй ещё раз отправить фото техпаспорта (лицевая сторона)."
+    );
+    return;
+  }
 
   await sendTelegramMessage(
     chatId,
-    "3/7. Теперь введи *марку и модель авто* (например: `Chevrolet Cobalt`).",
-    { parse_mode: "Markdown" }
+    "✅ Фото техпаспорта (лицевая) получено. Читаю данные..."
   );
+
+  const meta = {
+    tg_id: chatId,
+    hunter_chat_id: session.hunter?.chatId,
+    hunter_phone: session.hunter?.phone,
+    driver_phone: draft.driverPhone,
+    docType: "tech_front",
+  };
+
+  const resp = await forwardDocToUploadDoc(msg, meta);
+
+  if (!resp || resp.ok === false) {
+    await sendTelegramMessage(
+      chatId,
+      "❗ Не получилось прочитать данные с техпаспорта. Можно будет ввести номер вручную."
+    );
+    // fallback: ручной ввод
+    session.step = "driver_car_year";
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось распознать техпаспорт. Введи *год выпуска* авто (например, 2019).",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  let parsedDoc = null;
+  if (resp.mode === "single" && resp.doc) {
+    parsedDoc = resp.doc;
+  } else if (resp.doc) {
+    parsedDoc = resp.doc;
+  }
+
+  if (!parsedDoc || !parsedDoc.result || !parsedDoc.result.parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось распознать текст на фото техпаспорта. Придётся ввести данные вручную."
+    );
+    session.step = "driver_car_year";
+    await sendTelegramMessage(
+      chatId,
+      "Введи *год выпуска* авто (например, 2019).",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  draft.techFrontFileId = fileId;
+  const fields = parsedDoc.result.parsed.fields || {};
+
+  if (fields.plate_number && !draft.carPlate) {
+    draft.carPlate = fields.plate_number;
+  }
+
+  const lines = [];
+  lines.push("📄 *Техпаспорт (лицевая сторона):*");
+  lines.push(`Гос номер: ${draft.carPlate || fields.plate_number || "—"}`);
+  lines.push(
+    `Модель по документу: ${fields.car_model_text || "—"} (в боте: ${
+      draft.carBrand || ""
+    } ${draft.carModel || ""})`
+  );
+
+  await sendTelegramMessage(chatId, lines.join("\n"), {
+    parse_mode: "Markdown",
+  });
+
+  await askTechBackPhoto(chatId, session);
+}
+
+async function handleTechBackPhoto(update, session) {
+  const msg =
+    update.message ||
+    update.edited_message ||
+    update.channel_post ||
+    update.edited_channel_post;
+
+  const chatId = msg.chat.id;
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  let fileId = null;
+  if (Array.isArray(msg.photo) && msg.photo.length) {
+    fileId = msg.photo[msg.photo.length - 1].file_id;
+  } else if (
+    msg.document &&
+    msg.document.mime_type &&
+    msg.document.mime_type.startsWith("image/")
+  ) {
+    fileId = msg.document.file_id;
+  }
+
+  if (!fileId) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось получить файл. Попробуй ещё раз отправить фото оборотной стороны техпаспорта."
+    );
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    "✅ Фото техпаспорта (оборотная) получено. Читаю данные..."
+  );
+
+  const meta = {
+    tg_id: chatId,
+    hunter_chat_id: session.hunter?.chatId,
+    hunter_phone: session.hunter?.phone,
+    driver_phone: draft.driverPhone,
+    docType: "tech_back",
+  };
+
+  const resp = await forwardDocToUploadDoc(msg, meta);
+
+  if (!resp || resp.ok === false) {
+    await sendTelegramMessage(
+      chatId,
+      "❗ Не получилось прочитать оборотную сторону техпаспорта. Попроси оператора проверить данные вручную."
+    );
+    // но всё равно показываем резюме и даём подтвердить/править
+    await showDriverSummaryForConfirm(chatId, session);
+    return;
+  }
+
+  let parsedDoc = null;
+  if (resp.mode === "single" && resp.doc) {
+    parsedDoc = resp.doc;
+  } else if (resp.doc) {
+    parsedDoc = resp.doc;
+  }
+
+  if (!parsedDoc || !parsedDoc.result || !parsedDoc.result.parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось распознать текст на фото. Попроси оператора проверить данные вручную."
+    );
+    await showDriverSummaryForConfirm(chatId, session);
+    return;
+  }
+
+  draft.techBackFileId = fileId;
+  const fields = parsedDoc.result.parsed.fields || {};
+
+  let techSeries = fields.tech_series || "";
+  let techNumber = fields.tech_number || "";
+  const techFull = fields.tech_full || "";
+
+  if (!techSeries && !techNumber && techFull) {
+    const parts = String(techFull).trim().split(/\s+/);
+    if (parts.length >= 2) {
+      techSeries = parts[0];
+      techNumber = parts.slice(1).join("");
+    }
+  }
+
+  if (techSeries || techNumber) {
+    draft.techPassport = `${techSeries || ""}${techNumber || ""}`.trim();
+  }
+
+  if (fields.car_year && !draft.carYear) {
+    draft.carYear = fields.car_year;
+  }
+
+  const lines = [];
+  lines.push("📄 *Техпаспорт (оборотная сторона):*");
+  lines.push(`Серия техпаспорта: ${techSeries || "—"}`);
+  lines.push(`Номер техпаспорта: ${techNumber || "—"}`);
+  lines.push(`Год выпуска авто: ${draft.carYear || "—"}`);
+
+  await sendTelegramMessage(chatId, lines.join("\n"), {
+    parse_mode: "Markdown",
+  });
+
+  await showDriverSummaryForConfirm(chatId, session);
 }
 
 // ================== СОЗДАНИЕ ВОДИТЕЛЯ (hunter rule) ==================
@@ -863,7 +1650,6 @@ async function createDriverInFleetForHunter(draft) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };
 
-  // ТОЛЬКО hunter-правило, без fallback на default
   const workRuleId = FLEET_WORK_RULE_ID_HUNTER;
 
   if (!workRuleId) {
@@ -897,7 +1683,7 @@ async function createDriverInFleetForHunter(draft) {
     countryCode,
     draft.licenseSeries,
     draft.licenseNumber,
-    licenseFullCombined
+    licenseFullCombined || draft.licenseFull
   );
 
   let license = undefined;
@@ -907,7 +1693,7 @@ async function createDriverInFleetForHunter(draft) {
       country: countryCode,
       issue_date: issuedISO,
       expiry_date: expiryISO,
-      birth_date: undefined, // хантер дату рождения не вводит
+      birth_date: undefined,
     };
   }
 
@@ -927,7 +1713,6 @@ async function createDriverInFleetForHunter(draft) {
     work_rule_id: workRuleId,
   };
 
-  // payment_service_id НЕ обязателен, подставляем только если есть
   if (FLEET_PAYMENT_SERVICE_ID) {
     account.payment_service_id = FLEET_PAYMENT_SERVICE_ID;
   }
@@ -1054,7 +1839,7 @@ async function createCarInFleetForHunter(draft) {
   const parkProfile = {
     callsign: callSign,
     status: "working",
-    categories: ["econom"], // hunter-водители по умолчанию в эконом
+    categories: ["econom"],
     fuel_type: FLEET_DEFAULT_FUEL_TYPE || "petrol",
     ownership_type: "park",
     is_park_property: false,
@@ -1119,7 +1904,6 @@ async function finalizeDriverRegistration(chatId, session) {
       "Пожалуйста, подожди несколько секунд."
   );
 
-  // 1) создаём водителя
   const driverRes = await createDriverInFleetForHunter(draft);
 
   if (!driverRes.ok) {
@@ -1147,7 +1931,6 @@ async function finalizeDriverRegistration(chatId, session) {
 
   const driverId = driverRes.driverId;
 
-  // 2) создаём автомобиль
   const carRes = await createCarInFleetForHunter(draft);
   let carId = null;
 
@@ -1162,15 +1945,15 @@ async function finalizeDriverRegistration(chatId, session) {
       "*Водитель создан, авто не добавлено (hunter-bot)*\n\n" +
         `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
         `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
-        `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${draft.carYear ||
-          ""}, ${draft.carPlate || ""}\n` +
+        `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+          draft.carYear || ""
+        }, ${draft.carPlate || ""}\n` +
         `Ошибка: ${carRes.error || "неизвестно"}`
     );
   } else {
     carId = carRes.carId;
   }
 
-  // 3) биндим авто к водителю, если есть
   if (driverId && carId) {
     const bindRes = await bindCarToDriver(driverId, carId);
     if (!bindRes.ok) {
@@ -1178,8 +1961,9 @@ async function finalizeDriverRegistration(chatId, session) {
         "*Ошибка привязки авто к водителю (hunter-bot)*\n\n" +
           `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
           `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
-          `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${draft.carYear ||
-            ""}, ${draft.carPlate || ""}\n` +
+          `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+            draft.carYear || ""
+          }, ${draft.carPlate || ""}\n` +
           `Ошибка: ${bindRes.error || "неизвестно"}`
       );
     }
@@ -1197,25 +1981,29 @@ async function finalizeDriverRegistration(chatId, session) {
   summaryLines.push(`📞 Телефон: ${draft.driverPhone || "—"}`);
   summaryLines.push(`PINFL: ${draft.driverPinfl || "—"}`);
   summaryLines.push(
-    `ВУ: ${draft.licenseSeries || ""} ${draft.licenseNumber || ""}`.trim()
+    `ВУ: ${
+      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
+    }`.trim()
   );
   summaryLines.push(
-    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${draft.licenseExpiryDate ||
-      "—"}`
+    `Срок ВУ: ${draft.licenseIssuedDate || "—"} → ${
+      draft.licenseExpiryDate || "—"
+    }`
   );
   summaryLines.push("");
   summaryLines.push(
-    `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""} (${draft.carYear ||
-      "год неизвестен"})`
+    `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""} (${
+      draft.carYear || "год неизвестен"
+    })`
   );
   summaryLines.push(`Госномер: ${draft.carPlate || "—"}`);
   summaryLines.push(`Цвет: ${draft.carColor || "—"}`);
   summaryLines.push(`Техпаспорт: ${draft.techPassport || "—"}`);
   summaryLines.push("");
   summaryLines.push(
-    `ID водителя в Fleet: \`${driverId || "не получен"}\`${carId
-      ? `\nID авто в Fleet: \`${carId}\``
-      : ""}`
+    `ID водителя в Fleet: \`${driverId || "не получен"}\`${
+      carId ? `\nID авто в Fleet: \`${carId}\`` : ""
+    }`
   );
 
   await sendTelegramMessage(chatId, summaryLines.join("\n"), {
@@ -1227,9 +2015,13 @@ async function finalizeDriverRegistration(chatId, session) {
       `Хантер: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
       `Телефон водителя: \`${draft.driverPhone || "—"}\`\n` +
       `PINFL: \`${draft.driverPinfl || "—"}\`\n` +
-      `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${draft.carYear ||
-        ""}, ${draft.carPlate || ""}`
+      `Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+        draft.carYear || ""
+      }, ${draft.carPlate || ""}`
   );
+
+  // отправляем пачку фото документов в лог-чат
+  await sendDocsToLogChat(draft);
 
   session.driverDraft = null;
   session.step = "main_menu";
@@ -1239,6 +2031,170 @@ async function finalizeDriverRegistration(chatId, session) {
     "Можешь зарегистрировать ещё одного водителя или закрыть бот.",
     { reply_markup: mainMenuKeyboard() }
   );
+}
+
+// ================== CALLBACK QUERY (кнопки марки/модели/цвета + редактирование) ==================
+async function handleCallback(chatId, session, callback) {
+  const data = callback.data || "";
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  // подтверждение и редактирование полей
+  if (data === "confirm_driver") {
+    await answerCallbackQuery(callback.id);
+    await finalizeDriverRegistration(chatId, session);
+    return;
+  }
+
+  if (data.startsWith("edit:")) {
+    const field = data.split(":")[1];
+    session.step = "edit_field";
+    session.editField = field;
+
+    let label = "";
+    switch (field) {
+      case "driverFullName":
+        label = "ФИО водителя";
+        break;
+      case "driverPhone":
+        label = "телефон водителя";
+        break;
+      case "driverPinfl":
+        label = "PINFL водителя";
+        break;
+      case "carYear":
+        label = "год выпуска авто";
+        break;
+      case "carPlate":
+        label = "госномер авто";
+        break;
+      case "techPassport":
+        label = "серию/номер техпаспорта";
+        break;
+      default:
+        label = "значение";
+        break;
+    }
+
+    await answerCallbackQuery(callback.id);
+    await sendTelegramMessage(
+      chatId,
+      `✏️ Отправь корректное значение для поля: *${label}*.`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // старые кнопки выбора авто
+  if (data.startsWith("car_brand:")) {
+    const brandCode = data.split(":")[1];
+    const brand = CAR_BRANDS.find((b) => b.code === brandCode);
+    if (!brand) {
+      await answerCallbackQuery(callback.id);
+      return;
+    }
+    draft.carBrandCode = brand.code;
+    draft.carBrandLabel = brand.label;
+    draft.carBrand = brand.label;
+    await answerCallbackQuery(callback.id);
+    await askCarModelForBrand(chatId, session);
+    return;
+  }
+
+  if (data.startsWith("car_model:")) {
+    const [, brandCode, modelCode] = data.split(":");
+    const brand = CAR_BRANDS.find((b) => b.code === brandCode);
+    const models = CAR_MODELS_INDEX[brandCode] || [];
+    const model = models.find((m) => m.code === modelCode);
+    if (!brand || !model) {
+      await answerCallbackQuery(callback.id);
+      return;
+    }
+    draft.carBrandCode = brandCode;
+    draft.carBrandLabel = brand.label;
+    draft.carBrand = brand.label;
+    draft.carModelCode = model.code;
+    draft.carModel = model.label;
+    draft.carBrandModelRaw = `${brand.label} ${model.label}`;
+    await answerCallbackQuery(callback.id);
+    await askCarColor(chatId, session);
+    return;
+  }
+
+  if (data.startsWith("car_color:")) {
+    const colorCode = data.split(":")[1];
+    const color = CAR_COLORS.find((c) => c.code === colorCode);
+    if (color) {
+      draft.carColorCode = color.code;
+      draft.carColor = color.label;
+    }
+    await answerCallbackQuery(callback.id);
+    await askVuPhoto(chatId, session);
+    return;
+  }
+
+  await answerCallbackQuery(callback.id);
+}
+
+// ================== HELP & МОИ ВОДИТЕЛИ ==================
+async function handleHelpSection(chatId) {
+  const text =
+    "ℹ️ *Помощь для хантеров ASR TAXI*\n\n" +
+    "1. Нажми «➕ Зарегистрировать водителя» и заполни шаги.\n" +
+    "2. Бот сам проверит номер в Yandex Fleet.\n" +
+    "3. Отправь фото документов — бот снимет данные.\n" +
+    "4. На последнем шаге проверь поля, при необходимости исправь.\n" +
+    "5. Нажми «✅ Всё верно, отправить в парк».\n\n" +
+    "Во вкладке *«👥 Мои водители»* ты увидишь тех, кого зарегистрировал через этот бот.\n\n" +
+    "Если что-то не работает — свяжись с оператором парка.";
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: mainMenuKeyboard(),
+  });
+}
+
+async function handleMyDriversSection(chatId, session) {
+  if (!session.hunter) {
+    await sendTelegramMessage(
+      chatId,
+      "Сначала нужно привязать твой контакт. Нажми /start и отправь свой номер."
+    );
+    return;
+  }
+
+  const res = await listMyDriversForHunter(session.hunter.chatId);
+  if (!res.ok) {
+    await sendTelegramMessage(
+      chatId,
+      "Не удалось получить список твоих водителей из Yandex Fleet.\n" +
+        "Попробуй позже или обратись к оператору."
+    );
+    return;
+  }
+
+  const drivers = res.drivers || [];
+  if (!drivers.length) {
+    await sendTelegramMessage(
+      chatId,
+      "Пока нет водителей, зарегистрированных через этот бот для твоего аккаунта.",
+      { reply_markup: mainMenuKeyboard() }
+    );
+    return;
+  }
+
+  const lines = [];
+  lines.push("👥 *Твои водители в парке:*");
+  lines.push("");
+  drivers.slice(0, 30).forEach((d, idx) => {
+    lines.push(
+      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — статус: \`${d.status ||
+        "unknown"}\``
+    );
+  });
+
+  await sendTelegramMessage(chatId, lines.join("\n"), {
+    parse_mode: "Markdown",
+    reply_markup: mainMenuKeyboard(),
+  });
 }
 
 // ================== MAIN HANDLER ==================
@@ -1255,7 +2211,16 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // В этом боте пока не используем callback_query
+  // обработка callback_query (кнопки бренда/модели/цвета/редактирования)
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const chatId =
+      (cq.message && cq.message.chat && cq.message.chat.id) || cq.from.id;
+    let session = getSession(chatId);
+    await handleCallback(chatId, session, cq);
+    return { statusCode: 200, body: "OK" };
+  }
+
   const msg =
     update.message ||
     update.edited_message ||
@@ -1285,7 +2250,6 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // если контакт пришёл не по сценарию — отправим операторам
     await sendOperatorAlert(
       "*Хантер отправил контакт вне сценария (hunter-bot)*\n\n" +
         `Chat ID: \`${chatId}\`\n` +
@@ -1298,7 +2262,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // Если ждём фото ВУ
+  // Фото ВУ
   if (
     session.step === "driver_vu_front" &&
     (Array.isArray(msg.photo) ||
@@ -1310,14 +2274,45 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
+  // Фото техпаспорта (лицевая)
+  if (
+    session.step === "driver_tech_front" &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    await handleTechFrontPhoto(update, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // Фото техпаспорта (оборотная)
+  if (
+    session.step === "driver_tech_back" &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    await handleTechBackPhoto(update, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
   // главное меню
   if (session.step === "main_menu") {
     if (text === "➕ Зарегистрировать водителя") {
       await beginDriverRegistration(chatId, session);
       return { statusCode: 200, body: "OK" };
     }
+    if (text === "ℹ️ Помощь") {
+      await handleHelpSection(chatId);
+      return { statusCode: 200, body: "OK" };
+    }
+    if (text === "👥 Мои водители") {
+      await handleMyDriversSection(chatId, session);
+      return { statusCode: 200, body: "OK" };
+    }
 
-    // любое другое сообщение в главном меню — подсказка
     await sendTelegramMessage(
       chatId,
       "Нажми кнопку *«➕ Зарегистрировать водителя»*, чтобы начать.",
@@ -1326,19 +2321,17 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  // шаги регистрации водителя (все driver_* кроме driver_vu_front, где ждём фото)
+  // режим редактирования конкретного поля (после inline-кнопок)
   if (
-    session.step &&
-    session.step.startsWith("driver_") &&
-    session.step !== "driver_vu_front" &&
+    session.step === "edit_field" &&
     typeof text === "string" &&
     text.trim()
   ) {
-    await handleDriverStep(chatId, session, text);
+    await handleEditFieldText(chatId, session, text.trim());
     return { statusCode: 200, body: "OK" };
   }
 
-  // подсказка, если на шаге driver_vu_front присылают текст
+  // подсказки, если вместо фото прислали текст
   if (session.step === "driver_vu_front" && text) {
     await sendTelegramMessage(
       chatId,
@@ -1347,14 +2340,40 @@ exports.handler = async (event) => {
     );
     return { statusCode: 200, body: "OK" };
   }
+  if (session.step === "driver_tech_front" && text) {
+    await sendTelegramMessage(
+      chatId,
+      "Сейчас нужно отправить *фото техпаспорта (лицевая сторона)*.",
+      { parse_mode: "Markdown" }
+    );
+    return { statusCode: 200, body: "OK" };
+  }
+  if (session.step === "driver_tech_back" && text) {
+    await sendTelegramMessage(
+      chatId,
+      "Сейчас нужно отправить *фото техпаспорта (оборотная сторона)*.",
+      { parse_mode: "Markdown" }
+    );
+    return { statusCode: 200, body: "OK" };
+  }
 
-  // если сессия idle или непонятное состояние — вернуть к старту
+  // шаги регистрации по тексту
+  if (
+    session.step &&
+    session.step.startsWith("driver_") &&
+    typeof text === "string" &&
+    text.trim()
+  ) {
+    await handleDriverStep(chatId, session, text);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // если сессия idle — вернуть к старту
   if (session.step === "idle") {
     await handleStart(chatId, session, msg.from);
     return { statusCode: 200, body: "OK" };
   }
 
-  // fallback для любых других сообщений
   await sendTelegramMessage(
     chatId,
     "Я не понял сообщение. Если хочешь начать заново — нажми /start."

@@ -926,6 +926,8 @@ async function appendDriverToGoogleSheetsStub(draft, result) {
 
 // ================== FLOW: HUNTER START & MENU ==================
 async function handleStart(chatId, session, from) {
+  // Эта функция теперь используется только для НОВЫХ хантеров,
+  // у которых ещё нет записи в постоянном хранилище.
   session.step = "waiting_hunter_contact";
   session.hunter = null;
   session.driverDraft = null;
@@ -1176,18 +1178,19 @@ async function handleDriverPhone(chatId, session, value) {
       "✅ Ushbu telefon raqami bo‘yicha haydovchi allaqachon Yandex Fleet bazasida mavjud.\n\n" +
         `Ism: *${found.driver.name || "ko‘rsatilmagan"}*\n` +
         `Bazadagi telefon: *${found.driver.phone || value}*\n` +
-        `Holat: \`${found.driver.status || "unknown"}\`\n\n` +
+        `Holat: ${found.driver.status || "unknown"}\n\n` +
         "Bunday haydovchini qayta ro‘yxatdan o‘tkazish talab etilmaydi.\n" +
         "Menyu asosiy bo‘limiga qaytdingiz.",
       { parse_mode: "Markdown" }
     );
 
     await sendOperatorAlert(
-      "[hunter-bot] Hunter mavjud haydovchini yana ro‘yxatdan o‘tkazishga urindi\n\n" +
-        `Hunter: ${session.hunter.name} (chat_id=${session.hunter.chatId})\n` +
-        `Haydovchi telefoni: ${value}\n` +
-        `Ism (Fleet): ${found.driver.name || "—"}\n` +
-        `Driver ID (Fleet): ${found.driver.id || "—"}`
+      "🟡 Попытка повторно зарегистрировать водителя через hunter-бот\n\n" +
+        `👤 Хантер: ${session.hunter.name} (chat_id: ${session.hunter.chatId})\n` +
+        `📞 Телефон водителя: ${value}\n` +
+        `Имя в Fleet: ${found.driver.name || "—"}\n` +
+        `Driver ID в Fleet: ${found.driver.id || "—"}\n` +
+        `Текущий статус в Fleet: ${found.driver.status || "unknown"}`
     );
 
     session.driverDraft = null;
@@ -1211,11 +1214,9 @@ function buildDriverDraftSummaryText(draft) {
   lines.push(`👤 F.I.Sh.: ${draft.driverFullName || "—"}`);
   lines.push(`📞 Telefon: ${draft.driverPhone || "—"}`);
   lines.push(`PINFL: ${draft.driverPinfl || "—"}`);
-  lines.push(
-    `Haydovchilik guvohnomasi: ${
-      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
-    }`.trim() || "—"
-  );
+  const licLine = `${draft.licenseSeries || ""} ${draft.licenseNumber || ""}`
+    .trim() || "—";
+  lines.push(`Haydovchilik guvohnomasi: ${licLine}`);
   lines.push(
     `Guvohnoma muddati: ${draft.licenseIssuedDate || "—"} → ${
       draft.licenseExpiryDate || "—"
@@ -1247,6 +1248,12 @@ function buildDriverConfirmKeyboard() {
       [
         { text: "✏️ PINFL", callback_data: "edit:driverPinfl" },
         { text: "✏️ Avto yili", callback_data: "edit:carYear" },
+      ],
+      [
+        {
+          text: "✏️ VU seriya/raqam",
+          callback_data: "edit:licenseSeriesNumber",
+        },
       ],
       [
         { text: "✏️ Davlat raqami", callback_data: "edit:carPlate" },
@@ -1321,6 +1328,21 @@ async function handleEditFieldText(chatId, session, value) {
     }
     case "techPassport": {
       draft.techPassport = v;
+      break;
+    }
+    case "licenseSeriesNumber": {
+      // Ручное исправление серии/номера ВУ (например: AF4908227 или AF 4908227)
+      const raw = v.toUpperCase().replace(/[^A-ZА-ЯЁ0-9]/g, "");
+      const matchLetters = raw.match(/^[A-ZА-ЯЁ]{1,3}/);
+      const letters = matchLetters ? matchLetters[0] : "";
+      const digits = raw.slice(letters.length).replace(/\D/g, "");
+
+      if (letters) draft.licenseSeries = letters;
+      if (digits) draft.licenseNumber = digits;
+
+      // на всякий случай сохраняем склеенную версию
+      const full = `${draft.licenseSeries || ""}${draft.licenseNumber || ""}`.trim();
+      if (full) draft.licenseFull = full;
       break;
     }
     default:
@@ -1504,11 +1526,9 @@ async function handleDriverVuPhoto(update, session) {
   lines.push("📄 *Haydovchilik guvohnomasidan quyidagi ma’lumotlar aniqlandi:*");
   lines.push("");
   lines.push(`F.I.Sh.: ${draft.driverFullName || "—"}`);
-  lines.push(
-    `Guvohnoma: ${
-      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
-    }`.trim() || "—"
-  );
+  const licLine = `${draft.licenseSeries || ""} ${draft.licenseNumber || ""}`
+    .trim() || "—";
+  lines.push(`Guvohnoma: ${licLine}`);
   lines.push(
     `Guvohnoma muddati: ${draft.licenseIssuedDate || "—"} → ${
       draft.licenseExpiryDate || "—"
@@ -1517,7 +1537,7 @@ async function handleDriverVuPhoto(update, session) {
   lines.push(`PINFL (agar aniqlangan bo‘lsa): ${draft.driverPinfl || "—"}`);
   lines.push("");
   lines.push(
-    "Agar biror ma’lumot noto‘g‘ri aniqlangan bo‘lsa, keyingi bosqichda ularni ko‘rib chiqib, kerakli maydonni o‘zgartirishingiz mumkin."
+    "Agar seriya yoki raqam xato bo‘lsa, jarayon oxiridagi tasdiqlash oynasida ularni qo‘lda to‘g‘rilashingiz mumkin."
   );
 
   await sendTelegramMessage(chatId, lines.join("\n"), {
@@ -2022,16 +2042,16 @@ async function finalizeDriverRegistration(chatId, session) {
     }
 
     await sendOperatorAlert(
-      "[hunter-bot] Haydovchini yaratishda xato\n\n" +
-        `Hunter: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-        `Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
-        `PINFL: ${draft.driverPinfl || "—"}\n` +
-        `Tavsif (driverRes.error): ${driverRes.error || "ko‘rsatilmagan"}\n` +
-        `HTTP status (Fleet): ${driverRes.status ?? "—"}\n` +
-        `Fleet code (raw.code): ${
+      "❌ Не удалось автоматически создать водителя в Yandex Fleet\n\n" +
+        `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+        `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+        `PINFL: ${draft.driverPinfl || "—"}\n\n` +
+        `Описание ошибки: ${driverRes.error || "не указано"}\n` +
+        `HTTP-статус Fleet: ${driverRes.status ?? "—"}\n` +
+        `Код Fleet: ${
           (driverRes.raw && driverRes.raw.code) || driverRes.errorCode || "—"
         }\n` +
-        `Fleet message (raw.message): ${
+        `Сообщение Fleet: ${
           (driverRes.raw && driverRes.raw.message) || "—"
         }`
     );
@@ -2061,18 +2081,16 @@ async function finalizeDriverRegistration(chatId, session) {
     );
 
     await sendOperatorAlert(
-      "[hunter-bot] Haydovchi yaratildi, avtomobil avtomatik qo‘shilmadi\n\n" +
-        `Hunter: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-        `Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
-        `Avto: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+      "⚠️ Водитель создан, но автомобиль не удалось добавить в Yandex Fleet автоматически\n\n" +
+        `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+        `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+        `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
           draft.carYear || ""
-        }, ${draft.carPlate || ""}\n` +
-        `Tavsif (carRes.error): ${carRes.error || "ko‘rsatilmagan"}\n` +
-        `HTTP status (Fleet): ${carRes.status ?? "—"}\n` +
-        `Fleet code (carRes.code/raw.code): ${
-          carRes.code || (carRes.raw && carRes.raw.code) || "—"
-        }\n` +
-        `Fleet message (raw.message): ${
+        }, ${draft.carPlate || ""}\n\n` +
+        `Описание ошибки: ${carRes.error || "не указано"}\n` +
+        `HTTP-статус Fleet: ${carRes.status ?? "—"}\n` +
+        `Код Fleet: ${carRes.code || (carRes.raw && carRes.raw.code) || "—"}\n` +
+        `Сообщение Fleet: ${
           (carRes.raw && carRes.raw.message) || "—"
         }`
     );
@@ -2084,18 +2102,18 @@ async function finalizeDriverRegistration(chatId, session) {
     const bindRes = await bindCarToDriver(driverId, carId);
     if (!bindRes.ok) {
       await sendOperatorAlert(
-        "[hunter-bot] Avtomobilni haydovchiga bog‘lashda xato\n\n" +
-          `Hunter: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-          `Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
-          `Avto: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+        "⚠️ Не удалось автоматически привязать автомобиль к водителю в Yandex Fleet\n\n" +
+          `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+          `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+          `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
             draft.carYear || ""
-          }, ${draft.carPlate || ""}\n` +
-          `Tavsif (bindRes.error): ${bindRes.error || "ko‘rsatilmagan"}\n` +
-          `HTTP status (Fleet): ${bindRes.status ?? "—"}\n` +
-          `Fleet code (bindRes.errorCode/raw.code): ${
+          }, ${draft.carPlate || ""}\n\n` +
+          `Описание ошибки: ${bindRes.error || "не указано"}\n` +
+          `HTTP-статус Fleet: ${bindRes.status ?? "—"}\n` +
+          `Код Fleet: ${
             bindRes.errorCode || (bindRes.raw && bindRes.raw.code) || "—"
           }\n` +
-          `Fleet message (raw.message): ${
+          `Сообщение Fleet: ${
             (bindRes.raw && bindRes.raw.message) || "—"
           }`
       );
@@ -2113,10 +2131,11 @@ async function finalizeDriverRegistration(chatId, session) {
   summaryLines.push(`👤 F.I.Sh.: ${draft.driverFullName || "—"}`);
   summaryLines.push(`📞 Telefon: ${draft.driverPhone || "—"}`);
   summaryLines.push(`PINFL: ${draft.driverPinfl || "—"}`);
+  const licLineFinal = `${draft.licenseSeries || ""} ${
+    draft.licenseNumber || ""
+  }`.trim();
   summaryLines.push(
-    `Haydovchilik guvohnomasi: ${
-      (draft.licenseSeries || "") + " " + (draft.licenseNumber || "")
-    }`.trim()
+    `Haydovchilik guvohnomasi: ${licLineFinal || "Seriya/raqam ko‘rsatilmagan"}`
   );
   summaryLines.push(
     `Guvohnoma muddati: ${draft.licenseIssuedDate || "—"} → ${
@@ -2134,8 +2153,8 @@ async function finalizeDriverRegistration(chatId, session) {
   summaryLines.push(`Texpasport: ${draft.techPassport || "—"}`);
   summaryLines.push("");
   summaryLines.push(
-    `Haydovchi ID (Fleet): \`${driverId || "olib bo‘linmadi"}\`${
-      carId ? `\nAvtomobil ID (Fleet): \`${carId}\`` : ""
+    `Haydovchi ID (Fleet): ${driverId || "olib bo‘linmadi"}${
+      carId ? `\nAvtomobil ID (Fleet): ${carId}` : ""
     }`
   );
 
@@ -2144,15 +2163,15 @@ async function finalizeDriverRegistration(chatId, session) {
   });
 
   await sendOperatorAlert(
-    "[hunter-bot] Yangi haydovchi ro‘yxatdan o‘tkazildi\n\n" +
-      `Hunter: ${draft.hunterName} (chat_id=${draft.hunterChatId})\n` +
-      `Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
+    "✅ Новый водитель зарегистрирован через hunter-бот\n\n" +
+      `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+      `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
       `PINFL: ${draft.driverPinfl || "—"}\n` +
-      `Avto: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+      `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
         draft.carYear || ""
       }, ${draft.carPlate || ""}\n` +
-      `Driver ID (Fleet): ${driverId || "—"}\n` +
-      `Car ID (Fleet): ${carId || "—"}`
+      `Driver ID в Fleet: ${driverId || "—"}\n` +
+      `Car ID в Fleet: ${carId || "—"}`
   );
 
   // отправляем пачку фото документов в лог-чат
@@ -2204,6 +2223,10 @@ async function handleCallback(chatId, session, callback) {
         break;
       case "techPassport":
         label = "texnik pasport seriyasi/raqami";
+        break;
+      case "licenseSeriesNumber":
+        label =
+          "haydovchilik guvohnomasi seriyasi va raqami (masalan, AF4908227)";
         break;
       default:
         label = "maydon qiymati";
@@ -2322,9 +2345,9 @@ async function handleMyDriversSection(chatId, session) {
   lines.push("");
   drivers.slice(0, 30).forEach((d, idx) => {
     lines.push(
-      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — holat: \`${
+      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — holat: ${
         d.status || "unknown"
-      }\``
+      }`
     );
   });
 
@@ -2397,9 +2420,29 @@ exports.handler = async (event) => {
 
   // /start
   if (text && text.startsWith("/start")) {
+    // Проверяем, есть ли уже сохранённый хантер
+    const storedHunter = await loadHunterFromStorage(chatId);
+
     resetSession(chatId);
     session = getSession(chatId);
-    await handleStart(chatId, session, msg.from);
+
+    if (storedHunter) {
+      // Повторный /start для уже подключённого хантера — сразу в меню,
+      // НЕ просим снова телефон и имя.
+      session.hunter = storedHunter;
+      session.step = "main_menu";
+
+      await sendTelegramMessage(
+        chatId,
+        `👋 Salom, ${storedHunter.name}!\n\nSiz allaqachon *ASR TAXI hunteri* sifatida ro‘yxatdan o‘tgansiz.\n` +
+          "Menyudan kerakli bo‘limni tanlang.",
+        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard() }
+      );
+    } else {
+      // Новый хантер — стандартный онбординг с запросом контакта и имени
+      await handleStart(chatId, session, msg.from);
+    }
+
     return { statusCode: 200, body: "OK" };
   }
 
@@ -2440,10 +2483,10 @@ exports.handler = async (event) => {
     );
 
     await sendOperatorAlert(
-      "[hunter-bot] Yangi hunter ulandi\n\n" +
-        `Chat ID: ${chatId}\n` +
-        `Telefon: ${session.hunter.phone || "—"}\n` +
-        `Ism (hunter): ${session.hunter.name}`
+      "🟢 Новый хантер подключен\n\n" +
+        `👤 Имя: ${session.hunter.name}\n` +
+        `📞 Телефон: ${session.hunter.phone || "—"}\n` +
+        `💬 Chat ID: ${chatId}`
     );
 
     return { statusCode: 200, body: "OK" };
@@ -2457,9 +2500,9 @@ exports.handler = async (event) => {
     }
 
     await sendOperatorAlert(
-      "[hunter-bot] Hunter kontakni senariydan tashqari yubordi\n\n" +
-        `Chat ID: ${chatId}\n` +
-        `Telefon: ${msg.contact.phone_number}`
+      "ℹ️ Хантер отправил контакт вне сценария\n\n" +
+        `💬 Chat ID: ${chatId}\n` +
+        `📞 Телефон из контакта: ${msg.contact.phone_number}`
     );
     await sendTelegramMessage(
       chatId,

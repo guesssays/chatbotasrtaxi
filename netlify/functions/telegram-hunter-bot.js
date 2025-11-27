@@ -1790,10 +1790,12 @@ async function createDriverInFleetForHunter(draft) {
       ok: false,
       error: res.message || "driver create error",
       raw: res.raw,
+      errorCode: (res.raw && res.raw.code) || null, // <- сюда прилетит duplicate_driver_license
     };
   }
 
   const data = res.data || {};
+
   const driverId =
     data.id ||
     data.driver_profile_id ||
@@ -1923,11 +1925,20 @@ async function finalizeDriverRegistration(chatId, session) {
   const driverRes = await createDriverInFleetForHunter(draft);
 
   if (!driverRes.ok) {
-    await sendTelegramMessage(
-      chatId,
-      "❗ Не удалось автоматически зарегистрировать водителя в Yandex Fleet.\n" +
-        "Передай скрин этого сообщения оператору парка."
-    );
+    if (driverRes.errorCode === "duplicate_driver_license") {
+      await sendTelegramMessage(
+        chatId,
+        "❗ Водитель с таким водительским удостоверением уже есть в Yandex Fleet.\n\n" +
+          "Скорее всего его уже регистрировали раньше. Передай оператору серию и номер ВУ, " +
+          "чтобы он нашёл его в базе и привязал к нужному авто/хантеру."
+      );
+    } else {
+      await sendTelegramMessage(
+        chatId,
+        "❗ Не удалось автоматически зарегистрировать водителя в Yandex Fleet.\n" +
+          "Передай скрин этого сообщения оператору парка."
+      );
+    }
 
     await sendOperatorAlert(
       "*Ошибка создания водителя (hunter-bot)*\n\n" +
@@ -1944,6 +1955,7 @@ async function finalizeDriverRegistration(chatId, session) {
     });
     return;
   }
+
 
   const driverId = driverRes.driverId;
 

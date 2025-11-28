@@ -733,14 +733,12 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   const issuedDate = fVu.issued_date || "—";
   const expiryDate = fVu.expiry_date || "—";
 
+  // 🔧 ПИНФЛ водителя — ТОЛЬКО с ВУ
   const driverPinfl =
     fVu.pinfl ||
     fVu.driver_pinfl ||
-    fTf.driver_pinfl ||
-    fTb.driver_pinfl ||
-    fTf.pinfl ||
-    fTb.pinfl ||
     "—";
+
 
   const plateNumber = fTf.plate_number || "—";
 
@@ -835,14 +833,12 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
     (tBack && tBack.result && tBack.result.parsed && tBack.result.parsed.fields) || {};
 
   // ПИНФЛ водителя (тот же приоритет, что и для операторов)
+  // 🔧 PINFL haydovchi uchun — faqat haydovchilik guvohnomasidan
   const driverPinfl =
     fVu.pinfl ||
     fVu.driver_pinfl ||
-    fTf.driver_pinfl ||
-    fTb.driver_pinfl ||
-    fTf.pinfl ||
-    fTb.pinfl ||
     "—";
+
 
   let fam = "";
   let name = "";
@@ -1046,21 +1042,25 @@ function updateSessionDataFromFields(session, docType, f) {
     if (f.issued_date && !d.issuedDate) d.issuedDate = f.issued_date;
     if (f.expiry_date && !d.expiryDate) d.expiryDate = f.expiry_date;
 
+    // 🔧 ВАЖНО: PINFL ТОЛЬКО С ВУ
     const pinflFromVu = f.pinfl || f.driver_pinfl;
     if (pinflFromVu) {
       if (!d.driverPinfl) d.driverPinfl = pinflFromVu;
-      if (!d.pinfl) d.pinfl = pinflFromVu;
+      // d.pinfl считаем «водительским» и держим в синхроне с driverPinfl
+      d.pinfl = pinflFromVu;
     }
+
   } else if (docType === "tech_front") {
     if (f.plate_number && !d.plateNumber) d.plateNumber = f.plate_number;
     if (f.owner_name && !d.ownerName) d.ownerName = f.owner_name;
     if (f.owner_address && !d.ownerAddress) d.ownerAddress = f.owner_address;
 
-    const pinflFromTech = f.pinfl || f.owner_pinfl;
-    if (pinflFromTech) {
-      if (!d.ownerPinfl) d.ownerPinfl = pinflFromTech;
-      if (!d.pinfl && !d.driverPinfl) d.pinfl = pinflFromTech;
+    // 🔧 PINFL владельца техпаспорта — в отдельное поле, НЕ трогаем d.pinfl
+    const pinflFromTech = f.owner_pinfl || f.pinfl;
+    if (pinflFromTech && !d.ownerPinfl) {
+      d.ownerPinfl = pinflFromTech;
     }
+
   } else if (docType === "tech_back") {
     if (f.tech_series && !d.techSeries) d.techSeries = f.tech_series;
     if (f.tech_number && !d.techNumber) d.techNumber = f.tech_number;
@@ -1072,9 +1072,10 @@ function updateSessionDataFromFields(session, docType, f) {
     if (f.fuel_type && !d.fuelType) d.fuelType = f.fuel_type;
     if (f.vin && !d.vin) d.vin = f.vin;
 
+    // 🔧 Если с оборота техпаспорта тоже где-то приходит PINFL — считаем его владельческим
     const pinflFromBack = f.pinfl_back;
-    if (pinflFromBack && !d.pinfl && !d.driverPinfl) {
-      d.pinfl = pinflFromBack;
+    if (pinflFromBack && !d.ownerPinfl && !d.driverPinfl) {
+      d.ownerPinfl = pinflFromBack;
     }
   }
 
@@ -1082,6 +1083,7 @@ function updateSessionDataFromFields(session, docType, f) {
   if (session.carColor) d.carColor = session.carColor;
   if (session.phone) d.phone = session.phone;
 }
+
 
 function recomputeDerived(session) {
   const d = session.data || (session.data = {});
@@ -2572,13 +2574,15 @@ async function autoRegisterInYandexFleet(chatId, session) {
     licenseFull: d.licenseFull,
     licenseSeries: d.licenseSeries,
     licenseNumber: d.licenseNumber,
-    pinfl: d.pinfl,
+    // 🔧 В Fleet всегда отдаём ПИНФЛ только с ВУ
+    pinfl: d.driverPinfl || d.pinfl,
     issuedDate: d.issuedDate,
     expiryDate: d.expiryDate,
     birthDate: d.birthDate,
     isHunter: session.isHunterReferral,
     isCargo: session.isCargo,
   };
+
 
   await sendTelegramMessage(
     chatId,

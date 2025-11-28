@@ -276,7 +276,7 @@ async function sendDocsToLogChat(draft) {
   captionLines.push(`Davlat raqami: ${draft.carPlate || "—"}`);
   captionLines.push("");
   captionLines.push(
-    `Hunter: ${draft.hunterName || "—"} (chat_id=${draft.hunterChatId || "—"})`
+  `Hunter: ${draft.hunterName || "—"} (chat id ${draft.hunterChatId || "—"})`
   );
 
   media[0].caption = captionLines.join("\n");
@@ -415,9 +415,13 @@ async function bindCarToDriver(driverId, vehicleId) {
     };
   }
 
-  const url = `${FLEET_API_BASE_URL}/v1/parks/driver-profiles/car-bindings?park_id=${encodeURIComponent(
-    FLEET_PARK_ID
-  )}`;
+  // ✅ car_id и driver_profile_id переносим в query
+  const url =
+    `${FLEET_API_BASE_URL}` +
+    `/v1/parks/driver-profiles/car-bindings` +
+    `?park_id=${encodeURIComponent(FLEET_PARK_ID)}` +
+    `&driver_profile_id=${encodeURIComponent(driverId)}` +
+    `&car_id=${encodeURIComponent(vehicleId)}`;
 
   try {
     const res = await fetch(url, {
@@ -428,10 +432,7 @@ async function bindCarToDriver(driverId, vehicleId) {
         "X-API-Key": FLEET_API_KEY,
         "X-Park-ID": FLEET_PARK_ID,
       },
-      body: JSON.stringify({
-        driver_profile_id: driverId,
-        car_id: vehicleId,
-      }),
+      body: JSON.stringify({}), // тело может быть пустым
     });
 
     let json = null;
@@ -458,6 +459,7 @@ async function bindCarToDriver(driverId, vehicleId) {
     return { ok: false, error: String(e) };
   }
 }
+
 
 // ===== Normalization helpers =====
 
@@ -2273,11 +2275,13 @@ async function finalizeCarRegistration(chatId, session) {
     carId = carRes.carId;
   }
 
+  let bindOk = false;
+
   if (driverId && carId) {
     const bindRes = await bindCarToDriver(driverId, carId);
     if (!bindRes.ok) {
       await sendOperatorAlert(
-        "⚠️ Не удалось автоматически привязать автомобиль к водителю в Yandex Fleet (этап 2)\n\n" +
+        "⚠️ Не удалось автоматически привязить автомобиль к водителю в Yandex Fleet (этап 2)\n\n" +
           `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
           `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
           `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
@@ -2292,6 +2296,8 @@ async function finalizeCarRegistration(chatId, session) {
             (bindRes.raw && bindRes.raw.message) || "—"
           }`
       );
+    } else {
+      bindOk = true;
     }
   }
 
@@ -2324,17 +2330,31 @@ async function finalizeCarRegistration(chatId, session) {
     parse_mode: "Markdown",
   });
 
-  await sendOperatorAlert(
-    "🚗 Новый автомобиль привязан к водителю через hunter-бот (этап 2)\n\n" +
-      `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
-      `👤 Водитель: ${draft.driverFullName || "—"}\n` +
-      `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
-      `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
-        draft.carYear || ""
-      }, ${draft.carPlate || ""}\n` +
-      `Driver ID в Fleet: ${driverId || "—"}\n` +
-      `Car ID в Fleet: ${carId || "—"}`
-  );
+if (bindOk) {
+    await sendOperatorAlert(
+      "🚗 Новый автомобиль привязан к водителю через hunter-бот (этап 2)\n\n" +
+        `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+        `👤 Водитель: ${draft.driverFullName || "—"}\n` +
+        `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+        `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+          draft.carYear || ""
+        }, ${draft.carPlate || ""}\n` +
+        `Driver ID в Fleet: ${driverId || "—"}\n` +
+        `Car ID в Fleet: ${carId || "—"}`
+    );
+  } else {
+    await sendOperatorAlert(
+      "🚗 Автомобиль добавлен в Fleet для водителя, НО не удалось автоматически привязать к профилю (этап 2)\n\n" +
+        `👤 Хантер: ${draft.hunterName} (chat_id: ${draft.hunterChatId})\n` +
+        `👤 Водитель: ${draft.driverFullName || "—"}\n` +
+        `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+        `🚗 Авто: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+          draft.carYear || ""
+        }, ${draft.carPlate || ""}\n` +
+        `Driver ID в Fleet: ${driverId || "—"}\n` +
+        `Car ID в Fleet: ${carId || "—"}`
+    );
+  }
 
   await sendDocsToLogChat(draft);
 

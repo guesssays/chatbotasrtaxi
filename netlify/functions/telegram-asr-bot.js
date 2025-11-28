@@ -948,9 +948,7 @@ async function sendDocsToOperators(chatId, session, options = {}) {
       type: "photo",
       media: d.fileId,
     };
-    if (!media.length) {
-      item.caption = "Набор документов от водителя ASR TAXI";
-    }
+
     media.push(item);
   }
 
@@ -1326,9 +1324,10 @@ async function bindCarToDriver(driverId, vehicleId) {
     };
   }
 
-  const url = `${FLEET_API_BASE_URL}/v1/parks/driver-profiles/car-bindings?park_id=${encodeURIComponent(
-    FLEET_PARK_ID
-  )}`;
+  const url = `${FLEET_API_BASE_URL}/v1/parks/driver-profiles/car-bindings` +
+    `?park_id=${encodeURIComponent(FLEET_PARK_ID)}` +
+    `&driver_profile_id=${encodeURIComponent(driverId)}` +
+    `&car_id=${encodeURIComponent(vehicleId)}`;
 
   try {
     const res = await fetch(url, {
@@ -1339,10 +1338,8 @@ async function bindCarToDriver(driverId, vehicleId) {
         "X-API-Key": FLEET_API_KEY,
         "X-Park-ID": FLEET_PARK_ID,
       },
-      body: JSON.stringify({
-        driver_profile_id: driverId,
-        car_id: vehicleId,
-      }),
+      // тело можно оставить пустым или минимальным
+      body: JSON.stringify({}),
     });
 
     let json = null;
@@ -1366,6 +1363,7 @@ async function bindCarToDriver(driverId, vehicleId) {
     return { ok: false, error: String(e) };
   }
 }
+
 
 /**
  * Нормализация телефона

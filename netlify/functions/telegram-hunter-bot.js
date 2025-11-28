@@ -1247,6 +1247,7 @@ function buildDriverDraftSummaryText(draft) {
   lines.push("");
   lines.push(`👤 F.I.Sh.: ${draft.driverFullName || "—"}`);
   lines.push(`📞 Telefon: ${draft.driverPhone || "—"}`);
+    lines.push(`PINFL: ${draft.driverPinfl || "—"}`);
   const licLine =
     `${draft.licenseSeries || ""} ${draft.licenseNumber || ""}`.trim() || "—";
   lines.push(`Haydovchilik guvohnomasi: ${licLine}`);
@@ -1290,6 +1291,12 @@ function buildDriverConfirmKeyboard(flowType) {
         {
           text: "✏️ VU seriya/raqam",
           callback_data: "edit:licenseSeriesNumber",
+        },
+      ],
+        [
+        {
+          text: "✏️ PINFL",
+          callback_data: "edit:driverPinfl",
         },
       ],
       [
@@ -1366,6 +1373,21 @@ async function handleEditFieldText(chatId, session, value) {
 
       const full = `${draft.licenseSeries || ""}${draft.licenseNumber || ""}`.trim();
       if (full) draft.licenseFull = full;
+      break;
+    }
+        // 🔹 NEW: ручное исправление PINFL
+    case "driverPinfl": {
+      const digits = v.replace(/\D/g, "");
+      draft.driverPinfl = digits;
+
+      if (digits.length !== 14) {
+        await sendTelegramMessage(
+          chatId,
+          "⚠️ PINFL odatda *14 ta raqamdan* iborat bo‘ladi. Siz kiritgan qiymat uzunligi boshqacha.\n" +
+            "Agar bu haqiqiy PINFL bo‘lsa, davom etishingiz mumkin, aks holda uni qaytadan to‘g‘rilang.",
+          { parse_mode: "Markdown" }
+        );
+      }
       break;
     }
     default:
@@ -1512,6 +1534,24 @@ async function handleDriverVuPhoto(update, session) {
 
   draft.vuFrontFileId = fileId;
 
+  // 🔹 NEW: сохраняем ПИНФЛ водителя из ВУ (поле 4d)
+  if (fields.driver_pinfl) {
+    const pinflDigits = String(fields.driver_pinfl).replace(/\D/g, "");
+    if (pinflDigits) {
+      // по стандарту 14 цифр, но если что-то не так — всё равно сохраним,
+      // а длину можно контролировать логами
+      draft.driverPinfl = pinflDigits;
+      if (pinflDigits.length !== 14) {
+        console.warn(
+          "hunter-bot: driver_pinfl length is not 14:",
+          fields.driver_pinfl,
+          "->",
+          pinflDigits
+        );
+      }
+    }
+  }
+
   if (fields.driver_name) {
     draft.driverFullName = fields.driver_name;
     const parts = String(fields.driver_name).trim().split(/\s+/);
@@ -1519,6 +1559,7 @@ async function handleDriverVuPhoto(update, session) {
     draft.driverFirstName = parts[1] || "";
     draft.driverMiddleName = parts.slice(2).join(" ") || "";
   }
+
 
   if (fields.license_series) draft.licenseSeries = fields.license_series;
   if (fields.license_number) draft.licenseNumber = fields.license_number;
@@ -1822,6 +1863,24 @@ async function createDriverInFleetForHunter(draft) {
     fullName.middle_name = middleName;
   }
 
+  // 🔹 NEW: берём ПИНФЛ из драфта и готовим к отправке как TIN
+  let tinDigits = null;
+  if (draft.driverPinfl) {
+    tinDigits = String(draft.driverPinfl).replace(/\D/g, "");
+  } else if (draft.driver_pinfl) {
+    // на всякий случай, если где-то в будущем поле попадёт под таким именем
+    tinDigits = String(draft.driver_pinfl).replace(/\D/g, "");
+  }
+  if (tinDigits && !tinDigits.length) {
+    tinDigits = null;
+  }
+  if (!tinDigits) {
+    console.warn(
+      "createDriverInFleetForHunter: no PINFL/tax_identification_number in draft for phone",
+      draft.driverPhone
+    );
+  }
+
   const person = {
     full_name: fullName,
     contact_info: phoneNorm
@@ -1835,6 +1894,12 @@ async function createDriverInFleetForHunter(draft) {
     },
     employment_type: employmentType,
   };
+
+  // 🔹 NEW: если ПИНФЛ есть — передаём его как tax_identification_number (TIN)
+  if (tinDigits) {
+    person.tax_identification_number = tinDigits;
+  }
+
 
   const body = {
     account,
@@ -2305,6 +2370,10 @@ async function handleCallback(chatId, session, callback) {
       case "licenseSeriesNumber":
         label =
           "haydovchilik guvohnomasi seriyasi va raqami (masalan, AF4908227)";
+        break;
+           // 🔹 NEW: label для PINFL
+      case "driverPinfl":
+        label = "haydovchining PINFL (14 ta raqam)";
         break;
       default:
         label = "maydon qiymati";

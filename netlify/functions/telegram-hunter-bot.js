@@ -1937,12 +1937,28 @@ async function createDriverInFleetForHunter(draft) {
 
   const data = res.data || {};
 
+  // 👇 временный лог, чтобы видеть реальный ответ Fleet в логах Netlify
+  try {
+    console.log(
+      "createDriverInFleetForHunter: Fleet response:",
+      JSON.stringify(data).slice(0, 2000) // чтобы лог не был бесконечным
+    );
+  } catch (e) {
+    console.error("createDriverInFleetForHunter: JSON stringify error:", e);
+  }
+
   let driverId =
     data.id ||
     data.driver_profile_id ||
-    (data.profile && data.profile.id) ||
-    (data.contractor_profile && data.contractor_profile.id) ||
+    // часто id лежит именно здесь:
+    (data.driver_profile && (data.driver_profile.id || data.driver_profile.driver_profile_id)) ||
+    // иногда в profile:
+    (data.profile && (data.profile.id || data.profile.driver_profile_id)) ||
+    // и/или в contractor_profile:
+    (data.contractor_profile &&
+      (data.contractor_profile.id || data.contractor_profile.driver_profile_id)) ||
     null;
+
 
   if (!driverId) {
     const lookup = await findDriverByPhone(draft.driverPhone);

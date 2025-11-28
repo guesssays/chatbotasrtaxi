@@ -19,9 +19,11 @@ const ADMIN_CHAT_IDS = (
   .filter(Boolean);
 
 const LOG_CHAT_ID =
+
   process.env.LOG_CHAT_ID_HUNTER || // отдельный лог-чат для hunter-бота
   process.env.LOG_CHAT_ID || // старый общий лог
   null;
+const ASRPUL_STATUS_CHAT_ID = process.env.ASRPUL_STATUS_CHAT_ID || null;
 
 // upload-doc endpoint (как в основном боте водителей)
 const UPLOAD_DOC_URL =
@@ -73,6 +75,7 @@ if (!UPLOAD_DOC_URL) {
 const { initBlobStore, getStore } = require("./bot/store");
 
 const HUNTER_STORE_NAME = "hunter-bot-hunters";
+const DRIVER_INDEX_STORE_NAME = "hunter-bot-driver-index";
 
 function getHunterStore() {
   try {
@@ -82,6 +85,16 @@ function getHunterStore() {
     return null;
   }
 }
+
+function getDriverIndexStore() {
+  try {
+    return getStore(DRIVER_INDEX_STORE_NAME);
+  } catch (e) {
+    console.error("getDriverIndexStore error:", e);
+    return null;
+  }
+}
+
 
 async function loadHunterFromStorage(chatId) {
   try {
@@ -166,6 +179,33 @@ async function sendTelegramMediaGroup(chatId, media) {
     console.error("sendTelegramMediaGroup exception:", e);
   }
 }
+
+async function editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+  if (!TELEGRAM_API) {
+    console.error("editMessageReplyMarkup: no TELEGRAM_API");
+    return;
+  }
+  if (!chatId || !messageId) return;
+
+  try {
+    const res = await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: replyMarkup || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("editMessageReplyMarkup error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("editMessageReplyMarkup exception:", e);
+  }
+}
+
 
 async function answerCallbackQuery(callbackQueryId) {
   if (!TELEGRAM_API || !callbackQueryId) return;
@@ -934,10 +974,186 @@ async function forwardDocToUploadDoc(message, meta) {
   }
 }
 
-// ================== GOOGLE SHEETS STUB ==================
-async function appendDriverToGoogleSheetsStub(draft, result) {
-  console.log("Google Sheets stub: append row", { draft, result });
+// ================== GOOGLE SHEETS INTEGRATION ==================
+// Бот шлёт JSON на твой Google Apps Script / backend,
+// который сам пишет в защищённую Google Sheets.
+//
+// В Netlify нужно задать переменную:
+//   GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/.../exec"
+const GOOGLE_SHEETS_WEBHOOK_URL =
+  process.env.GOOGLE_SHEETS_WEBHOOK_URL || null;
+
+/**
+ * driverState:
+ *   {
+ *     driverId, carId, registeredAt,
+ *     driverFullName, driverPhone,
+ *     licenseSeries, licenseNumber,
+ *     carPlate, carBrand, carModel,
+ *     hunterChatId, hunterName,
+ *     photoControlOk, selfEmploymentOk, committentOk,
+ *     bonusGiven, bonusGivenAt
+ *   }
+ *
+ * eventType: "registration" | "bonus"
+ */
+async function appendDriverToGoogleSheets(driverState, eventType = "registration") {
+  if (!GOOGLE_SHEETS_WEBHOOK_URL) {
+    console.log(
+      "Google Sheets webhook URL is not set (GOOGLE_SHEETS_WEBHOOK_URL). Skipping append."
+    );
+    return;
+  }
+  if (!driverState) {
+    console.warn("appendDriverToGoogleSheets called without driverState");
+    return;
+  }
+
+  const payload = {
+    eventType, // для удобства на стороне таблицы
+    driverId: driverState.driverId || "",
+    carId: driverState.carId || "",
+    timestamp: driverState.registeredAt || new Date().toISOString(),
+
+    driverFullName: driverState.driverFullName || "",
+    driverPhone: driverState.driverPhone || "",
+    licenseSeries: driverState.licenseSeries || "",
+    licenseNumber: driverState.licenseNumber || "",
+
+    carPlate: driverState.carPlate || "",
+    carBrand: driverState.carBrand || "",
+    carModel: driverState.carModel || "",
+
+    hunterChatId: driverState.hunterChatId || "",
+    hunterName: driverState.hunterName || "",
+
+    // то, что ты просил в ТЗ
+    photoControl: driverState.photoControlOk ? "Да" : "Нет",
+    selfEmployment: driverState.selfEmploymentOk ? "Да" : "Нет",
+    committent: driverState.committentOk ? "Да" : "Нет",
+    bonusGiven: driverState.bonusGiven ? "Да" : "Нет",
+    bonusGivenAt: driverState.bonusGivenAt || "",
+  };
+
+  try {
+    const res = await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("appendDriverToGoogleSheets error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("appendDriverToGoogleSheets exception:", e);
+  }
 }
+// ================== ASR PUL STATUS INTEGRATION ==================
+//
+// Сообщение от AsrPulBot вида:
+// 🟢 КОМИТЕНТ
+// ✅Водитель стал комитентом!
+// ...
+// 🌐 Посмотреть в Яндексе (https://fleet.yandex.uz/drivers/e13...bb/details?park_id=...)
+async function handleAsrPulStatusMessage(msg) {
+  if (!ASRPUL_STATUS_CHAT_ID) return;
+  if (!msg || !msg.text) return;
+
+  const text = msg.text;
+
+  // Нас интересуют сообщения про комитента/самозанятость
+  if (!text.includes("КОМИТЕНТ") && !text.includes("Комитент")) {
+    return;
+  }
+
+  // Достаём driverId из ссылки "drivers/<id>/details"
+  const linkMatch = text.match(
+    /https?:\/\/\S*\/drivers\/([a-f0-9-]+)\/details\?park_id=/i
+  );
+  if (!linkMatch) {
+    console.warn("AsrPul status message: cannot find driverId in text");
+    return;
+  }
+
+  const driverId = linkMatch[1];
+
+  try {
+    const indexStore = getDriverIndexStore();
+    if (!indexStore) return;
+
+    const index = await indexStore.get(`driver:${driverId}`, { type: "json" });
+    if (!index || !index.hunterChatId) {
+      console.warn(
+        "AsrPul status message: no hunterChatId for driverId",
+        driverId
+      );
+      return;
+    }
+
+    const hunterChatId = index.hunterChatId;
+    const hunter = await loadHunterFromStorage(hunterChatId);
+    if (!hunter) {
+      console.warn(
+        "AsrPul status message: hunter not found for chatId",
+        hunterChatId
+      );
+      return;
+    }
+
+    if (!hunter.drivers || typeof hunter.drivers !== "object") {
+      hunter.drivers = {};
+    }
+
+    const existing = hunter.drivers[driverId] || {};
+    const nowIso = new Date().toISOString();
+
+    const driverState = {
+      driverId,
+      carId: existing.carId || "",
+      registeredAt: existing.registeredAt || nowIso,
+
+      driverFullName: existing.driverFullName || "",
+      driverPhone: existing.driverPhone || "",
+
+      licenseSeries: existing.licenseSeries || "",
+      licenseNumber: existing.licenseNumber || "",
+
+      carPlate: existing.carPlate || "",
+      carBrand: existing.carBrand || "",
+      carModel: existing.carModel || "",
+
+      hunterChatId,
+      hunterName: hunter.name || existing.hunterName || "",
+
+      photoControlOk: existing.photoControlOk || false,
+
+      // 🔹 главное: AsrPulBot подтвердил самозанятость и комитента
+      selfEmploymentOk: true,
+      committentOk: true,
+
+      bonusGiven: existing.bonusGiven || false,
+      bonusGivenAt: existing.bonusGivenAt || null,
+      lastStatusCheckAt: nowIso,
+    };
+
+    hunter.drivers[driverId] = driverState;
+    await saveHunterToStorage(hunter);
+
+    // Отдельное событие в таблицу
+    await appendDriverToGoogleSheets(driverState, "selfemployment_committent");
+
+    console.log(
+      "AsrPul status: selfEmploymentOk+committentOk set for driver",
+      driverId,
+      "hunter",
+      hunterChatId
+    );
+  } catch (e) {
+    console.error("handleAsrPulStatusMessage error:", e);
+  }
+}
+
 
 // ================== FLOW: HUNTER START & MENU ==================
 async function handleStart(chatId, session, from) {
@@ -2145,10 +2361,7 @@ async function finalizeDriverRegistration(chatId, session) {
 
   const driverId = driverRes.driverId;
 
-  await appendDriverToGoogleSheetsStub(draft, {
-    driverId,
-    carId: null,
-  });
+
 
   const summaryLines = [];
   summaryLines.push("🎉 *Haydovchi muvaffaqiyatli ro‘yxatdan o‘tkazildi!*");
@@ -2305,13 +2518,65 @@ async function finalizeCarRegistration(chatId, session) {
     }
   }
 
-  await appendDriverToGoogleSheetsStub(draft, {
+// 🔹 Сохраняем состояние водителя у хантера (для бонусов и статистики)
+if (session.hunter) {
+  if (!session.hunter.drivers || typeof session.hunter.drivers !== "object") {
+    session.hunter.drivers = {};
+  }
+
+  const existing = session.hunter.drivers[driverId] || {};
+  const nowIso = new Date().toISOString();
+
+  const driverState = {
     driverId,
     carId,
-  });
+    registeredAt: existing.registeredAt || draft.createdAt || nowIso,
 
-  const summaryLines = [];
-  summaryLines.push("🎉 *Avtomobil muvaffaqiyatli qo‘shildi!*");
+    driverFullName: draft.driverFullName || existing.driverFullName || "",
+    driverPhone: draft.driverPhone || existing.driverPhone || "",
+
+    licenseSeries: draft.licenseSeries || existing.licenseSeries || "",
+    licenseNumber: draft.licenseNumber || existing.licenseNumber || "",
+
+    carPlate: draft.carPlate || existing.carPlate || "",
+    carBrand: draft.carBrand || existing.carBrand || "",
+    carModel: draft.carModel || existing.carModel || "",
+
+    hunterChatId: session.hunter.chatId,
+    hunterName: session.hunter.name,
+
+    photoControlOk: existing.photoControlOk || false,
+    selfEmploymentOk: existing.selfEmploymentOk || false,
+    committentOk: existing.committentOk || false,
+
+    bonusGiven: existing.bonusGiven || false,
+    bonusGivenAt: existing.bonusGivenAt || null,
+    lastStatusCheckAt: existing.lastStatusCheckAt || null,
+  };
+
+  session.hunter.drivers[driverId] = driverState;
+  await saveHunterToStorage(session.hunter);
+
+  // Запись в Google Sheets — событие "registration"
+  await appendDriverToGoogleSheets(driverState, "registration");
+
+  // 🔹 NEW: индекс driverId → hunterChatId для связи с AsrPulBot
+  try {
+    const indexStore = getDriverIndexStore();
+    if (indexStore && driverId && session.hunter?.chatId) {
+      await indexStore.setJSON(`driver:${driverId}`, {
+        hunterChatId: session.hunter.chatId,
+      });
+    }
+  } catch (e) {
+    console.error("save driver index error:", e);
+  }
+
+}
+
+const summaryLines = [];
+summaryLines.push("🎉 *Avtomobil muvaffaqiyatli qo‘shildi!*");
+
   summaryLines.push("");
   summaryLines.push(`👤 Haydovchi: ${draft.driverFullName || "—"}`);
   summaryLines.push(`📞 Telefon: ${draft.driverPhone || "—"}`);
@@ -2365,6 +2630,28 @@ if (bindOk) {
   session.driverDraft = null;
   session.step = "main_menu";
 
+  // 🔹 Сообщение о завершении регистрации + индивидуальная кнопка проверки самозанятости
+  if (driverId) {
+    await sendTelegramMessage(
+      chatId,
+      "Рўйхатдан ўтиш муваффақиятли якунланди.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "➡️ Самозанятость статусини текшириш",
+                callback_data: `check_selfemp:${driverId}`,
+              },
+            ],
+          ],
+        },
+      }
+    );
+  } else {
+    await sendTelegramMessage(chatId, "Рўйхатдан ўтиш муваффақиятли якунланди.");
+  }
+
   await sendTelegramMessage(
     chatId,
     "Avtomobil qo‘shildi. Siz boshqa haydovchini ro‘yxatdan o‘tkazishingiz mumkin.",
@@ -2372,10 +2659,379 @@ if (bindOk) {
   );
 }
 
+// ================== SELF-EMPLOYMENT & BONUS HELPERS ==================
+//
+// Статусы самозанятости/комитента теперь храним у хантера и обновляем
+// через сообщения из служебного чата AsrPulBot (handleAsrPulStatusMessage).
+
+async function checkSelfEmploymentAndCommittentInFleet(driverId, hunter) {
+  if (!driverId) {
+    return { ok: false, message: "Driver ID is missing for status check." };
+  }
+
+  // hunter может уже быть в сессии, но на всякий случай подтягиваем свежего
+  let h = hunter;
+  if (!h && driverId) {
+    try {
+      const indexStore = getDriverIndexStore();
+      const index = indexStore
+        ? await indexStore.get(`driver:${driverId}`, { type: "json" })
+        : null;
+      if (index && index.hunterChatId) {
+        h = await loadHunterFromStorage(index.hunterChatId);
+      }
+    } catch (e) {
+      console.error("checkSelfEmploymentAndCommittentInFleet index error:", e);
+    }
+  }
+
+  if (!h || !h.drivers || typeof h.drivers !== "object") {
+    return { ok: true, selfEmployed: false, committent: false };
+  }
+
+  const state = h.drivers[driverId];
+  if (!state) {
+    return { ok: true, selfEmployed: false, committent: false };
+  }
+
+  return {
+    ok: true,
+    selfEmployed: !!state.selfEmploymentOk,
+    committent: !!state.committentOk,
+  };
+}
+
+
+/**
+ * Реальная выдача бонуса хантеру через баланс его профиля в Yandex Fleet.
+ * Использует метод:
+ *   POST /v3/parks/driver-profiles/transactions
+ *   https://fleet.yandex.ru/docs/api/ru/openapi/Transactions/v3parksdriver-profilestransactions-post
+ *
+ * hunter: объект хантера из стора (chatId, phone, name, ...).
+ * driverState: объект с информацией о водителе, за которого выдаётся бонус.
+ * amount: число в сумах (целое).
+ */
+async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, message: cfg.message };
+  }
+
+  if (!hunter) {
+    return { ok: false, message: "No hunter object passed." };
+  }
+
+  const phoneRaw =
+    hunter.phone ||
+    (typeof hunter.contact_phone === "string" && hunter.contact_phone) ||
+    driverState?.hunterPhone ||
+    null;
+
+  if (!phoneRaw) {
+    return {
+      ok: false,
+      message:
+        "Hunter phone is missing — невозможно найти его профиль в Yandex Fleet.",
+    };
+  }
+
+  // Ищем профиль хантера по телефону (driver_profile_id / contractor_profile_id)
+  const found = await findDriverByPhone(phoneRaw);
+  if (!found.ok) {
+    return {
+      ok: false,
+      message:
+        found.error ||
+        "Fleet error while trying to find hunter contractor profile.",
+    };
+  }
+
+  if (!found.found || !found.driver || !found.driver.id) {
+    return {
+      ok: false,
+      message:
+        "В Yandex Fleet не найден профиль хантера по его телефону. " +
+        "Создай для него водительский профиль в парке или привяжи существующий телефон.",
+    };
+  }
+
+  const contractorProfileId = found.driver.id;
+
+  const amountInt = Math.trunc(Number(amount) || 0);
+  if (!amountInt || amountInt <= 0) {
+    return { ok: false, message: "Bonus amount must be greater than zero." };
+  }
+  const amountStr = String(amountInt);
+
+  let description =
+    `Bonus hunteri uchun: ${driverState?.driverFullName || ""}`.trim();
+  if (!description) {
+    description = "Bonus hunteri uchun";
+  }
+  if (description.length > 255) {
+    description = description.slice(0, 255);
+  }
+
+  // Тело запроса согласно v3 /parks/driver-profiles/transactions
+  const body = {
+    park_id: FLEET_PARK_ID,
+    contractor_profile_id: contractorProfileId,
+    amount: amountStr,
+    description,
+    data: {
+      // Используем тип "bonus" (BonusData)
+      kind: "bonus",
+    },
+  };
+
+  const idempotencyKey = makeIdempotencyKey("hunter-bonus");
+
+  const res = await callFleetPostIdempotent(
+    "/v3/parks/driver-profiles/transactions",
+    body,
+    idempotencyKey
+  );
+
+  if (!res.ok) {
+    console.error(
+      "grantBonusToHunterViaFleet error:",
+      res.status,
+      res.message,
+      res.raw
+    );
+    return {
+      ok: false,
+      message:
+        res.message ||
+        "Yandex Fleet bonus transaction error for hunter balance.",
+      raw: res.raw,
+      status: res.status ?? null,
+    };
+  }
+
+  return { ok: true, data: res.data };
+}
+
 // ================== CALLBACK QUERY ==================
 async function handleCallback(chatId, session, callback) {
   const data = callback.data || "";
   const draft = session.driverDraft || (session.driverDraft = {});
+
+  // ====== Самозанятость / бонусы ======
+  if (data.startsWith("check_selfemp:")) {
+    const driverId = data.split(":")[1];
+    await answerCallbackQuery(callback.id);
+
+    // подстрахуемся: подгружаем хантера из хранилища
+    if (!session.hunter) {
+      const storedHunter = await loadHunterFromStorage(chatId);
+      if (storedHunter) {
+        session.hunter = storedHunter;
+      }
+    }
+
+    const hunter = session.hunter;
+    if (!hunter) {
+      await sendTelegramMessage(
+        chatId,
+        "Avval /start buyrug‘i orqali hunterni ro‘yxatdan o‘tkazing."
+      );
+      return;
+    }
+
+    if (!hunter.drivers || typeof hunter.drivers !== "object") {
+      hunter.drivers = {};
+    }
+    const existing = hunter.drivers[driverId] || {};
+    const driverState = {
+      ...existing,
+      driverId,
+      hunterChatId: hunter.chatId,
+      hunterName: hunter.name,
+    };
+
+const check = await checkSelfEmploymentAndCommittentInFleet(driverId, hunter);
+
+
+    if (!check.ok) {
+      await sendTelegramMessage(
+        chatId,
+        "Yandex Fleet orqali самозанятость статусини tekshirishda xatolik yuz berdi." +
+          (check.message ? `\n\n${check.message}` : "")
+      );
+      return;
+    }
+
+    driverState.selfEmploymentOk = !!check.selfEmployed;
+    driverState.committentOk = !!check.committent;
+    driverState.lastStatusCheckAt = new Date().toISOString();
+
+    hunter.drivers[driverId] = driverState;
+    await saveHunterToStorage(hunter);
+
+    // Если бонус уже был
+    if (driverState.bonusGiven) {
+      await sendTelegramMessage(
+        chatId,
+        "Самозанятость муваффақиятли. Бонус аввал берилган."
+      );
+      return;
+    }
+
+    // Оба статуса ок — показываем кнопку бонуса
+    if (driverState.selfEmploymentOk && driverState.committentOk) {
+      await sendTelegramMessage(
+        chatId,
+        "Самозанятость ва комитентлик муваффақиятли. Бонус бериш мумкин.",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "➡️ 50 000 сўм бонус бериш",
+                  callback_data: `give_bonus:${driverId}`,
+                },
+              ],
+            ],
+          },
+        }
+      );
+    } else {
+      await sendTelegramMessage(
+        chatId,
+        "Самозанятость ҳали расмийлашмаган. Илтимос, аввал @AsrPulBot орқали ўтинг."
+      );
+    }
+
+    return;
+  }
+
+  if (data.startsWith("give_bonus:")) {
+    const driverId = data.split(":")[1];
+    await answerCallbackQuery(callback.id);
+
+    if (!session.hunter) {
+      const storedHunter = await loadHunterFromStorage(chatId);
+      if (storedHunter) {
+        session.hunter = storedHunter;
+      }
+    }
+    const hunter = session.hunter;
+
+    if (!hunter) {
+      await sendTelegramMessage(
+        chatId,
+        "Avval /start buyrug‘i orqali hunterni ro‘yxatdan o‘tkazing."
+      );
+      return;
+    }
+
+    if (!hunter.drivers || typeof hunter.drivers !== "object") {
+      hunter.drivers = {};
+    }
+    let driverState = hunter.drivers[driverId];
+    if (!driverState) {
+      driverState = {
+        driverId,
+        hunterChatId: hunter.chatId,
+        hunterName: hunter.name,
+        registeredAt: new Date().toISOString(),
+        photoControlOk: false,
+        selfEmploymentOk: false,
+        committentOk: false,
+        bonusGiven: false,
+        bonusGivenAt: null,
+      };
+      hunter.drivers[driverId] = driverState;
+    }
+
+    // Повторная защита
+    if (driverState.bonusGiven) {
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ Ushbu haydovchi uchun bonus аввал берилган."
+      );
+      await editMessageReplyMarkup(chatId, callback.message.message_id, {
+        inline_keyboard: [],
+      });
+      return;
+    }
+
+    // Повторно проверяем статусы через Fleet
+const check = await checkSelfEmploymentAndCommittentInFleet(driverId, hunter);
+
+    if (!check.ok) {
+      await sendTelegramMessage(
+        chatId,
+        "Yandex Fleet orqali statuslarni qayta tekshirishda xatolik yuz berdi." +
+          (check.message ? `\n\n${check.message}` : "")
+      );
+      return;
+    }
+
+    const selfOk = !!check.selfEmployed;
+    const commOk = !!check.committent;
+
+    driverState.selfEmploymentOk = selfOk;
+    driverState.committentOk = commOk;
+    driverState.lastStatusCheckAt = new Date().toISOString();
+
+    if (!selfOk || !commOk) {
+      await sendTelegramMessage(
+        chatId,
+        "Самозанятость ёки комитент ҳали тасдиқланмаган. Бонус бериш мумкин эмас."
+      );
+      await saveHunterToStorage(hunter);
+      return;
+    }
+
+    // Здесь реальная выдача (пока stub)
+    // Реальная выдача бонуса через баланс хантера в Fleet
+    const bonusRes = await grantBonusToHunterViaFleet(
+      hunter,
+      driverState,
+      50000
+    );
+
+    if (!bonusRes.ok) {
+      await sendTelegramMessage(
+        chatId,
+        "❗ Бонусни автоматик беришда xatolik yuz berdi. Iltimos, park operatoriga murojaat qiling."
+      );
+      return;
+    }
+
+    driverState.bonusGiven = true;
+    driverState.bonusGivenAt = new Date().toISOString();
+    hunter.drivers[driverId] = driverState;
+    await saveHunterToStorage(hunter);
+
+    // Лог в Google Sheets как отдельное событие
+    await appendDriverToGoogleSheets(driverState, "bonus");
+
+    await sendTelegramMessage(
+      chatId,
+      "✅ 50 000 сўм бонус муваффақиятли берилди."
+    );
+
+    // Убираем кнопку бонуса с того сообщения
+    await editMessageReplyMarkup(chatId, callback.message.message_id, {
+      inline_keyboard: [],
+    });
+
+    await sendOperatorAlert(
+      "💸 Hunter-bot orqali bonus berildi\n\n" +
+        `👤 Хантер: ${hunter.name} (chat_id: ${hunter.chatId})\n` +
+        `👤 Водитель: ${driverState.driverFullName || "—"}\n` +
+        `📞 Телефон водителя: ${driverState.driverPhone || "—"}\n` +
+        `Driver ID (Fleet): ${driverState.driverId || "—"}\n` +
+        `Bonus summasi: 50 000 so'm`
+    );
+
+    return;
+  }
+
 
   if (data === "confirm_driver") {
     await answerCallbackQuery(callback.id);
@@ -2513,42 +3169,47 @@ async function handleMyDriversSection(chatId, session) {
     return;
   }
 
-  const res = await listMyDriversForHunter(session.hunter.chatId);
-  if (!res.ok) {
-    await sendTelegramMessage(
-      chatId,
-      "Sizning haydovchilaringiz ro‘yxatini Yandex Fleet orqali olish imkoni bo‘lmadi.\n" +
-        "Iltimos, biroz vaqt o‘tgach qayta urinib ko‘ring yoki park operatoriga murojaat qiling."
-    );
-    return;
+  // Берём самое актуальное состояние хантера из хранилища
+  const storedHunter = await loadHunterFromStorage(session.hunter.chatId);
+  if (storedHunter) {
+    session.hunter = storedHunter;
   }
 
-  const drivers = res.drivers || [];
-  if (!drivers.length) {
-    await sendTelegramMessage(
-      chatId,
-      "Hozircha ushbu bot orqali Sizga biriktirilган haydovchilar topilmadi.",
-      { reply_markup: mainMenuKeyboard() }
-    );
-    return;
+  const hunter = session.hunter;
+  const driversMap = (hunter && hunter.drivers) || {};
+  const allDrivers = Object.values(driversMap);
+
+  const now = Date.now();
+  const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+
+  let totalRegistered = 0;
+  let totalPhoto = 0;
+  let totalSelfAndComm = 0;
+  let totalBonus = 0;
+
+  for (const d of allDrivers) {
+    const ts = d.registeredAt ? Date.parse(d.registeredAt) : NaN;
+    if (!ts || Number.isNaN(ts)) continue;
+    if (now - ts > tenDaysMs) continue; // только последние 10 дней
+
+    totalRegistered += 1;
+    if (d.photoControlOk) totalPhoto += 1;
+    if (d.selfEmploymentOk && d.committentOk) totalSelfAndComm += 1;
+    if (d.bonusGiven) totalBonus += 1;
   }
 
-  const lines = [];
-  lines.push("👥 *Sizga biriktirilgan haydovchilar ro‘yxati:*");
-  lines.push("");
-  drivers.slice(0, 30).forEach((d, idx) => {
-    lines.push(
-      `${idx + 1}. ${d.name || "—"} — ${d.phone || "—"} — holat: ${
-        d.status || "unknown"
-      }`
-    );
-  });
+  const text =
+    "Сўнгги 10 кунда:\n" +
+    `• ${totalRegistered} та рўйхатдан ўтган\n` +
+    `• ${totalPhoto} та фотоконтрольдан ўтган\n` +
+    `• ${totalSelfAndComm} та самозанятость + комитент\n` +
+    `• ${totalBonus} та бонус олган`;
 
-  await sendTelegramMessage(chatId, lines.join("\n"), {
-    parse_mode: "Markdown",
+  await sendTelegramMessage(chatId, text, {
     reply_markup: mainMenuKeyboard(),
   });
 }
+
 
 // ================== MAIN HANDLER ==================
 exports.handler = async (event) => {
@@ -2602,6 +3263,17 @@ exports.handler = async (event) => {
 
   const chatId = msg.chat.id;
   const text = msg.text || "";
+  // 🔹 Если это служебный чат, куда пишет AsrPulBot про самозанятость/комитента —
+  // просто обрабатываем сообщение и выходим.
+if (
+  ASRPUL_STATUS_CHAT_ID &&
+  String(chatId) === String(ASRPUL_STATUS_CHAT_ID)
+) {
+  await handleAsrPulStatusMessage(msg);
+  return { statusCode: 200, body: "OK" };
+}
+
+
   let session = getSession(chatId);
 
   if (!session.hunter) {

@@ -1742,7 +1742,7 @@ async function createCarInFleet(carPayload, session) {
 
 
 /**
- * Поиск водителя по телефону
+ * Поиск водителя по телефону (рабочий вариант как в хантер-боте)
  */
 async function findDriverByPhone(phoneRaw) {
   const normalizedPhone = normalizePhoneForYandex(phoneRaw);
@@ -1751,13 +1751,19 @@ async function findDriverByPhone(phoneRaw) {
     return { ok: false, found: false, error: cfg.message };
   }
 
+  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
+  if (!phoneDigits) {
+    return { ok: true, found: false };
+  }
+
   const body = {
-    limit: 500,
+    limit: 1000,
     offset: 0,
     query: {
-      park: {
-        id: FLEET_PARK_ID,
-      },
+      park: { id: FLEET_PARK_ID },
+    },
+    fields: {
+      driver_profile: ["id", "first_name", "last_name", "middle_name", "phones"],
     },
   };
 
@@ -1772,22 +1778,34 @@ async function findDriverByPhone(phoneRaw) {
     return { ok: true, found: false };
   }
 
-  const phoneDigits = (normalizedPhone || "").replace(/[^\d]/g, "");
-  if (!phoneDigits) return { ok: true, found: false };
-
   for (const item of profiles) {
     const dp = (item && item.driver_profile) || {};
-    const phones = Array.isArray(dp.phones) ? dp.phones : [];
+    const phonesRaw = [];
 
-    for (const p of phones) {
-      const num = (p && (p.number || p.phone)) || "";
-      const numDigits = num.replace(/[^\d]/g, "");
+    if (Array.isArray(dp.phones)) {
+      for (const p of dp.phones) {
+        if (!p) continue;
+        if (typeof p === "string") {
+          phonesRaw.push(p);
+        } else if (p.number || p.phone) {
+          phonesRaw.push(p.number || p.phone);
+        }
+      }
+    }
+
+    for (const num of phonesRaw) {
+      const numDigits = String(num).replace(/[^\d]/g, "");
       if (!numDigits) continue;
 
-      if (numDigits.endsWith(phoneDigits) || phoneDigits.endsWith(numDigits)) {
+      if (
+        numDigits === phoneDigits ||
+        numDigits.endsWith(phoneDigits) ||
+        phoneDigits.endsWith(numDigits)
+      ) {
         const fullName =
-          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") ||
-          null;
+          [dp.last_name, dp.first_name, dp.middle_name]
+            .filter(Boolean)
+            .join(" ") || null;
         const status =
           (item.current_status && item.current_status.status) || null;
 
@@ -1808,92 +1826,6 @@ async function findDriverByPhone(phoneRaw) {
   return { ok: true, found: false };
 }
 
-/**
- * Поиск водителя по номеру В/У
- */
-async function findDriverByLicense(licenseVariants) {
-  const cfg = ensureFleetConfigured();
-  if (!cfg.ok) {
-    return { ok: false, found: false, error: cfg.message };
-  }
-
-  const body = {
-    limit: 500,
-    offset: 0,
-    query: {
-      park: {
-        id: FLEET_PARK_ID,
-      },
-    },
-  };
-
-  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
-  if (!res.ok) {
-    console.error("findDriverByLicense: fleet error:", res);
-    return { ok: false, found: false, error: res.message };
-  }
-
-  const profiles = (res.data && res.data.driver_profiles) || [];
-  if (!profiles.length) {
-    return { ok: true, found: false };
-  }
-
-  const norm = (s) => {
-    const country = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
-    return normalizeDriverLicenseNumber(country, null, null, s);
-  };
-
-  const wanted = (licenseVariants || []).map(norm).filter(Boolean);
-  if (!wanted.length) return { ok: true, found: false };
-
-  for (const item of profiles) {
-    const dp = (item && item.driver_profile) || {};
-
-    const rawLicenses = [];
-
-    if (dp.license && typeof dp.license.number === "string") {
-      rawLicenses.push(dp.license.number);
-    }
-
-    if (Array.isArray(dp.licenses)) {
-      for (const l of dp.licenses) {
-        if (l && typeof l.number === "string") {
-          rawLicenses.push(l.number);
-        }
-      }
-    }
-
-    const normalizedFromApi = rawLicenses.map(norm).filter(Boolean);
-    if (!normalizedFromApi.length) continue;
-
-    for (const target of wanted) {
-      if (normalizedFromApi.includes(target)) {
-        const fullName =
-          [dp.last_name, dp.first_name, dp.middle_name].filter(Boolean).join(" ") ||
-          null;
-        const phones = Array.isArray(dp.phones) ? dp.phones : [];
-        const phoneFromApi =
-          (phones[0] && (phones[0].number || phones[0].phone)) || null;
-        const status =
-          (item.current_status && item.current_status.status) || null;
-
-        return {
-          ok: true,
-          found: true,
-          driver: {
-            id: dp.id || null,
-            name: fullName,
-            phone: phoneFromApi,
-            status,
-            license: target,
-          },
-        };
-      }
-    }
-  }
-
-  return { ok: true, found: false };
-}
 
 /**
  * Проверка статуса по телефону
@@ -2583,12 +2515,15 @@ async function askNextEditField(chatId, session) {
 
 // ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET =====
 
+// ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET (2 ЭТАПА) =====
+
 async function autoRegisterInYandexFleet(chatId, session) {
   const d = session.data || {};
   const brandCode = session.carBrandCode;
   const brandLabel = session.carBrandLabel;
   const phone = session.phone || d.phone;
 
+  // 1) Определяем тарифы по машине / грузовой
   let tariffsInfo = { tariffs: [], hasRules: false };
 
   if (brandCode && !session.isCargo) {
@@ -2601,14 +2536,17 @@ async function autoRegisterInYandexFleet(chatId, session) {
     tariffsInfo = { tariffs: ["Cargo"], hasRules: true };
   }
 
+  // если по машине не нашли правил — считаем, что авто может быть только вручную
   if (!tariffsInfo.hasRules) {
     session.registerWithoutCar = true;
   }
 
+  // 2) Разбираем марку/модель из выбранного текста
   const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
   const nowYear = new Date().getFullYear();
   const carYearInt = parseInt(d.carYear, 10);
 
+  // Можно ли вообще пытаться создать авто?
   let canCreateCar = !session.registerWithoutCar;
   if (canCreateCar) {
     if (!brand || !d.plateNumber) {
@@ -2622,6 +2560,8 @@ async function autoRegisterInYandexFleet(chatId, session) {
       session.registerWithoutCar = true;
     }
   }
+
+  // ========== ЭТАП 1/2: СОЗДАНИЕ ПРОФИЛЯ ВОДИТЕЛЯ ==========
 
   const driverPayload = {
     phone,
@@ -2640,14 +2580,20 @@ async function autoRegisterInYandexFleet(chatId, session) {
     isCargo: session.isCargo,
   };
 
+  await sendTelegramMessage(
+    chatId,
+    "1/2 bosqich: Yandex tizimida haydovchi profilini yaratmoqdaman..."
+  );
+
   const driverRes = await createDriverInFleet(driverPayload);
   if (!driverRes.ok) {
+    // Этап 1 не прошёл — сразу говорим водителю и оператору
     await sendTelegramMessage(
       chatId,
       "❗️ Yandex tizimida haydovchi ro‘yxatdan o‘tkazishda xatolik yuz berdi. Operator bilan bog‘laning."
     );
     await sendOperatorAlert(
-      "*Ошибка авто-регистрации водителя в Yandex Fleet*\n\n" +
+      "*Ошибка авто-регистрации водителя в Yandex Fleet (этап 1/2)*\n\n" +
         `Телефон: \`${phone || "—"}\`\n` +
         `Xato: ${driverRes.error || "noma'lum"}`
     );
@@ -2656,22 +2602,35 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   session.driverFleetId = driverRes.driverId || null;
 
+  await sendTelegramMessage(
+    chatId,
+    "✅ 1/2 bosqich tugadi: haydovchi profili Yandex tizimida yaratildi."
+  );
+
+  // ========== ЭТАП 2/2: СОЗДАНИЕ/ПРИВЯЗКА АВТОМОБИЛЯ ==========
+
   let carId = null;
 
   if (canCreateCar) {
+    await sendTelegramMessage(
+      chatId,
+      "2/2 bosqich: avtomobilni Yandex tizimiga qo‘shmoqdaman..."
+    );
+
+    // позывной из телефона
     const pozivnoiSource = String(phone || "").replace(/[^\d]/g, "");
     const pozivnoi = pozivnoiSource.slice(-7) || null;
 
     const carPayload = {
-      brand,
-      model,
-      year: d.carYear,
-      color: session.carColor,
-      plate_number: d.plateNumber,
-      body_number: d.bodyNumber,
-      call_sign: pozivnoi,
-      tariffs: session.assignedTariffs,
-      is_cargo: session.isCargo,
+      brand,                                 // марка из splitCarBrandModel
+      model,                                 // модель из splitCarBrandModel
+      year: d.carYear,                       // год выпуска
+      color: session.carColor,               // цвет из бота (mapColorToYandex внутри createCarInFleet)
+      plate_number: d.plateNumber,           // гос номер
+      body_number: d.bodyNumber,             // номер кузова
+      call_sign: pozivnoi,                   // позывной
+      tariffs: session.assignedTariffs,      // тарифы Start/Comfort/...
+      is_cargo: session.isCargo,             // грузовой или нет
       cargo_dimensions: session.cargoDimensions || null,
       tech_full: d.techFull,
       tech_number: d.techNumber,
@@ -2679,22 +2638,38 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
     const carRes = await createCarInFleet(carPayload, session);
     if (!carRes.ok) {
+      // Машина не создалась, но водитель уже есть — фиксируем, что без авто
+      session.registerWithoutCar = true;
+
       await sendTelegramMessage(
         chatId,
         "⚠️ Haydovchi ro‘yxatdan o‘tdi, ammo avtomobilni avtomatik qo‘shib bo‘lmadi. Operator avtomobilni qo‘lda qo‘shadi."
       );
       await sendOperatorAlert(
-        "*Ошибка добавления автомобиля в Yandex Fleet*\n\n" +
+        "*Ошибка добавления автомобиля в Yandex Fleet (этап 2/2)*\n\n" +
           `Телефон: \`${phone || "—"}\`\n` +
           `Xato: ${carRes.error || "noma'lum"}`
       );
-      session.registerWithoutCar = true;
     } else {
       carId = carRes.carId || null;
       session.carFleetId = carId;
+
+      await sendTelegramMessage(
+        chatId,
+        "✅ 2/2 bosqich tugadi: avtomobil Yandex tizimiga qo‘shildi."
+      );
     }
+  } else {
+    // По тарифным правилам / данным авто нельзя создать автоматически
+    session.registerWithoutCar = true;
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Avtomobil ma'lumotlari to‘liq emas yoki tariflarga mos emas.\n" +
+        "Haydovchi profili yaratildi, avtomobilni operator qo‘lda qo‘shadi."
+    );
   }
 
+  // Привязка авто к водителю, если всё-таки есть carId
   if (session.driverFleetId && carId) {
     const bindRes = await bindCarToDriver(session.driverFleetId, carId);
     if (!bindRes.ok) {
@@ -2706,9 +2681,11 @@ async function autoRegisterInYandexFleet(chatId, session) {
     }
   }
 
+  // ===== ЛОГИ ДЛЯ ОПЕРАТОРОВ (КАК БЫЛО) =====
+
   await sendDocsToOperators(chatId, session, {
     note: session.registerWithoutCar
-      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (недостаточно данных по авто или модель не найдена в тарифной базе)."
+      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (недостаточно данных по авто или модель не найдена в тарифной базе, либо авто не удалось создать автоматически)."
       : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
 
@@ -2721,29 +2698,26 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   if (session.wantsDelivery) {
     finishText +=
-      "\n\n📦 Sizga qo‘shimча ravishda *Delivery (yetkazib berish)* buyurtmalari ham yoqilgan bo‘lishi mumkin (park siyosatiga qarab).";
+      "\n\n📦 Sizga qo‘shimcha ravishda *Delivery (yetkazib berish)* buyurtmalari ham yoqilgan bo‘lishi mumkin (park siyosatiga qarab).";
   }
 
   if (session.registerWithoutCar) {
     finishText +=
-      "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
+      "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi yoki avtomatik qo‘shib bo‘lmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
       "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
   }
 
-await sendTelegramMessage(chatId, finishText, {
-  parse_mode: "Markdown",
-  reply_markup: {
-    keyboard: [
-      [{ text: "🚕 Shaxsiy kabinetni ochish" }],
-    ],
-    resize_keyboard: true,
-  },
-});
+  await sendTelegramMessage(chatId, finishText, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      keyboard: [[{ text: "🚕 Shaxsiy kabinetni ochish" }]],
+      resize_keyboard: true,
+    },
+  });
 
-session.step = "driver_menu";
-
-
+  session.step = "driver_menu";
 }
+
 
 // ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
 

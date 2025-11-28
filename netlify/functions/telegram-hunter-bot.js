@@ -2022,14 +2022,15 @@ async function createCarInFleetForHunter(draft) {
   const phoneDigits = String(draft.driverPhone || "").replace(/[^\d]/g, "");
   const callSign = phoneDigits.slice(-7) || undefined;
 
-  const parkProfile = {
-    callsign: callSign,
-    status: "working",
-    categories: ["econom"],
-    fuel_type: FLEET_DEFAULT_FUEL_TYPE || "petrol",
-    ownership_type: "park",
-    is_park_property: false,
-  };
+const parkProfile = {
+  callsign: callSign,
+  status: "working",
+  categories: ["econom"],
+  fuel_type: FLEET_DEFAULT_FUEL_TYPE || "petrol",
+  // НЕ отправляем ownership_type и is_park_property,
+  // чтобы не триггерить ошибку "not rental car"
+};
+
 
   const vehicleLicenses = {
     licence_plate_number: draft.carPlate,

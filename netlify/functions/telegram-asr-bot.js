@@ -1646,7 +1646,7 @@ async function createCarInFleet(carPayload, session) {
     };
   }
 
-  // 🔴 ТЕПЕРЬ ПРАВИЛЬНЫЙ ОБЪЕКТ vehicle_specifications (обязательные поля)
+  // 🔴 Правильный объект vehicle_specifications (обязательные поля)
   const vehicleSpecifications = {
     brand: carPayload.brand || "",          // Марка ТС (обязательно)
     model: carPayload.model || "",          // Модель ТС (обязательно)
@@ -1663,13 +1663,12 @@ async function createCarInFleet(carPayload, session) {
     vehicleSpecifications.vin = carPayload.vin;
   }
 
+  // 🔧 ВАЖНО: park_profile БЕЗ ownership_type / is_park_property
   const parkProfile = {
     callsign: carPayload.call_sign || undefined,
     status: "working",
     categories: categories.length ? categories : undefined,
     fuel_type: carPayload.fuel_type || FLEET_DEFAULT_FUEL_TYPE,
-    ownership_type: "park",
-    is_park_property: false,
   };
 
   // Если включали Delivery — отмечаем это в amenities
@@ -1679,17 +1678,22 @@ async function createCarInFleet(carPayload, session) {
 
   const vehicleLicenses = {
     licence_plate_number: carPayload.plate_number,
-    registration_certificate: carPayload.tech_full || carPayload.tech_number || "",
+    registration_certificate:
+      carPayload.tech_full || carPayload.tech_number || "",
   };
 
-  const idempotencyKey = `car-${FLEET_PARK_ID}-${carPayload.plate_number || ""}`;
+  const idempotencyKey = `car-${FLEET_PARK_ID}-${
+    carPayload.plate_number || ""
+  }`;
 
   // 🔴 Отдельный объект cargo по спецификации Яндекса
   let cargo = undefined;
   if (carPayload.is_cargo && carPayload.cargo_dimensions) {
     let carrying = 500;
-    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("M")) carrying = 800;
-    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("L")) carrying = 1500;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("M"))
+      carrying = 800;
+    if (session.cargoSizeCode && session.cargoSizeCode.startsWith("L"))
+      carrying = 1500;
     if (session.cargoSizeCode === "XL") carrying = 2000;
     if (session.cargoSizeCode === "XXL") carrying = 2500;
 
@@ -1703,7 +1707,7 @@ async function createCarInFleet(carPayload, session) {
     };
   }
 
-  // 🔴 Финальное тело запроса РОВНО по схеме /v2/parks/vehicles/car
+  // 🔴 Финальное тело запроса /v2/parks/vehicles/car
   const body = {
     park_profile: parkProfile,
     vehicle_licenses: vehicleLicenses,

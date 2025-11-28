@@ -865,7 +865,10 @@ async function listMyDriversForHunter(hunterChatId) {
     const profile = (item && item.profile) || {};
     const currentStatus = (item && item.current_status) || {};
 
-    if (dp.comment && dp.comment.includes(marker)) {
+    // 🔧 ИСПРАВЛЕНО: берём комментарий из driver_profile ИЛИ из profile
+    const comment = (dp.comment || profile.comment || "").toString();
+
+    if (comment.includes(marker)) {
       const phones = Array.isArray(dp.phones) ? dp.phones : [];
       let phone = null;
       if (phones.length) {
@@ -888,6 +891,7 @@ async function listMyDriversForHunter(hunterChatId) {
 
   return { ok: true, drivers: result };
 }
+
 
 // ================== upload-doc интеграция ==================
 async function forwardDocToUploadDoc(message, meta) {

@@ -204,7 +204,7 @@ const CAR_BRANDS = [
 const CAR_MODELS_BY_BRAND = {
   CHEVROLET: [
     "Cobalt",
-    "Nexia 3",
+    "Nexia",
     "Gentra",
     "Lacetti",
     "Malibu",

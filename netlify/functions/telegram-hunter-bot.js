@@ -631,7 +631,7 @@ const CAR_BRANDS = [
 const CAR_MODELS_BY_BRAND = {
   CHEVROLET: [
     "Cobalt",
-    "Nexia 3",
+    "Nexia",
     "Gentra",
     "Lacetti",
     "Malibu",
@@ -1490,6 +1490,12 @@ function buildDriverConfirmKeyboard(flowType) {
     return {
       inline_keyboard: [
         [
+          {
+            text: "✏️ Marka / model / rang",
+            callback_data: "edit_car_brand_model",
+          },
+        ],
+        [
           { text: "✏️ Avto yili", callback_data: "edit:carYear" },
           { text: "✏️ Davlat raqami", callback_data: "edit:carPlate" },
         ],
@@ -1515,7 +1521,7 @@ function buildDriverConfirmKeyboard(flowType) {
           callback_data: "edit:licenseSeriesNumber",
         },
       ],
-        [
+      [
         {
           text: "✏️ PINFL",
           callback_data: "edit:driverPinfl",
@@ -2347,6 +2353,24 @@ async function finalizeDriverRegistration(chatId, session) {
         }`
     );
 
+   // 🔹 НОВОЕ: кнопка "Попробовать снова"
+    await sendTelegramMessage(
+      chatId,
+      "Agar xato texnik bo‘lsa, quyidagi tugma orqali ro‘yxatdan o‘tishni qaytadan boshlashingiz mumkin.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🔁 Qayta urinib ko‘rish",
+                callback_data: "restart_registration",
+              },
+            ],
+          ],
+        },
+      }
+    );
+
     session.step = "main_menu";
     session.driverDraft = null;
     await sendTelegramMessage(
@@ -2443,6 +2467,24 @@ async function finalizeCarRegistration(chatId, session) {
           draft.carYear || ""
         }, ${draft.carPlate || ""}\n`
     );
+ // 🔹 НОВОЕ: кнопка "Попробовать снова"
+    await sendTelegramMessage(
+      chatId,
+      "Agar xato texnik bo‘lsa, quyidagi tugma orqali ro‘yxatdan o‘tishni qaytadan boshlashingiz mumkin.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🔁 Qayta urinib ko‘rish",
+                callback_data: "restart_registration",
+              },
+            ],
+          ],
+        },
+      }
+    );
+
     session.driverDraft = null;
     session.step = "main_menu";
     await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
@@ -2480,6 +2522,23 @@ async function finalizeCarRegistration(chatId, session) {
         `Сообщение Fleet: ${
           (carRes.raw && carRes.raw.message) || "—"
         }`
+    );
+    // 🔹 НОВОЕ: кнопка "Попробовать снова"
+    await sendTelegramMessage(
+      chatId,
+      "Agar xato texnik bo‘lsa, quyidagi tugma orqali to‘liq ro‘yxatdan o‘tishni qaytadan boshlashingiz mumkin.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🔁 Qayta urinib ko‘rish",
+                callback_data: "restart_registration",
+              },
+            ],
+          ],
+        },
+      }
     );
 
     session.driverDraft = null;
@@ -2817,6 +2876,15 @@ async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
 async function handleCallback(chatId, session, callback) {
   const data = callback.data || "";
   const draft = session.driverDraft || (session.driverDraft = {});
+  if (data === "edit_car_brand_model") {
+    // запускаем заново выбор бренда/модели/цвета, но в режиме редактирования
+    session.editField = "carBrandModel";
+    session.step = "driver_car_brand";
+
+    await answerCallbackQuery(callback.id);
+    await askCarBrand(chatId, session);
+    return;
+  }
 
   // ====== Самозанятость / бонусы ======
   if (data.startsWith("check_selfemp:")) {
@@ -3032,6 +3100,24 @@ const check = await checkSelfEmploymentAndCommittentInFleet(driverId, hunter);
     return;
   }
 
+  if (data === "restart_registration") {
+    await answerCallbackQuery(callback.id);
+
+    // сохраняем хантера, чтобы не потерять связь
+    let hunter = session.hunter;
+    if (!hunter) {
+      hunter = await loadHunterFromStorage(chatId);
+    }
+
+    resetSession(chatId);
+    const newSession = getSession(chatId);
+    if (hunter) {
+      newSession.hunter = hunter;
+    }
+
+    await beginDriverRegistration(chatId, newSession);
+    return;
+  }
 
   if (data === "confirm_driver") {
     await answerCallbackQuery(callback.id);
@@ -3130,9 +3216,19 @@ const check = await checkSelfEmploymentAndCommittentInFleet(driverId, hunter);
     }
     await answerCallbackQuery(callback.id);
 
-    await askTechFrontPhoto(chatId, session);
+    // 🔹 Если мы в режиме редактирования марки/модели/цвета —
+    // просто возвращаемся к экрану подтверждения, НЕ просим фото техпаспорта
+    if (session.editField === "carBrandModel") {
+      session.editField = null;
+      session.step = "driver_confirm";
+      await showDriverSummaryForConfirm(chatId, session);
+    } else {
+      // обычный поток: после первичного выбора идём к фото техпаспорта
+      await askTechFrontPhoto(chatId, session);
+    }
     return;
   }
+
 
   await answerCallbackQuery(callback.id);
 }

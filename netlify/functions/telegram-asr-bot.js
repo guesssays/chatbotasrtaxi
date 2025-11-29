@@ -56,6 +56,15 @@ if (!TELEGRAM_TOKEN) {
 if (!UPLOAD_DOC_URL) {
   console.error("UPLOAD_DOC_URL is not set and URL is not available");
 }
+// Кнопка для принудительной остановки регистрации
+const STOP_REGISTRATION_TEXT = "⛔ Ro‘yxatdan o‘tishni to‘xtatish";
+
+function getStopKeyboard() {
+  return {
+    keyboard: [[{ text: STOP_REGISTRATION_TEXT }]],
+    resize_keyboard: true,
+  };
+}
 
 // ====== простая сессия в памяти (best-effort для Netlify) ======
 const sessions = new Map();
@@ -1830,6 +1839,145 @@ async function findDriverByPhone(phoneRaw) {
   return { ok: true, found: false };
 }
 
+/**
+ * Поиск водителя по номеру водительского удостоверения
+ * licenseCandidatesRaw — строка или массив вариантов (серия+номер в разных форматах)
+ */
+async function findDriverByLicense(licenseCandidatesRaw) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, found: false, error: cfg.message };
+  }
+
+  // Собираем кандидатов
+  let candidates = [];
+  if (Array.isArray(licenseCandidatesRaw)) {
+    candidates = licenseCandidatesRaw.filter(Boolean);
+  } else if (licenseCandidatesRaw) {
+    candidates = [licenseCandidatesRaw];
+  }
+
+  const countryCode = (FLEET_DEFAULT_LICENSE_COUNTRY || "UZB").toUpperCase();
+
+  // Нормализуем коды ВУ так же, как мы отдаем их в Яндекс
+  const normalizedSet = new Set();
+  const digitsSet = new Set();
+
+  for (const raw of candidates) {
+    const n = normalizeDriverLicenseNumber(
+      countryCode,
+      null,
+      null,
+      raw
+    );
+    if (!n) continue;
+
+    normalizedSet.add(n);
+    digitsSet.add(n.replace(/\D/g, ""));
+  }
+
+  if (!normalizedSet.size && !digitsSet.size) {
+    // Нечего искать — считаем, что просто не нашли
+    return { ok: true, found: false };
+  }
+
+  // Достаём всех водителей парка и смотрим их driver_license
+  const body = {
+    limit: 1000,
+    offset: 0,
+    query: {
+      park: { id: FLEET_PARK_ID },
+    },
+    fields: {
+      driver_profile: [
+        "id",
+        "first_name",
+        "last_name",
+        "middle_name",
+        "driver_license",
+        "phones",
+      ],
+    },
+  };
+
+  const res = await callFleetPost("/v1/parks/driver-profiles/list", body);
+  if (!res.ok) {
+    console.error("findDriverByLicense: fleet error:", res);
+    return { ok: false, found: false, error: res.message };
+  }
+
+  const profiles = (res.data && res.data.driver_profiles) || [];
+  if (!profiles.length) {
+    return { ok: true, found: false };
+  }
+
+  for (const item of profiles) {
+    const dp = (item && item.driver_profile) || {};
+
+    // Достаём номер ВУ у профиля
+    let licenseNumber = null;
+    const lic = dp.driver_license;
+
+    if (Array.isArray(lic) && lic.length) {
+      licenseNumber = lic[0].number || lic[0].license_number || null;
+    } else if (lic && typeof lic === "object") {
+      licenseNumber = lic.number || lic.license_number || null;
+    }
+
+    if (!licenseNumber) continue;
+
+    const n = normalizeDriverLicenseNumber(
+      countryCode,
+      null,
+      null,
+      licenseNumber
+    );
+    if (!n) continue;
+
+    const nDigits = n.replace(/\D/g, "");
+
+    const hit =
+      normalizedSet.has(n) ||
+      digitsSet.has(nDigits);
+
+    if (!hit) continue;
+
+    // Совпадение найдено — собираем инфу по водителю
+    const phonesRaw = [];
+    if (Array.isArray(dp.phones)) {
+      for (const p of dp.phones) {
+        if (!p) continue;
+        if (typeof p === "string") {
+          phonesRaw.push(p);
+        } else if (p.number || p.phone) {
+          phonesRaw.push(p.number || p.phone);
+        }
+      }
+    }
+
+    const phone = phonesRaw[0] || null;
+    const fullName =
+      [dp.last_name, dp.first_name, dp.middle_name]
+        .filter(Boolean)
+        .join(" ") || null;
+    const status =
+      (item.current_status && item.current_status.status) || null;
+
+    return {
+      ok: true,
+      found: true,
+      driver: {
+        id: dp.id || null,
+        name: fullName,
+        phone,
+        status,
+        license_number: n,
+      },
+    };
+  }
+
+  return { ok: true, found: false };
+}
 
 /**
  * Проверка статуса по телефону
@@ -2219,12 +2367,14 @@ async function handleStart(chatId, session) {
             request_contact: true,
           },
         ],
+        [{ text: STOP_REGISTRATION_TEXT }],
       ],
       resize_keyboard: true,
-      one_time_keyboard: true,
+      one_time_keyboard: false,
     },
   });
 }
+
 
 async function askCarBrand(chatId, session) {
   session.step = "waiting_car_brand";
@@ -2366,17 +2516,21 @@ async function askDocVuFront(chatId, session) {
     "📄 Endi haydovchilik guvohnomangizning *old tomonini* rasmga olib yuboring.\n\n" +
     "Foto aniq, yorug‘lik yaxshi, matn o‘qiladigan bo‘lsin. Yaltirash va xiralik bo‘lmasin.";
   await sendTelegramMessage(chatId, text, {
-    reply_markup: { remove_keyboard: true },
     parse_mode: "Markdown",
+    reply_markup: getStopKeyboard(),
   });
 }
+
 
 async function askDocTechFront(chatId, session) {
   session.step = "waiting_tech_front";
   const text =
     "📄 Endi avtomobil *texpasportining old tomonini* yuboring.\n\n" +
     "Foto aniq va to‘liq hujjat ko‘rinadigan bo‘lsin.";
-  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: getStopKeyboard(),
+  });
 }
 
 async function askDocTechBack(chatId, session) {
@@ -2384,8 +2538,12 @@ async function askDocTechBack(chatId, session) {
   const text =
     "📄 Va nihoyat, texpasportning *orqa tomonini* yuboring.\n\n" +
     "Bu yerdan avtomobil yili, kuzov raqami va boshqa ma'lumotlar olinadi.";
-  await sendTelegramMessage(chatId, text, { parse_mode: "Markdown" });
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: getStopKeyboard(),
+  });
 }
+
 
 // Вопрос про Delivery
 async function askDeliveryOption(chatId, session) {
@@ -3294,9 +3452,23 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: "OK" };
   }
 
-  const chatId = msg.chat.id;
-  const text = msg.text || "";
+ const chatId = msg.chat.id;
+  const text = (msg.text || "").trim();
   let session = getSession(chatId);
+
+  // ⛔ Глобальная остановка регистрации
+  if (text === STOP_REGISTRATION_TEXT) {
+    resetSession(chatId);
+    await sendTelegramMessage(
+      chatId,
+      "Ro‘yxatdan o‘tish jarayoni to‘xtatildi.\n\n" +
+        "Qaytadan boshlamoqchi bo‘lsangiz, /start yuboring."
+    );
+    return {
+      statusCode: 200,
+      body: "OK",
+    };
+  }
 
   // /start с payload
   if (text && text.startsWith("/start")) {

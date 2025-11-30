@@ -1788,6 +1788,10 @@ async function callFleetGet(path, query) {
  * Начисление бонуса водителю через Transactions API
  * v3 /parks/driver-profiles/transactions
  */
+/**
+ * Начисление бонуса водителю через Transactions API
+ * v3 /parks/driver-profiles/transactions
+ */
 async function createDriverBonusTransaction(driverId, amount, description) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) {
@@ -1800,7 +1804,9 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  const data = {
+  // 🔴 ВАЖНО: park_id ДОЛЖЕН быть в теле, а не в query
+  const body = {
+    park_id: FLEET_PARK_ID,                             // 👈 вот это критично
     contractor_profile_id: driverId,
     category_id: FLEET_BONUS_CATEGORY_ID,
     amount: String(amount),
@@ -1809,12 +1815,8 @@ async function createDriverBonusTransaction(driverId, amount, description) {
       "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
   };
 
-  const body = { data };
-
   const res = await callFleetPostIdempotent(
-    `/v3/parks/driver-profiles/transactions?park_id=${encodeURIComponent(
-      FLEET_PARK_ID
-    )}`,
+    "/v3/parks/driver-profiles/transactions",           // 👈 без ?park_id=
     body,
     idempotencyKey
   );
@@ -1826,6 +1828,7 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   return { ok: true, data: res.data };
 }
+
 
 
 
@@ -4224,6 +4227,28 @@ exports.handler = async (event) => {
     }
 
     const session = getSession(chatId);
+  // 🔁 Повтор авто-регистрации (водитель+авто или только авто)
+  if (data === "retry_autoreg") {
+    try {
+      if (session.registrationFlow === "car_only") {
+        // 2-й этап: только автомобиль
+        await autoRegisterCarOnly(chatId, session);
+      } else {
+        // 1+2-й этап: водитель + авто
+        await autoRegisterInYandexFleet(chatId, session);
+      }
+    } catch (e) {
+      console.error("retry_autoreg error:", e);
+      await sendTelegramMessage(
+        chatId,
+        "❗️ Qayta avtomatik ro‘yxatdan o‘tishda xatolik yuz berdi. " +
+          "Iltimos, birozdan keyin yana urinib ko‘ring yoki operatorga yozing: @AsrTaxiAdmin."
+      );
+    }
+
+    await answerCallbackQuery(cq.id);
+    return { statusCode: 200, body: "OK" };
+  }
 
     // выбор бренда
     if (data.startsWith("car_brand:")) {

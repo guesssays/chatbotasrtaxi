@@ -24,6 +24,8 @@ const FLEET_API_URL = process.env.FLEET_API_URL || null;
 const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
 const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || null;
 const FLEET_PARK_ID = process.env.FLEET_PARK_ID || null;
+const FLEET_BONUS_CATEGORY_ID =
+  process.env.FLEET_BONUS_CATEGORY_ID || "partner_service";
 
 // из ТЗ про условия работы и оплату:
 const FLEET_WORK_RULE_ID_DEFAULT =
@@ -1298,7 +1300,8 @@ async function createDriverBonusTransaction(driverId, amount, description) {
     park_id: FLEET_PARK_ID,
 
     // ВАЖНО: тип операции – пополнение баланса водителя
-    category_id: "partner_service", // или свой category_id из настроек парка
+category_id: FLEET_BONUS_CATEGORY_ID,
+// или свой category_id из настроек парка
     // amount — строкой, в минимальных единицах валюты (например, копейки/тийин)
     amount: String(amount),
 
@@ -2890,12 +2893,16 @@ async function autoRegisterInYandexFleet(chatId, session) {
           `Telefon: \`${phone || "—"}\`\n` +
           `Xato: ${bonusRes.error || "noma'lum"}`
       );
-    } else {
-      await sendTelegramMessage(
-        chatId,
-        "💰 Ro‘yxatdan o‘tganingiz uchun *50 000 so‘m bonus* hisobingizga qo‘shildi."
-      );
-    }
+} else {
+  const prettyAmount = DRIVER_REGISTRATION_BONUS_AMOUNT.toLocaleString("ru-RU");
+
+  await sendTelegramMessage(
+    chatId,
+    `💰 Ro‘yxatdan o‘tganingiz uchun *${prettyAmount} so‘m bonus* hisobingizga qo‘shildi.`,
+    { parse_mode: "Markdown" }
+  );
+}
+
   }
 
   // ========== ЭТАП 2/2: СОЗДАНИЕ/ПРИВЯЗКА АВТОМОБИЛЯ ==========

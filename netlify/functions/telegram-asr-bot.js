@@ -1,5 +1,4 @@
 // netlify/functions/telegram-asr-bot.js
-console.log("FLEET_PARK_ID env in asr-bot:", FLEET_PARK_ID);
 
 const TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN;
 const TELEGRAM_API = TELEGRAM_TOKEN

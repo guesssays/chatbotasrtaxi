@@ -396,7 +396,7 @@ const TARIFF_RULES = {
       start: true,
       comfort: { minYear: 2019 },
     },
-    "Nexia 3": {
+    "Nexia": {
       start: true,
       comfort: { minYear: 2019 },
     },
@@ -850,7 +850,9 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
   const vu = docs.find((d) => d.docType === "vu_front");
   const tFront = docs.find((d) => d.docType === "tech_front");
   const tBack = docs.find((d) => d.docType === "tech_back");
-  const hasCarDocs = Boolean(tFront || tBack);   // 👈 вот это главное
+
+  const hasDriverDoc = Boolean(vu);
+  const hasCarDocs = Boolean(tFront || tBack);  // 👈 вот это главное
   const fVu =
     (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
   const fTf =
@@ -895,18 +897,20 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
 
   const lines = [];
 
-  lines.push("👤 Haydovchi ma'lumotlari");
-  lines.push("");
-  lines.push(`1. Familiya: ${fam || "—"}`);
-  lines.push(`2. Ism: ${name || "—"}`);
-  lines.push(`3. Otasining ismi: ${otch || "—"}`);
-  lines.push(`4. Tug‘ilgan sana: ${fVu.birth_date || "—"}`);
-  lines.push(
-    `5. Haydovchilik guvohnomasi (seriya va raqam): ${licenseFull || "—"}`
-  );
-  lines.push(`6. Berilgan sana: ${fVu.issued_date || "—"}`);
-  lines.push(`7. Amal qilish muddati: ${fVu.expiry_date || "—"}`);
-  lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
+  if (hasDriverDoc) {
+    lines.push("👤 Haydovchi ma'lumotlari");
+    lines.push("");
+    lines.push(`1. Familiya: ${fam || "—"}`);
+    lines.push(`2. Ism: ${name || "—"}`);
+    lines.push(`3. Otasining ismi: ${otch || "—"}`);
+    lines.push(`4. Tug‘ilgan sana: ${fVu.birth_date || "—"}`);
+    lines.push(
+      `5. Haydovchilik guvohnomasi (seriya va raqam): ${licenseFull || "—"}`
+    );
+    lines.push(`6. Berilgan sana: ${fVu.issued_date || "—"}`);
+    lines.push(`7. Amal qilish muddati: ${fVu.expiry_date || "—"}`);
+    lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
+  }
 
    // 🚗 авто – ТОЛЬКО если есть техпаспорт
   if (hasCarDocs) {
@@ -1319,18 +1323,16 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
+  // 🔴 ОБЯЗАТЕЛЬНАЯ ОБЁРТКА data ДЛЯ v3
   const body = {
-    // 🔴 ВАЖНО: именно contractor_profile_id
-    contractor_profile_id: driverId,
-    // Можно (но не обязательно) продублировать:
-    // driver_profile_id: driverId,
-
-    park_id: FLEET_PARK_ID,
-    category_id: FLEET_BONUS_CATEGORY_ID,
-    amount: String(amount),
-    description:
-      description ||
-      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+    data: {
+      contractor_profile_id: driverId,
+      category_id: FLEET_BONUS_CATEGORY_ID,
+      amount: String(amount),
+      description:
+        description ||
+        "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+    },
   };
 
   const res = await callFleetPostIdempotent(
@@ -1346,6 +1348,7 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   return { ok: true, data: res.data };
 }
+
 
 
 
@@ -3579,7 +3582,7 @@ async function handleDocumentPhoto(update, session, docType) {
       // Bu yerda biz 2-bosqichdamiz — faqat avtomobil qo‘shilmoqda
       session.registrationFlow = "car_only";
 
-      await askDeliveryOption(chatId, session);
+    await startFirstConfirmation(chatId, session);
 
     }
   }
@@ -3922,28 +3925,28 @@ if (data === "confirm2_yes") {
   session.confirmStage = "second";
   session.step = "finished";
 
-  await autoRegisterInYandexFleet(chatId, session);
+  if (session.registrationFlow === "car_only") {
+    await autoRegisterCarOnly(chatId, session);
+  } else {
+    await autoRegisterInYandexFleet(chatId, session);
+  }
+
   await answerCallbackQuery(cq.id);
   return { statusCode: 200, body: "OK" };
 }
-    // повторная попытка авто-регистрации (водитель или авто)
-    if (data === "retry_autoreg") {
-      await sendTelegramMessage(
-        chatId,
-        "🔁 Qayta urinib ko‘ryapmiz. Iltimos, bir necha soniya kuting..."
-      );
-
-      if (session.registrationFlow === "car_only") {
-        await autoRegisterCarOnly(chatId, session);
-      } else {
-        await autoRegisterInYandexFleet(chatId, session);
-      }
-
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
 
 
+// 🔁 Повторить авто-регистрацию после ошибки (кнопка "Qayta urinib ko‘rish")
+if (data === "retry_autoreg") {
+  if (session.registrationFlow === "car_only") {
+    await autoRegisterCarOnly(chatId, session);
+  } else {
+    await autoRegisterInYandexFleet(chatId, session);
+  }
+
+  await answerCallbackQuery(cq.id);
+  return { statusCode: 200, body: "OK" };
+}
 
 // 🔧 Одиночное редактирование конкретного поля из предпоказа
 if (data.startsWith("edit_one:")) {

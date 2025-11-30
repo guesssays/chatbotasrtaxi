@@ -1189,16 +1189,25 @@ function getFieldValue(session, key) {
 
 function setFieldValue(session, key, value) {
   const d = session.data || (session.data = {});
+
   if (key === "carModelLabel") {
     session.carModelLabel = value;
     d.carModelLabel = value;
+
   } else if (key === "carColor") {
     session.carColor = value;
     d.carColor = value;
+
+  } else if (key === "pinfl") {
+    // 👉 при ручном редактировании считаем, что это именно PINFL водителя
+    d.pinfl = value;
+    d.driverPinfl = value;
+
   } else {
     d[key] = value;
   }
 }
+
 
 // ===== YANDEX FLEET API HELPERS =====
 

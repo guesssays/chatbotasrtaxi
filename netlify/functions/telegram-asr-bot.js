@@ -388,15 +388,12 @@ const CARGO_SIZES = {
 
 // ===== ТАРИФЫ: правила (по ТЗ) =====
 const TARIFF_RULES = {
-  // ... (ВСЯ твоя большая структура TARIFF_RULES БЕЗ ИЗМЕНЕНИЙ)
-  // Я её не сокращаю комментариями в реальном файле — оставь как есть из своей версии.
-  // Тут пропусти, чтобы ответ не раздувать, но в проекте просто оставь как было.
   CHEVROLET: {
     Cobalt: {
       start: true,
       comfort: { minYear: 2019 },
     },
-    "Nexia": {
+    "Nexia 3": {
       start: true,
       comfort: { minYear: 2019 },
     },
@@ -494,8 +491,488 @@ const TARIFF_RULES = {
     },
   },
 
-  // ... остальные бренды BYD / CHERY / CHANGAN / JAC / GEELY / HYUNDAI / KIA / LEAPMOTOR
-  // тут ничего не менял, оставь свой код как был
+  RAVON: {
+    "Nexia R3": {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    R4: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Gentra: {
+      start: true,
+      comfort: { minYear: 2015 },
+    },
+  },
+
+  DAEWOO: {
+    Matiz: {
+      start: true,
+    },
+    Tico: {
+      // только Delivery по ТЗ, но здесь это только Start
+      start: true,
+    },
+    Damas: {
+      // Delivery / Cargo по ТЗ
+      start: true,
+    },
+    Labo: {
+      // Delivery / Cargo по ТЗ
+      start: true,
+    },
+    "Gentra (доузб.)": {
+      start: true,
+    },
+    Kalos: {
+      start: true,
+    },
+    "Lacetti (старый)": {
+      start: true,
+    },
+    Lanos: {
+      start: true,
+    },
+    Leganza: {
+      start: true,
+      comfort: { minYear: 2004 },
+    },
+    Magnus: {
+      start: true,
+      comfort: { minYear: 2006 },
+    },
+    Nubira: {
+      start: true,
+    },
+    Tacuma: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Winstorm: {
+      start: true,
+      comfort: { minYear: 2006 },
+    },
+    Sens: {
+      start: true,
+    },
+  },
+
+  BYD: {
+    E2: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    Chazor: {
+      start: true,
+      comfort: { minYear: 2022 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    "Qin Plus": {
+      start: true,
+      comfort: { minYear: 2018 },
+      comfortPlus: { minYear: 0 },
+    },
+    "Qin Pro": {
+      start: true,
+    },
+    Han: {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      business: { minYear: 2020 },
+      electro: true,
+    },
+    Seagull: {
+      start: true,
+      electro: true,
+    },
+    "Song Plus": {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      // EV-версия — электро; в рамках одной модели считаем как Electro
+      electro: true,
+    },
+    Tang: {
+      start: true,
+      comfort: { minYear: 2015 },
+      comfortPlus: { minYear: 0 },
+    },
+    Yuan: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+  },
+
+  CHERY: {
+    "Arrizo 6 Pro": {
+      start: true,
+      comfort: { minYear: 2023 },
+    },
+    "Arrizo 7": {
+      start: true,
+      comfort: { minYear: 2013 },
+    },
+    "Tiggo 2": {
+      start: true,
+    },
+    "Tiggo 3": {
+      start: true,
+    },
+    "Tiggo 4": {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Tiggo 4 Pro": {
+      start: true,
+      comfort: { minYear: 2020 },
+    },
+    "Tiggo 7": {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Tiggo 7 Pro": {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    "Tiggo 7 Pro Max": {
+      start: true,
+      comfortPlus: { minYear: 2022 },
+    },
+    "Tiggo 8": {
+      start: true,
+      comfort: { minYear: 2018 },
+    },
+    "Tiggo 8 Pro": {
+      start: true,
+      comfort: { minYear: 2021 },
+      comfortPlus: { minYear: 2021 },
+      business: { minYear: 2021 },
+    },
+    "Tiggo 8 Pro Max": {
+      start: true,
+      comfortPlus: { minYear: 2022 },
+    },
+    EQ5: {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 2020 },
+      electro: true,
+    },
+    eQ7: {
+      start: true,
+      comfortPlus: { minYear: 2023 },
+      business: { minYear: 2023 }, // "частично" в ТЗ
+      electro: true,
+    },
+  },
+
+  CHANGAN: {
+    Alsvin: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    CS35: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "CS35 Plus": {
+      start: true,
+    },
+    CS55: {
+      start: true,
+      comfort: { minYear: 2017 },
+      comfortPlus: { minYear: 2018 },
+    },
+    CS75: {
+      start: true,
+      comfort: { minYear: 2014 },
+      business: { minYear: 2021 },
+    },
+    Eado: {
+      start: true,
+      comfort: { minYear: 2013 },
+      comfortPlus: { minYear: 2018 },
+    },
+    "UNI-T": {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    "New Van": {
+      start: true,
+    },
+    "A600 EV": {
+      start: true,
+      electro: true,
+    },
+  },
+
+  JAC: {
+    J5: {
+      start: true,
+      comfort: { minYear: 2014 },
+    },
+    J7: {
+      start: true,
+      comfortPlus: { minYear: 2020 },
+    },
+    JS4: {
+      start: true,
+    },
+    S3: {
+      start: true,
+      comfort: { minYear: 2014 },
+    },
+    S5: {
+      start: true,
+      comfort: { minYear: 2013 },
+    },
+    iEV7S: {
+      start: true,
+      electro: true,
+    },
+  },
+
+  GEELY: {
+    Atlas: {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Atlas Pro": {
+      start: true,
+      comfort: { minYear: 2021 },
+    },
+    Coolray: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Emgrand 7": {
+      start: true,
+      comfort: { minYear: 2016 },
+    },
+    "Emgrand EC7": {
+      start: true,
+      comfort: { minYear: 2009 },
+    },
+    "Emgrand GT": {
+      start: true,
+      comfort: { minYear: 2015 },
+      business: { minYear: 2015 }, // частично
+    },
+    "Geometry C": {
+      start: true,
+      comfort: { minYear: 2020 },
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    Tugella: {
+      start: true,
+      comfort: { minYear: 2019 },
+      comfortPlus: { minYear: 0 },
+      business: { minYear: 2019 },
+    },
+    TX4: {
+      start: true,
+    },
+  },
+
+  HYUNDAI: {
+    Accent: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Accent Blue": {
+      start: true,
+    },
+    Avante: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Elantra: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Sonata: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    "Sonata Turbo": {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    i30: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    i40: {
+      start: true,
+      comfort: { minYear: 2011 },
+      comfortPlus: { minYear: 2012 },
+    },
+    Tucson: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    "Santa Fe": {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Creta: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Venue: {
+      start: true,
+    },
+    Getz: {
+      start: true,
+    },
+    Grandeur: {
+      start: true,
+      comfort: { minYear: 2010 },
+      comfortPlus: { minYear: 2010 },
+      business: { minYear: 2019 },
+    },
+    Equus: {
+      start: true,
+      comfortPlus: { minYear: 2010 },
+      business: { minYear: 2015 },
+    },
+    Ioniq: {
+      start: true,
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    "Ioniq 5": {
+      start: true,
+      comfortPlus: { minYear: 0 },
+      electro: true,
+    },
+    Staria: {
+      start: true,
+    },
+  },
+
+  KIA: {
+    Rio: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Optima: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+    },
+    K5: {
+      start: true,
+      comfort: { minYear: 2010 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    K3: {
+      start: true,
+      comfort: { minYear: 2012 },
+    },
+    Cerato: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Forte: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Cadenza: {
+      start: true,
+    },
+    K7: {
+      start: true,
+    },
+    K8: {
+      start: true,
+      comfortPlus: { minYear: 2021 },
+    },
+    Sorento: {
+      start: true,
+      comfort: { minYear: 2006 },
+      comfortPlus: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Sportage: {
+      start: true,
+      comfort: { minYear: 2012 },
+      comfortPlus: { minYear: 2018 },
+    },
+    Soul: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    "Soul EV": {
+      start: true,
+      electro: true,
+    },
+    Seltos: {
+      start: true,
+      comfort: { minYear: 2019 },
+    },
+    Stinger: {
+      start: true,
+      comfortPlus: { minYear: 2017 },
+      business: { minYear: 2021 },
+    },
+    Carnival: {
+      start: true,
+      comfort: { minYear: 2012 },
+      business: { minYear: 2021 },
+    },
+    Carens: {
+      start: true,
+    },
+    Bongo: {
+      start: true,
+    },
+  },
+
+  LEAPMOTOR: {
+    C01: {
+      start: true,
+      comfort: { minYear: 2022 },
+      comfortPlus: { minYear: 2022 },
+      business: { minYear: 2022 },
+      electro: true,
+    },
+    C10: {
+      start: true,
+      electro: true,
+    },
+    C11: {
+      start: true,
+      comfort: { minYear: 2021 },
+      comfortPlus: { minYear: 2021 },
+      business: { minYear: 2021 },
+      electro: true,
+    },
+    T03: {
+      start: true,
+      electro: true,
+    },
+  },
 };
 
 
@@ -1323,20 +1800,21 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  // 🔴 ОБЯЗАТЕЛЬНАЯ ОБЁРТКА data ДЛЯ v3
-  const body = {
-    data: {
-      contractor_profile_id: driverId,
-      category_id: FLEET_BONUS_CATEGORY_ID,
-      amount: String(amount),
-      description:
-        description ||
-        "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
-    },
+  const data = {
+    contractor_profile_id: driverId,
+    category_id: FLEET_BONUS_CATEGORY_ID,
+    amount: String(amount),
+    description:
+      description ||
+      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
   };
 
+  const body = { data };
+
   const res = await callFleetPostIdempotent(
-    "/v3/parks/driver-profiles/transactions",
+    `/v3/parks/driver-profiles/transactions?park_id=${encodeURIComponent(
+      FLEET_PARK_ID
+    )}`,
     body,
     idempotencyKey
   );

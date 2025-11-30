@@ -627,16 +627,14 @@ const EDIT_FIELDS_DRIVER = [
 ];
 
 
-// Поля ЭТАПА 2: только автомобиль / техпаспорт
+// Поля ЭТАПА 2: только автомобиль (без серии/номера техпаспорта и номера кузова)
 const EDIT_FIELDS_CAR = [
-  { key: "techSeries", label: "Texpasport seriyasi" },
-  { key: "techNumber", label: "Texpasport raqami" },
   { key: "plateNumber", label: "Davlat raqami" },
   { key: "carYear", label: "Avtomobil chiqarilgan yili" },
-  { key: "bodyNumber", label: "Kuzov raqami" },
   { key: "carModelLabel", label: "Avtomobil modeli" },
   { key: "carColor", label: "Avtomobil rangi" },
 ];
+
 
 // Вспомогательная функция: какие поля показывать именно СЕЙЧАС
 function getEditFieldsForSession(session) {
@@ -841,8 +839,6 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   lines.push(`Модель: ${model}`);
   lines.push(`Цвет: ${colorDocOrForm}`);
   lines.push(`Год выпуска авто: ${carYear}`);
-  lines.push(`Номер кузова: ${bodyNumber}`);
-  lines.push(`Серия тех паспорта: ${techSeries}`);
 
   return lines.join("\n");
 }
@@ -914,16 +910,6 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
 
    // 🚗 авто – ТОЛЬКО если есть техпаспорт
   if (hasCarDocs) {
-    const techSeries = (fTb.tech_series || "").trim();
-    const techNumber = (fTb.tech_number || "").trim();
-    const techFullFromField = (fTb.tech_full || "").trim();
-    const techFullCombined = `${techSeries} ${techNumber}`.trim();
-    const techFull = techFullFromField || techFullCombined || "—";
-
-    const finalCarColor = fTf.car_color_text || carColor || "—";
-    const finalCarModelForm = carModel || "—";
-    const finalCarModelDoc = fTf.car_model_text || "—";
-
     lines.push("");
     lines.push("🚗 Avtomobil ma'lumotlari");
     lines.push("");
@@ -932,8 +918,6 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
     lines.push(`3. Model (botda tanlangan): ${finalCarModelForm}`);
     lines.push(`4. Rangi: ${finalCarColor}`);
     lines.push(`5. Chiqarilgan yili: ${fTb.car_year || "—"}`);
-    lines.push(`6. Kuzov/shassi raqami: ${fTb.body_number || "—"}`);
-    lines.push(`7. Texpasport (seriya va raqam): ${techFull}`);
 
     if (isCargo) {
       lines.push("");
@@ -2975,6 +2959,10 @@ async function autoRegisterCarOnly(chatId, session) {
   const brandLabel = session.carBrandLabel;
   const phone = session.phone || d.phone;
 
+  // 2-bosqichga kirganimizda «avtomobilsiz» flagini qayta hisoblaymiz
+  // (1-bosqichdan qolgan true bo‘lsa, mashina hech qachon yaratilmadi).
+  session.registerWithoutCar = false;
+
   // Agar Fleet sozlanmagan bo‘lsa
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) {
@@ -3340,14 +3328,44 @@ async function autoRegisterCarOnly(chatId, session) {
     }
   }
 
-  // ===== ЛОГИ ДЛЯ ОПЕРАТОРОВ (КАК БЫЛО) =====
+  // ===== ЛОГИ ДЛЯ ОПЕРАТОРОВ И ЗАВЕРШЕНИЕ ЭТАПА 1 =====
 
+  // Если документов на авто ещё нет — это чистый 1-й этап:
+  // зарегистрировали только водителя и сразу запускаем этап добавления автомобиля.
+  if (!hasCarDocs) {
+    await sendDocsToOperators(chatId, session, {
+      note:
+        "Регистрация ВОДИТЕЛЯ без автомобиля (этап 1). Далее водитель добавит авто через бота (этап 2).",
+    });
+
+    const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
+
+    let finishText =
+      "🎉 Siz Yandex tizimida haydovchi sifatida muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n" +
+      `Ulanilgan tariflar: *${tariffStr}*.\n\n` +
+      "Endi 2-bosqichga o‘tamiz — *avtomobilni qo‘shish*.";
+
+    if (session.wantsDelivery) {
+      finishText +=
+        "\n\n📦 Delivery buyurtmalarini ulash imkoniyati mavjud (park siyosatiga qarab).";
+    }
+
+    await sendTelegramMessage(chatId, finishText, {
+      parse_mode: "Markdown",
+    });
+
+    // сразу начинаем сценарий добавления авто
+    session.registrationFlow = "car_only";
+    await askCarBrand(chatId, session);
+    return;
+  }
+
+  // Если авто уже создаём в этой же функции (старый сценарий с техпаспортом)
   await sendDocsToOperators(chatId, session, {
     note: session.registerWithoutCar
       ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ*. Автомобиль нужно будет добавить позже (через бота или вручную оператором)."
       : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
-
 
   const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
@@ -3362,18 +3380,15 @@ async function autoRegisterCarOnly(chatId, session) {
   }
   if (session.registerWithoutCar) {
     if (!hasCarDocs) {
-      // нормальный сценарий: сделали только 1 этап
       finishText +=
         "\n\nℹ️ Hozircha siz *avtomobilsiz* ro‘yxatdan o‘tgansiz.\n" +
         "Keyinroq bot menyusidagi «🚗 Avtomobil qo‘shish» tugmasi orqali mashinani qo‘shishingiz mumkin.";
     } else {
-      // авто было, но не создалось
       finishText +=
         "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi yoki avtomatik qo‘shib bo‘lmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
         "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
     }
   }
-
 
   await sendTelegramMessage(chatId, finishText, {
     parse_mode: "Markdown",

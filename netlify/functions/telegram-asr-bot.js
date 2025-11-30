@@ -2902,56 +2902,6 @@ async function askNextEditField(chatId, session) {
 }
 
 
-// ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET =====
-
-// ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET (2 ЭТАПА) =====
-
-async function autoRegisterInYandexFleet(chatId, session) {
-  const d = session.data || {};
-  const brandCode = session.carBrandCode;
-  const brandLabel = session.carBrandLabel;
-  const phone = session.phone || d.phone;
-  const hasCarDocs =
-    session.docs &&
-    (session.docs.tech_front || session.docs.tech_back);
-
-  // 1) Определяем тарифы по машине / грузовой
-  let tariffsInfo = { tariffs: [], hasRules: false };
-
-  if (brandCode && !session.isCargo) {
-    const shortModel =
-      (session.carModelLabel || "").replace(`${brandLabel} `, "").trim();
-    tariffsInfo = getTariffsForCar(brandCode, shortModel, d.carYear);
-    session.assignedTariffs = tariffsInfo.tariffs || [];
-  } else if (session.isCargo) {
-    session.assignedTariffs = ["Cargo"];
-    tariffsInfo = { tariffs: ["Cargo"], hasRules: true };
-  }
-
-  // если по машине не нашли правил — считаем, что авто может быть только вручную
-  if (!tariffsInfo.hasRules) {
-    session.registerWithoutCar = true;
-  }
-
-  // 2) Разбираем марку/модель из выбранного текста
-  const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
-  const nowYear = new Date().getFullYear();
-  const carYearInt = parseInt(d.carYear, 10);
-
-  // Можно ли вообще пытаться создать авто?
-  let canCreateCar = !session.registerWithoutCar;
-  if (canCreateCar) {
-    if (!brand || !d.plateNumber) {
-      canCreateCar = false;
-      session.registerWithoutCar = true;
-    }
-  }
-  if (canCreateCar) {
-    if (!carYearInt || carYearInt < 1980 || carYearInt > nowYear + 1) {
-      canCreateCar = false;
-      session.registerWithoutCar = true;
-    }
-  }
 // ===== 2-bosqich: faqat avtomobilni yaratish va haydovchiga biriktirish =====
 async function autoRegisterCarOnly(chatId, session) {
   const d = session.data || {};
@@ -3135,6 +3085,56 @@ async function autoRegisterCarOnly(chatId, session) {
 
   session.step = "driver_menu";
 }
+
+// ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET (2 ЭТАПА) =====
+
+async function autoRegisterInYandexFleet(chatId, session) {
+  const d = session.data || {};
+  const brandCode = session.carBrandCode;
+  const brandLabel = session.carBrandLabel;
+  const phone = session.phone || d.phone;
+  const hasCarDocs =
+    session.docs &&
+    (session.docs.tech_front || session.docs.tech_back);
+
+  // 1) Определяем тарифы по машине / грузовой
+  let tariffsInfo = { tariffs: [], hasRules: false };
+
+  if (brandCode && !session.isCargo) {
+    const shortModel =
+      (session.carModelLabel || "").replace(`${brandLabel} `, "").trim();
+    tariffsInfo = getTariffsForCar(brandCode, shortModel, d.carYear);
+    session.assignedTariffs = tariffsInfo.tariffs || [];
+  } else if (session.isCargo) {
+    session.assignedTariffs = ["Cargo"];
+    tariffsInfo = { tariffs: ["Cargo"], hasRules: true };
+  }
+
+  // если по машине не нашли правил — считаем, что авто может быть только вручную
+  if (!tariffsInfo.hasRules) {
+    session.registerWithoutCar = true;
+  }
+
+  // 2) Разбираем марку/модель из выбранного текста
+  const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
+  const nowYear = new Date().getFullYear();
+  const carYearInt = parseInt(d.carYear, 10);
+
+  // Можно ли вообще пытаться создать авто?
+  let canCreateCar = !session.registerWithoutCar;
+  if (canCreateCar) {
+    if (!brand || !d.plateNumber) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+  if (canCreateCar) {
+    if (!carYearInt || carYearInt < 1980 || carYearInt > nowYear + 1) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+
 
   // ========== ЭТАП 1/2: СОЗДАНИЕ ПРОФИЛЯ ВОДИТЕЛЯ ==========
 

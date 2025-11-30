@@ -19,12 +19,6 @@ const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID 
 
 const LOG_CHAT_ID = process.env.LOG_CHAT_ID || null;
 
-// ===== Google Sheets / бонусы (через вебхук) =====
-const GSHEETS_WEBHOOK_URL = process.env.GSHEETS_WEBHOOK_URL || null;
-
-// Одноразовый бонус за регистрацию
-const BONUS_AMOUNT = 50000; // сум
-
 // ===== Yandex Fleet API (Park) =====
 const FLEET_API_URL = process.env.FLEET_API_URL || null;
 const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
@@ -128,39 +122,36 @@ function getSession(chatId) {
       carColorCode: null,
 
       isCargo: false,
-      cargoSizeCode: null,
-      cargoDimensions: null,
+      cargoSizeCode: null, // S/M/L/XL/XXL label
+      cargoDimensions: null, // {length,width,height}
 
-      assignedTariffs: [],
+      assignedTariffs: [], // ['Start','Comfort',...]
       registerWithoutCar: false,
 
+      // AI-распознанные документы
       docs: {
         vu_front: null,
         tech_front: null,
         tech_back: null,
       },
 
+      // агрегированные данные для редактирования
       data: {},
 
-      confirmStage: "none",
+      // подтверждения / редактирование
+      confirmStage: "none", // none | first | second
       editIndex: 0,
       editAwaitingValue: false,
       currentFieldKey: null,
 
+      // hunter / delivery (из ТЗ)
       isHunterReferral: false,
       hunterCode: null,
       wantsDelivery: false,
-
-      // 🔴 НОВОЕ: бонус / друг
-      bonusGiven: false,
-      isFriendRegistration: false,
-      inviterDriverId: null,
-      inviterPhone: null,
     });
   }
   return sessions.get(chatId);
 }
-
 
 function resetSession(chatId) {
   sessions.delete(chatId);
@@ -181,10 +172,12 @@ function makeCarCode(label) {
     .slice(0, 60);
 }
 
+// парсинг /start payload для hunter и других меток
 function applyStartPayloadToSession(session, payloadRaw) {
   if (!payloadRaw) return;
   const payload = String(payloadRaw).trim();
 
+  // пример: /start hunter_12345
   if (payload.toLowerCase().startsWith("hunter_")) {
     session.isHunterReferral = true;
     session.hunterCode = payload.slice("hunter_".length);
@@ -197,16 +190,8 @@ function applyStartPayloadToSession(session, payloadRaw) {
     return;
   }
 
-  // 🔴 НОВОЕ: регистрация друга по реф-ссылке
-  if (payload.toLowerCase().startsWith("friend_")) {
-    session.isFriendRegistration = true;
-    session.inviterDriverId = payload.slice("friend_".length);
-    return;
-  }
-
-  // другие варианты...
+  // другие варианты реферальных меток можно обработать здесь
 }
-
 
 // ===== МАРКИ / МОДЕЛИ / ГРУЗОВЫЕ =====
 
@@ -1388,67 +1373,6 @@ async function bindCarToDriver(driverId, vehicleId) {
   }
 }
 
-// ===== YANDEX FLEET: НАЧИСЛЕНИЕ БОНУСА ЧЕРЕЗ ТРАНЗАКЦИЮ =====
-
-async function createDriverTransaction(driverId, amount, description) {
-  const cfg = ensureFleetConfigured();
-  if (!cfg.ok) {
-    return { ok: false, error: cfg.message };
-  }
-
-  if (!driverId) {
-    return { ok: false, error: "driverId is missing for transaction" };
-  }
-
-  const url = `${FLEET_API_BASE_URL}/v3/parks/driver-profiles/transactions`;
-
-  const body = {
-    park_id: FLEET_PARK_ID,
-    driver_profile_id: driverId,
-    // В Яндекс Флит обычно используется строка с числом в минимальных единицах
-    amount: String(amount),
-    currency: "UZS",
-    category: "partner_service", // при желании можешь потом поменять
-    description: description || "Bonus for registration via ASR TAXI bot",
-  };
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Client-ID": FLEET_CLIENT_ID,
-        "X-API-Key": FLEET_API_KEY,
-        "X-Park-ID": FLEET_PARK_ID,
-      },
-      body: JSON.stringify(body),
-    });
-
-    let json = null;
-    try {
-      json = await res.json();
-    } catch (e) {
-      // если тело пустое — просто игнорируем
-    }
-
-    if (!res.ok) {
-      console.error("createDriverTransaction error:", res.status, json);
-      return {
-        ok: false,
-        status: res.status,
-        error:
-          (json && (json.message || json.code)) ||
-          `Yandex Fleet transactions error: ${res.status}`,
-        raw: json,
-      };
-    }
-
-    return { ok: true, data: json };
-  } catch (e) {
-    console.error("createDriverTransaction exception:", e);
-    return { ok: false, error: String(e) };
-  }
-}
 
 /**
  * Нормализация телефона
@@ -1702,25 +1626,12 @@ async function createCarInFleet(carPayload, session) {
     .map((t) => TARIFF_CATEGORY_MAP[t])
     .filter(Boolean);
 
-  // 🔴 По ТЗ: при создании авто включаем все основные тарифы,
-  // оператор потом отключает лишние.
-  const ALL_TARIFF_CATEGORIES = [
-    "econom",        // Start / Econom
-    "comfort",       // Comfort
-    "comfort_plus",  // Comfort+
-    "electric",      // Electro
-    "business",      // Business
-    "vip",           // Premier
-    "express",       // Delivery / Express
-    "cargo",         // грузовые
-  ];
-
-  for (const c of ALL_TARIFF_CATEGORIES) {
-    if (!categories.includes(c)) categories.push(c);
+  // если водитель хочет Delivery — добавляем категорию express
+  if (session.wantsDelivery) {
+    if (!categories.includes("express")) {
+      categories.push("express");
+    }
   }
-
-  // Если включали Delivery — отмечаем это дополнительно в amenities (ниже)
-
 
   const yearInt = parseInt(carPayload.year, 10);
   const nowYear = new Date().getFullYear();
@@ -2189,11 +2100,7 @@ async function openDriverCabinet(chatId, session, driverInfo) {
     session.isExistingDriver = true;
     session.driverFleetId = driverInfo.id || null;
     session.driverName = driverInfo.name || null;
-    if (driverInfo.phone) {
-      session.inviterPhone = driverInfo.phone;
-    }
   }
-
   session.step = "driver_menu";
 
   const name = session.driverName || "haydovchi";
@@ -2392,33 +2299,18 @@ async function handleMenuAction(chatId, session, action) {
     }
 
     case "invite": {
-      // Формируем реферальную ссылку вида t.me/<bot>?start=friend_<driverId>
-      const driverId = session.driverFleetId || null;
-      const botUsername =
-        process.env.TELEGRAM_BOT_USERNAME || "YOUR_BOT_USERNAME";
-
-      let inviteText =
+      await sendTelegramMessage(
+        chatId,
         "🤝 *Do‘stni taklif qilish*\n\n" +
-        "Do‘stingizni ASR TAXI parkiga taklif qiling va aksiya shartlariga ko‘ra bonuslarga ega bo‘ling.\n\n";
-
-      if (driverId) {
-        const link = `https://t.me/${botUsername}?start=friend_${driverId}`;
-        inviteText +=
-          "Quyidagi havolani do‘stingizga yuboring. U shu havola orqali botni ochib, ro‘yxatdan o‘tadi:\n\n" +
-          `[Do‘stni taklif qilish havolasi](${link})\n\n` +
-          "Do‘st ro‘yxatdan o‘tgandan so‘ng u ham 50 000 so‘м bonus oladi (park qoidalariga muvofiq).";
-      } else {
-        inviteText +=
-          "Hozircha sizning driver ID’ingiz aniqlanmadi. Operator bilan bog‘lanib, referal havolani so‘rashingiz mumkin: @AsrTaxiAdmin.";
-      }
-
-      await sendTelegramMessage(chatId, inviteText, {
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-      });
+          "Aksiya: *har bir taklif qilingan haydovchi 50 ta buyurtma bajargandan so‘ng siz 100 000 so‘m bonus olasiz*.\n\n" +
+          "1. Do‘stingizni shu bot orqali ro‘yxatdan o‘tishga taklif qiling.\n" +
+          "2. Uning telefon raqamini operatorga yuboring.\n" +
+          "3. U 50 ta buyurtma bajargach — sizga 100 000 so‘m bonus beriladi.\n\n" +
+          "Batafsil shartlar uchun: @AsrTaxiAdmin.",
+        { parse_mode: "Markdown" }
+      );
       break;
     }
-
 
 
     case "video": {
@@ -2483,18 +2375,6 @@ async function handleStart(chatId, session) {
   });
 }
 
-async function askPlateNumber(chatId, session) {
-  session.step = "waiting_plate";
-
-  const text =
-    "🚘 Iltimos, avtomobilingizning *davlat raqamini* yozing.\n" +
-    "Masalan: `01A123BC` yoki `01 A 123 BC`.\n\n" +
-    "Raqamni faqat matn bilan yuboring.";
-  await sendTelegramMessage(chatId, text, {
-    parse_mode: "Markdown",
-    reply_markup: getStopKeyboard(),
-  });
-}
 
 async function askCarBrand(chatId, session) {
   session.step = "waiting_car_brand";
@@ -2972,52 +2852,11 @@ async function autoRegisterInYandexFleet(chatId, session) {
       ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (недостаточно данных по авто или модель не найдена в тарифной базе, либо авто не удалось создать автоматически)."
       : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
-  // ===== ЗАПИСЬ В GOOGLE SHEETS =====
-  const nowIso = new Date().toISOString();
-  const fio =
-    [d.lastName, d.firstName, d.middleName].filter(Boolean).join(" ") || null;
-  const carLabel =
-    session.carModelLabel ||
-    [session.carBrandLabel, d.carModelLabel].filter(Boolean).join(" ") ||
-    null;
-
-  const baseRowNormal = {
-    driverId: session.driverFleetId || null,       // ID водителя в Флите
-    phone: phone || null,                          // телефон водителя
-    fio,
-    license: d.licenseFull || null,                // серия + номер В/У
-    pinfl: d.driverPinfl || d.pinfl || null,       // ПИНФЛ водителя
-    plateNumber: d.plateNumber || null,            // госномер
-    carLabel,                                      // марка/модель
-    carYear: d.carYear || null,
-    carColor: session.carColor || d.carColor || null,
-    vin: d.vin || null,
-    registeredAt: nowIso,
-    bonusStatus: "Не выдан",
-    fleetLink: null, // сюда позже можно подставить ссылку на карточку водителя
-  };
-
-  if (session.isFriendRegistration && session.inviterDriverId) {
-    await recordFriendDriverToSheets({
-      inviterDriverId: session.inviterDriverId,
-      inviterPhone: session.inviterPhone || null,
-      friendDriverId: baseRowNormal.driverId,
-      friendPhone: baseRowNormal.phone,
-      friendFio: baseRowNormal.fio,
-      friendPlate: baseRowNormal.plateNumber,
-      friendCarLabel: baseRowNormal.carLabel,
-      registeredAt: baseRowNormal.registeredAt,
-      bonusStatus: baseRowNormal.bonusStatus,
-      operatorComment: "",
-    });
-  } else {
-    await recordNormalDriverToSheets(baseRowNormal);
-  }
 
   const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
   let finishText =
-    "🎉 *Рўйхатдан ўтиш муваффақиятли якунланди.*\n\n" +
+    "🎉 Siz Yandex tizimida muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n" +
     `Ulanilgan tariflar: *${tariffStr}*.\n\n` +
     "Endi sizga faqat *@AsrPulBot* orqali samozanyatlikdan o‘tish qoladi.";
 
@@ -3035,17 +2874,14 @@ async function autoRegisterInYandexFleet(chatId, session) {
   await sendTelegramMessage(chatId, finishText, {
     parse_mode: "Markdown",
     reply_markup: {
-      keyboard: [
-        [{ text: "Меню" }, { text: "50 000 бонус олиш" }],
-      ],
+      keyboard: [[{ text: "🚕 Shaxsiy kabinetni ochish" }]],
       resize_keyboard: true,
     },
   });
 
-  // дальше пользователь может открыть меню или взять бонус
   session.step = "driver_menu";
-
 }
+
 
 // ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
 
@@ -3194,9 +3030,7 @@ async function handleDocumentPhoto(update, session, docType) {
       "✅ Haydovchilik guvohnomasi bo‘yicha Yandex tizimida ro‘yxatdan o‘tmagan.\nEndi avtomobil ma'lumotlarini kiritamiz."
     );
 
-    // 🔴 Сначала просим госномер, как в ТЗ
-    await askPlateNumber(chatId, session);
-
+    await askCarBrand(chatId, session);
   } else if (docType === "tech_front") {
     await askDocTechBack(chatId, session);
   } else if (docType === "tech_back") {
@@ -3288,159 +3122,6 @@ const res = await callFleetGet(
   };
 }
 
-// ====== GOOGLE SHEETS: отправка данных через вебхук ======
-
-async function appendRowToGoogleSheet(payload) {
-  if (!GSHEETS_WEBHOOK_URL) {
-    console.log(
-      "GSHEETS_WEBHOOK_URL is not set, skip Google Sheets append",
-      payload
-    );
-    return { ok: false, skipped: true };
-  }
-
-  try {
-    const res = await fetch(GSHEETS_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await res.text();
-    if (!res.ok) {
-      console.error("appendRowToGoogleSheet error:", res.status, text);
-      return { ok: false, status: res.status, raw: text };
-    }
-
-    return { ok: true };
-  } catch (e) {
-    console.error("appendRowToGoogleSheet exception:", e);
-    return { ok: false, error: String(e) };
-  }
-}
-
-/**
- * Запись обычного водителя (лист «Обычные водители»)
- */
-async function recordNormalDriverToSheets(row) {
-  return appendRowToGoogleSheet({
-    sheet: "Обычные водители",
-    type: "normal_driver",
-    row,
-  });
-}
-
-/**
- * Запись друга (лист «Друзья»)
- */
-async function recordFriendDriverToSheets(row) {
-  return appendRowToGoogleSheet({
-    sheet: "Друзья",
-    type: "friend_driver",
-    row,
-  });
-}
-
-/**
- * Обновление статуса бонуса в Google Sheets
- */
-async function markBonusGivenInSheets(driverId, isFriend) {
-  if (!GSHEETS_WEBHOOK_URL || !driverId) return { ok: false, skipped: true };
-
-  try {
-    const res = await fetch(GSHEETS_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "markBonusGiven",
-        sheet: isFriend ? "Друзья" : "Обычные водители",
-        driverId,
-      }),
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      console.error("markBonusGivenInSheets error:", res.status, txt);
-      return { ok: false, status: res.status, raw: txt };
-    }
-    return { ok: true };
-  } catch (e) {
-    console.error("markBonusGivenInSheets exception:", e);
-    return { ok: false, error: String(e) };
-  }
-}
-/**
- * Начисление одноразового бонуса водителю (реальный вызов Yandex Fleet).
- */
-async function creditBonusToDriver(driverId, amount) {
-  if (!driverId) {
-    return { ok: false, error: "driverId is missing for bonus" };
-  }
-
-  const description = `Bonus for registration via ASR TAXI bot (+${amount} UZS)`;
-
-  const tx = await createDriverTransaction(driverId, amount, description);
-  if (!tx.ok) {
-    console.error("[bonus] creditBonusToDriver failed:", tx);
-    return {
-      ok: false,
-      error: tx.error || "transaction error",
-      raw: tx.raw,
-    };
-  }
-
-  console.log(
-    "[bonus] transaction created for driverId=",
-    driverId,
-    "amount=",
-    amount,
-    "txId=",
-    tx.data && (tx.data.transaction_id || tx.data.id)
-  );
-
-  return { ok: true };
-}
-
-async function handleBonusRequest(chatId, session) {
-  if (!session.driverFleetId) {
-    await sendTelegramMessage(
-      chatId,
-      "Avval Yandex tizimida ro‘yxatdan o‘tishingiz kerak. Ro‘yxatdan o‘tish jarayonini yakunlang, shundan so‘ng bonusni olishingiz mumkin bo‘ladi."
-    );
-    return;
-  }
-
-  if (session.bonusGiven) {
-    await sendTelegramMessage(chatId, "Бонус аллақачон берилган.");
-    return;
-  }
-
-  const driverId = session.driverFleetId;
-  const res = await creditBonusToDriver(driverId, BONUS_AMOUNT);
-
-  if (!res.ok) {
-    await sendTelegramMessage(
-      chatId,
-      "❗️ Бонусни ҳисобга ўтказишда хатолик юз берди. Иложи борича тез орада қайта уриниб кўринг ёки операторга мурожаат қилинг."
-    );
-    return;
-  }
-
-  session.bonusGiven = true;
-
-  // помечаем бонус как выданный в Google Sheets (если настроено)
-  await markBonusGivenInSheets(driverId, !!session.isFriendRegistration);
-
-  await sendTelegramMessage(
-    chatId,
-    "💰 50 000 сум бонус шахсий ҳисобингизга ўтказилди.\n\nРаҳмат, ASR TAXI билан ишлаётганингиз учун!",
-    {
-      reply_markup: {
-        keyboard: [[{ text: "Меню" }]],
-        resize_keyboard: true,
-      },
-    }
-  );
-}
 
 /**
  * Человечное описание статуса водителя (узбекский + оригинальный код)
@@ -3490,24 +3171,12 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
   }
 
   if (found.found && found.driver) {
-    // сохраним данные водителя
-    session.isExistingDriver = true;
-    session.driverFleetId = found.driver.id || null;
-    session.driverName = found.driver.name || null;
-
     await sendTelegramMessage(
       chatId,
-      "Бу рақам билан Яндекс тизимида аллақачон рўйхатдан ўтилган.\n" +
-        "Агар пароль ёки киришда муаммо бўлса, операторга мурожаат қилинг.",
-      {
-        reply_markup: {
-          keyboard: [
-            [{ text: "Меню" }, { text: "❓ Савол бериш (оператор)" }],
-          ],
-          resize_keyboard: true,
-        },
-      }
+      "✅ Siz Yandex tizimida allaqachon ro‘yxatdan o‘tgan ekansiz.\n" +
+        "Endi shaxsiy kabinetni ochamiz."
     );
+    await openDriverCabinet(chatId, session, found.driver);
   } else {
     await sendTelegramMessage(
       chatId,
@@ -3787,8 +3456,7 @@ exports.handler = async (event) => {
   const text = (msg.text || "").trim();
   let session = getSession(chatId);
 
-
-    // ⛔ Глобальная остановка регистрации
+  // ⛔ Глобальная остановка регистрации
   if (text === STOP_REGISTRATION_TEXT) {
     resetSession(chatId);
     await sendTelegramMessage(
@@ -3801,33 +3469,6 @@ exports.handler = async (event) => {
       body: "OK",
     };
   }
-  // Ввод госномера авто текстом (ТЗ: сначала берём госномер)
-  if (session.step === "waiting_plate" && text) {
-    const raw = text.replace(/\s+/g, "").toUpperCase();
-
-    // Простая валидация формата, при желании можно ослабить
-    if (raw.length < 7 || raw.length > 10) {
-      await sendTelegramMessage(
-        chatId,
-        "Davlat raqamini to‘g‘ri formatda yuboring, masalan: 01A123BC."
-      );
-      return { statusCode: 200, body: "OK" };
-    }
-
-    session.data = session.data || {};
-    session.data.plateNumber = raw;
-
-    await sendTelegramMessage(
-      chatId,
-      `🚘 Davlat raqami qabul qilindi: *${raw}*`,
-      { parse_mode: "Markdown" }
-    );
-
-    await askCarBrand(chatId, session);
-    return { statusCode: 200, body: "OK" };
-  }
-
-
 
   // /start с payload
   if (text && text.startsWith("/start")) {
@@ -3857,25 +3498,7 @@ if (
   await handleMenuAction(chatId, session, "status");
   return { statusCode: 200, body: "OK" };
 }
-  // Кнопка "Меню" после проверки номера / регистрации
-  if (text === "Меню") {
-    await openDriverCabinet(chatId, session, {
-      id: session.driverFleetId || null,
-      name: session.driverName || null,
-    });
-    return { statusCode: 200, body: "OK" };
-  }
 
-  // Кнопка "Савол бериш (оператор)" по ТЗ
-  if (text === "❓ Савол бериш (оператор)") {
-    await handleMenuAction(chatId, session, "operator");
-    return { statusCode: 200, body: "OK" };
-  }
-
-  if (text === "50 000 бонус олиш") {
-    await handleBonusRequest(chatId, session);
-    return { statusCode: 200, body: "OK" };
-  }
 
   // Кнопки меню личного кабинета водителя
   if (session.step === "driver_menu") {
@@ -3980,20 +3603,33 @@ if (
   }
 
   // 1) Сначала — если ждём телефон и пришёл текст
-// 1) Если бот ждёт телефон, а пользователь прислал текст — просим отправить контакт
 if (
   (session.step === "waiting_phone" ||
     session.step === "waiting_phone_for_status") &&
   text
 ) {
-  await sendTelegramMessage(
-    chatId,
-    "Iltimos, telefon raqamingizni matn bilan emas, *«📲 Telefon raqamni yuborish»* tugmasi orqali yuboring.",
-    { parse_mode: "Markdown" }
-  );
+  const phoneTyped = text.trim();
+
+  if (session.step === "waiting_phone_for_status") {
+    session.phone = phoneTyped;
+    session.data = session.data || {};
+    session.data.phone = phoneTyped;
+
+    await sendTelegramMessage(
+      chatId,
+      `📞 Telefon qabul qilindi: *${phoneTyped}*`,
+      { parse_mode: "Markdown" }
+    );
+
+    await handleMenuAction(chatId, session, "status");
+    session.step = "driver_menu";
+
+    return { statusCode: 200, body: "OK" };
+  }
+
+  await handlePhoneCaptured(chatId, session, phoneTyped);
   return { statusCode: 200, body: "OK" };
 }
-
 
 // 2) Отдельно — контакт (номер телефона)
 if (msg.contact) {

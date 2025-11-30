@@ -1320,16 +1320,14 @@ async function createDriverBonusTransaction(driverId, amount, description) {
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
   const body = {
-    driver_profile_id: driverId,
+    // 🔴 ВАЖНО: именно contractor_profile_id
+    contractor_profile_id: driverId,
+    // Можно (но не обязательно) продублировать:
+    // driver_profile_id: driverId,
+
     park_id: FLEET_PARK_ID,
-
-    // ВАЖНО: тип операции – пополнение баланса водителя
-    category_id: FLEET_BONUS_CATEGORY_ID, // или свой category_id из настроек парка
-
-    // amount — строкой, в минимальных единицах валюты (тийин/копейки)
+    category_id: FLEET_BONUS_CATEGORY_ID,
     amount: String(amount),
-
-    // необязательное текстовое описание
     description:
       description ||
       "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",

@@ -34,6 +34,9 @@ const FLEET_WORK_RULE_ID_HUNTER =
 // платёжный сервис Яндекса, без него Account не создать
 const FLEET_PAYMENT_SERVICE_ID =
   process.env.FLEET_PAYMENT_SERVICE_ID || null;
+// Сумма приветственного бонуса водителю (в валюте парка, обычно в копейках/тиынах)
+const DRIVER_REGISTRATION_BONUS_AMOUNT =
+  Number(process.env.DRIVER_REGISTRATION_BONUS_AMOUNT || 50000);
 
 // дефолты для профиля водителя / авто
 const FLEET_DEFAULT_LICENSE_COUNTRY =
@@ -122,29 +125,26 @@ function getSession(chatId) {
       carColorCode: null,
 
       isCargo: false,
-      cargoSizeCode: null, // S/M/L/XL/XXL label
-      cargoDimensions: null, // {length,width,height}
+      cargoSizeCode: null,
+      cargoDimensions: null,
 
-      assignedTariffs: [], // ['Start','Comfort',...]
+      assignedTariffs: [],
       registerWithoutCar: false,
 
-      // AI-распознанные документы
       docs: {
         vu_front: null,
         tech_front: null,
         tech_back: null,
       },
 
-      // агрегированные данные для редактирования
       data: {},
 
-      // подтверждения / редактирование
-      confirmStage: "none", // none | first | second
+      confirmStage: "none",    // none | first | second
       editIndex: 0,
       editAwaitingValue: false,
       currentFieldKey: null,
+      editMode: "none",        // "none" | "sequence" | "single"
 
-      // hunter / delivery (из ТЗ)
       isHunterReferral: false,
       hunterCode: null,
       wantsDelivery: false,
@@ -152,6 +152,7 @@ function getSession(chatId) {
   }
   return sessions.get(chatId);
 }
+
 
 function resetSession(chatId) {
   sessions.delete(chatId);
@@ -1275,6 +1276,53 @@ async function callFleetGet(path, query) {
   }
 }
 
+/**
+ * Начисление бонуса водителю через Transactions API
+ * v3 /parks/driver-profiles/transactions
+ */
+async function createDriverBonusTransaction(driverId, amount, description) {
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    return { ok: false, error: cfg.message };
+  }
+
+  if (!driverId) {
+    return { ok: false, error: "driverId не передан для бонусной транзакции" };
+  }
+
+  const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
+
+  const body = {
+    driver_profile_id: driverId,
+    // park_id уже идёт в X-Park-ID, но по v3 чаще всё равно кладут внутрь
+    park_id: FLEET_PARK_ID,
+
+    // ВАЖНО: тип операции – пополнение баланса водителя
+    category_id: "partner_service", // или свой category_id из настроек парка
+    // amount — строкой, в минимальных единицах валюты (например, копейки/тийин)
+    amount: String(amount),
+
+    // необязательное текстовое описание
+    description:
+      description ||
+      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+  };
+
+  const res = await callFleetPostIdempotent(
+    "/v3/parks/driver-profiles/transactions",
+    body,
+    idempotencyKey
+  );
+
+  if (!res.ok) {
+    console.error("createDriverBonusTransaction error:", res);
+    return { ok: false, error: res.message || "transactions error", raw: res.raw };
+  }
+
+  return { ok: true, data: res.data };
+}
+
+
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, message: cfg.message };
@@ -2027,40 +2075,64 @@ async function checkYandexStatus(phone) {
 
 
 function buildDriverMenuKeyboard() {
+  // ASOSIY (GLAVNOE) MENYU
   return {
     keyboard: [
-      // 📊 Раздел "Счет и баланс"
       [{ text: "📊 Hisob va balans" }],
-      [
-        { text: "🩺 Hisob diagnostikasi" },
-        { text: "💳 Balansni to‘ldirish" },
-        { text: "💸 Mablag‘ni yechib olish" },
-      ],
-
-      // 🚕 Раздел "Работа и заказы"
       [{ text: "🚕 Buyurtmalar va ish" }],
-      [
-        { text: "📸 Fotokontrol bo‘yicha yordam" },
-        { text: "📍 GPS xatoliklari" },
-        { text: "🎯 Maqsadlar va bonuslar" },
-      ],
-
-      // 📄 Раздел "Документы"
       [{ text: "📄 Hujjatlar" }],
-      [{ text: "📄 Litsenziya va OSAGO" }],
-
-      // 🤝 Раздел "Связь и бонусы"
       [{ text: "🤝 Aloqa va bonuslar" }],
-      [
-        { text: "🤝 Do‘stni taklif qilish" },
-        { text: "🎥 Video qo‘llanma" },
-        { text: "👨‍💼 Operator bilan aloqa" },
-      ],
     ],
     resize_keyboard: true,
   };
 }
 
+
+function buildBalanceMenuKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "🩺 Hisob diagnostikasi" }],
+      [{ text: "💳 Balansni to‘ldirish" }],
+      [{ text: "💸 Mablag‘ni yechib olish" }],
+      [{ text: "⬅️ Asosiy menyuga qaytish" }],
+    ],
+    resize_keyboard: true,
+  };
+}
+
+function buildWorkMenuKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "📸 Fotokontrol bo‘yicha yordam" }],
+      [{ text: "📍 GPS xatoliklari" }],
+      [{ text: "🎯 Maqsadlar va bonuslar" }],
+      [{ text: "⬅️ Asosiy menyuga qaytish" }],
+    ],
+    resize_keyboard: true,
+  };
+}
+
+function buildDocsMenuKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "📄 Litsenziya va OSAGO" }],
+      [{ text: "⬅️ Asosiy menyuga qaytish" }],
+    ],
+    resize_keyboard: true,
+  };
+}
+
+function buildContactMenuKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "🤝 Do‘stni taklif qilish" }],
+      [{ text: "🎥 Video qo‘llanma" }],
+      [{ text: "👨‍💼 Operator bilan aloqa" }],
+      [{ text: "⬅️ Asosiy menyuga qaytish" }],
+    ],
+    resize_keyboard: true,
+  };
+}
 
 
 // 🔧 НОВОЕ: если телефон не сохранён (после рестарта), просим его заново
@@ -2597,19 +2669,28 @@ async function startFirstConfirmation(chatId, session) {
     "\n\n" +
     "🔎 Iltimos, barcha ma'lumotlarni diqqat bilan tekshiring.\n" +
     "Agar hammasi to‘g‘ri bo‘lsa — *«Ha, hammasi to‘g‘ri»* tugmasini bosing.\n" +
-    "Agar nimanidir o‘zgartirish kerak bo‘lsa — *«O‘zgartirish»* tugmasini bosing.";
+    "Agar faqat bitta-ikkita maydonni o‘zgartirmoqchi bo‘lsangiz — kerakli maydon yonidagi ✏️ tugmasini bosing.\n" +
+    "Agar hamma maydonlarni ketma-ket ko‘rib chiqmoqchi bo‘lsangiz — pastdagi *«Hammasini ketma-ket tekshirish»* tugmasidan foydalaning.";
+
+  const fieldButtons = EDIT_FIELDS.map((f) => [
+    {
+      text: `✏️ ${f.label}`,
+      callback_data: `edit_one:${f.key}`,
+    },
+  ]);
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
     disable_web_page_preview: true,
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "✅ Ha, hammasi to‘g‘ri", callback_data: "confirm1_yes" },
-          { text: "✏️ O‘zgartirish", callback_data: "confirm1_edit" },
-        ],
-      ],
-    },
+reply_markup: {
+  inline_keyboard: [
+    [
+      { text: "✅ Ha, hammasi to‘g‘ri", callback_data: "confirm1_yes" },
+    ],
+    ...fieldButtons,
+  ],
+},
+
   });
 }
 
@@ -2620,25 +2701,31 @@ async function startSecondConfirmation(chatId, session) {
   const text =
     "‼️ Iltimos, *yana bir bor* barcha ma'lumotlarni sinchiklab tekshiring.\n\n" +
     "Tasdiqlash orqali siz barcha ma'lumotlar to‘g‘ri ekanini tasdiqlaysiz.\n\n" +
-    "Agar ishonchingiz komil bo‘lsa — *«Ha, tasdiqlayman»* tugмасини bosing.\n" +
-    "Agar nimanidir o‘zgartirmoqchi bo‘lsangiz — *«O‘zgartirish»* tugmasини bosing.";
+    "Agar ishonchingiz komil bo‘lsa — *«Ha, tasdiqlayman»* tugmasini bosing.\n" +
+    "Agar faqat ayrim maydonlarni o‘zgartirmoqchi bo‘lsangiz — pastdagi ✏️ tugmalaridan foydalaning.\n" +
+    "Agar hammasini ketma-ket ko‘rib chiqmoqchi bo‘lsangiz — *«Hammasini ketma-ket tekshirish»* tugmasini bosing.";
+
+  const fieldButtons = EDIT_FIELDS.map((f) => [
+    {
+      text: `✏️ ${f.label}`,
+      callback_data: `edit_one:${f.key}`,
+    },
+  ]);
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "✅ Ha, tasdiqlayman",
-            callback_data: "confirm2_yes",
-          },
-          {
-            text: "✏️ O‘zgartirish",
-            callback_data: "confirm2_edit",
-          },
-        ],
-      ],
-    },
+reply_markup: {
+  inline_keyboard: [
+    [
+      {
+        text: "✅ Ha, tasdiqlayman",
+        callback_data: "confirm2_yes",
+      },
+    ],
+    ...fieldButtons,
+  ],
+},
+
   });
 }
 
@@ -2751,11 +2838,24 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   const driverRes = await createDriverInFleet(driverPayload);
   if (!driverRes.ok) {
-    // Этап 1 не прошёл — сразу говорим водителю и оператору
     await sendTelegramMessage(
       chatId,
-      "❗️ Yandex tizimida haydovchi ro‘yxatdan o‘tkazishda xatolik yuz berdi. Operator bilan bog‘laning."
+      "❗️ Yandex tizimida haydovchi ro‘yxatdan o‘tkazishda xatolik yuz berdi.\n\n" +
+        "Quyidagi tugma orqali qayta urinib ko‘rishingiz mumkin yoki operator bilan bog‘laning: @AsrTaxiAdmin.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🔁 Qayta urinib ko‘rish", // «Попробовать ещё раз»
+                callback_data: "retry_autoreg",
+              },
+            ],
+          ],
+        },
+      }
     );
+
     await sendOperatorAlert(
       "*Ошибка авто-регистрации водителя в Yandex Fleet (этап 1/2)*\n\n" +
         `Телефон: \`${phone || "—"}\`\n` +
@@ -2764,12 +2864,39 @@ async function autoRegisterInYandexFleet(chatId, session) {
     return;
   }
 
+
   session.driverFleetId = driverRes.driverId || null;
 
   await sendTelegramMessage(
     chatId,
     "✅ 1/2 bosqich tugadi: haydovchi profili Yandex tizimida yaratildi."
   );
+  // 🔹 ПОСЛЕ УСПЕШНОЙ РЕГИСТРАЦИИ ВОДИТЕЛЯ – НАЧИСЛЯЕМ ПРИВЕТСТВЕННЫЙ БОНУС
+  if (session.driverFleetId && DRIVER_REGISTRATION_BONUS_AMOUNT > 0) {
+    const bonusRes = await createDriverBonusTransaction(
+      session.driverFleetId,
+      DRIVER_REGISTRATION_BONUS_AMOUNT,
+      "Ro‘yxatdan o‘tganlik uchun bonus (avtomobil qo‘shilishidan oldin)"
+    );
+
+    if (!bonusRes.ok) {
+      console.error(
+        "Driver registration bonus transaction error:",
+        bonusRes.error
+      );
+      await sendOperatorAlert(
+        "*Xato: haydovchiga bonusni hisoblash muvaffaqiyatsiz bo‘ldi*\n\n" +
+          `Driver ID (Fleet): \`${session.driverFleetId}\`\n` +
+          `Telefon: \`${phone || "—"}\`\n` +
+          `Xato: ${bonusRes.error || "noma'lum"}`
+      );
+    } else {
+      await sendTelegramMessage(
+        chatId,
+        "💰 Ro‘yxatdan o‘tganingiz uchun *50 000 so‘m bonus* hisobingizga qo‘shildi."
+      );
+    }
+  }
 
   // ========== ЭТАП 2/2: СОЗДАНИЕ/ПРИВЯЗКА АВТОМОБИЛЯ ==========
 
@@ -2807,8 +2934,22 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
       await sendTelegramMessage(
         chatId,
-        "⚠️ Haydovchi ro‘yxatdan o‘tdi, ammo avtomobilni avtomatik qo‘shib bo‘lmadi. Operator avtomobilni qo‘lda qo‘shadi."
+        "⚠️ Haydovchi ro‘yxatdan o‘tdi, ammo avtomobilni avtomatik qo‘shib bo‘lmadi.\n\n" +
+          "Quyidagi tugma orqali avtomobilni yana bir bor avtomatik qo‘shishga urinib ko‘rishingiz mumkin yoki operator uni qo‘lda qo‘shadi.",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "🔁 Qayta urinib ko‘rish", // «Попробовать ещё раз»
+                  callback_data: "retry_autoreg",
+                },
+              ],
+            ],
+          },
+        }
       );
+
       await sendOperatorAlert(
         "*Ошибка добавления автомобиля в Yandex Fleet (этап 2/2)*\n\n" +
           `Телефон: \`${phone || "—"}\`\n` +
@@ -2823,6 +2964,7 @@ async function autoRegisterInYandexFleet(chatId, session) {
         "✅ 2/2 bosqich tugadi: avtomobil Yandex tizimiga qo‘shildi."
       );
     }
+
   } else {
     // По тарифным правилам / данным авто нельзя создать автоматически
     session.registerWithoutCar = true;
@@ -3369,59 +3511,72 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // первая сводка
-    if (data === "confirm1_yes") {
-      session.confirmStage = "first";
-      await startSecondConfirmation(chatId, session);
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
-    if (data === "confirm1_edit") {
-      session.confirmStage = "first";
-      session.editIndex = 0;
-      await askNextEditField(chatId, session);
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
+// первая сводка
+if (data === "confirm1_yes") {
+  session.confirmStage = "first";
+  await startSecondConfirmation(chatId, session);
+  await answerCallbackQuery(cq.id);
+  return { statusCode: 200, body: "OK" };
+}
 
-    // вторая сводка
-    if (data === "confirm2_yes") {
-      session.confirmStage = "second";
-      session.step = "finished";
+// вторая сводка
+if (data === "confirm2_yes") {
+  session.confirmStage = "second";
+  session.step = "finished";
+
+  await autoRegisterInYandexFleet(chatId, session);
+  await answerCallbackQuery(cq.id);
+  return { statusCode: 200, body: "OK" };
+}
+    // повторная попытка авто-регистрации в Yandex
+    if (data === "retry_autoreg") {
+      await sendTelegramMessage(
+        chatId,
+        "🔁 Qayta urinib ko‘ryapmiz. Iltimos, bir necha soniya kuting..."
+      );
 
       await autoRegisterInYandexFleet(chatId, session);
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
-    if (data === "confirm2_edit") {
-      session.confirmStage = "second";
-      session.editIndex = 0;
-      await askNextEditField(chatId, session);
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
 
-    // редактирование полей
-    if (data === "edit_field_confirm") {
-      session.editAwaitingValue = false;
-      session.editIndex = (session.editIndex || 0) + 1;
-      await askNextEditField(chatId, session);
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
 
-    if (data === "edit_field_change") {
+    // 🔧 Одиночное редактирование конкретного поля из предпоказа
+    if (data.startsWith("edit_one:")) {
+      const key = data.split(":")[1];
+      const field = EDIT_FIELDS.find((f) => f.key === key);
+
+      if (!field) {
+        await sendTelegramMessage(
+          chatId,
+          "Bu maydonni tahrirlab bo‘lmadi. Iltimos, qayta urinib ko‘ring yoki operatorga yozing."
+        );
+        await answerCallbackQuery(cq.id);
+        return { statusCode: 200, body: "OK" };
+      }
+
+      session.currentFieldKey = key;
       session.editAwaitingValue = true;
-      const field = EDIT_FIELDS[session.editIndex] || null;
-      const label = field ? field.label : "maydon";
+      session.editMode = "single";   // <<< ВАЖНО
+      session.step = "editing_field";
+
+      const currentValue = getFieldValue(session, key) || "ko‘rsatilmagan";
+
       await sendTelegramMessage(
         chatId,
-        `Iltimos, *${label}* maydoni uchun yangi qiymatni bitta xabar bilan yuboring.`,
+        `✏️ *${field.label}* maydonini tahrirlash.\n` +
+          `Joriy qiymat: \`${currentValue}\`.\n\n` +
+          "Iltimos, yangi qiymatni bitta xabar bilan yuboring.",
         { parse_mode: "Markdown" }
       );
+
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
+
+
+
+
 
     // меню водителя
     if (data.startsWith("menu:")) {
@@ -3500,11 +3655,10 @@ if (
 }
 
 
-  // Кнопки меню личного кабинета водителя
-  if (session.step === "driver_menu") {
-    switch (text) {
-     
-         case "📊 Hisob va balans":
+if (session.step === "driver_menu") {
+  switch (text) {
+
+    case "📊 Hisob va balans":
       await sendTelegramMessage(
         chatId,
         "📊 *Hisob va balans* bo‘limi:\n\n" +
@@ -3513,7 +3667,10 @@ if (
           "• 💳 Balansni to‘ldirish\n" +
           "• 💸 Mablag‘ni yechib olish\n\n" +
           "Kerakli funksiyani pastdagi tugmalardan tanlang.",
-        { parse_mode: "Markdown" }
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildBalanceMenuKeyboard(),
+        }
       );
       return { statusCode: 200, body: "OK" };
 
@@ -3526,7 +3683,10 @@ if (
           "• 📍 GPS xatoliklari\n" +
           "• 🎯 Maqsadlar va bonuslar\n\n" +
           "Kerakli tugmani pastdan tanlang.",
-        { parse_mode: "Markdown" }
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildWorkMenuKeyboard(),
+        }
       );
       return { statusCode: 200, body: "OK" };
 
@@ -3535,8 +3695,11 @@ if (
         chatId,
         "📄 *Hujjatlar* bo‘limi:\n\n" +
           "Bu yerda Litsenziya va OSAGO bo‘yicha ma'lumot olasiz.\n\n" +
-          "👉 \"📄 Litsenziya va OSAGO\" tugmasini bosing.",
-        { parse_mode: "Markdown" }
+          "Kerakli bo‘limni pastdagi tugmadan tanlang.",
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildDocsMenuKeyboard(),
+        }
       );
       return { statusCode: 200, body: "OK" };
 
@@ -3549,7 +3712,22 @@ if (
           "• 🎥 Video qo‘llanma\n" +
           "• 👨‍💼 Operator bilan aloqa\n\n" +
           "Kerakli bo‘limni pastdagi tugmalardan tanlang.",
-        { parse_mode: "Markdown" }
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildContactMenuKeyboard(),
+        }
+      );
+      return { statusCode: 200, body: "OK" };
+
+    // Кнопка "назад" из любого подраздела
+    case "⬅️ Asosiy menyuga qaytish":
+      await sendTelegramMessage(
+        chatId,
+        "Asosiy menyuga qaytdik. Kerakli bo‘limni tanlang.",
+        {
+          parse_mode: "Markdown",
+          reply_markup: buildDriverMenuKeyboard(),
+        }
       );
       return { statusCode: 200, body: "OK" };
 
@@ -3674,7 +3852,6 @@ if (msg.contact) {
 }
 
 
-// Режим редактирования отдельного поля
 if (
   session.step === "editing_field" &&
   session.editAwaitingValue &&
@@ -3684,23 +3861,31 @@ if (
   const key = session.currentFieldKey;
 
   if (key) {
-    // сохраняем новое значение
     setFieldValue(session, key, value);
     recomputeDerived(session);
     applySessionDataToDocs(session);
   }
 
   session.editAwaitingValue = false;
-  session.editIndex = (session.editIndex || 0) + 1;
+  session.editMode = "none";
 
   await sendTelegramMessage(
     chatId,
-    "✅ Qiymat saqlandi. Keyingi maydonni tekshiramiz."
+    "✅ Qiymat saqlandi. Ma'lumotlar yangilandi."
   );
 
-  await askNextEditField(chatId, session);
+  if (session.confirmStage === "first") {
+    await startFirstConfirmation(chatId, session);
+  } else if (session.confirmStage === "second") {
+    await startSecondConfirmation(chatId, session);
+  } else {
+    session.step = session.step || "idle";
+  }
+
   return { statusCode: 200, body: "OK" };
 }
+
+
 
 
   // фото документов

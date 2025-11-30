@@ -1788,10 +1788,6 @@ async function callFleetGet(path, query) {
  * Начисление бонуса водителю через Transactions API
  * v3 /parks/driver-profiles/transactions
  */
-/**
- * Начисление бонуса водителю через Transactions API
- * v3 /parks/driver-profiles/transactions
- */
 async function createDriverBonusTransaction(driverId, amount, description) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) {
@@ -1804,19 +1800,21 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  // 🔴 ВАЖНО: park_id ДОЛЖЕН быть в теле, а не в query
+  // ✅ Правильное тело для v3: всё внутри data
   const body = {
-    park_id: FLEET_PARK_ID,                             // 👈 вот это критично
-    contractor_profile_id: driverId,
-    category_id: FLEET_BONUS_CATEGORY_ID,
-    amount: String(amount),
-    description:
-      description ||
-      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+    data: {
+      park_id: FLEET_PARK_ID,
+      contractor_profile_id: driverId,
+      category_id: FLEET_BONUS_CATEGORY_ID,
+      amount: String(amount),
+      description:
+        description ||
+        "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+    },
   };
 
   const res = await callFleetPostIdempotent(
-    "/v3/parks/driver-profiles/transactions",           // 👈 без ?park_id=
+    "/v3/parks/driver-profiles/transactions",
     body,
     idempotencyKey
   );

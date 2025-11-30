@@ -1296,13 +1296,12 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const body = {
     driver_profile_id: driverId,
-    // park_id уже идёт в X-Park-ID, но по v3 чаще всё равно кладут внутрь
     park_id: FLEET_PARK_ID,
 
     // ВАЖНО: тип операции – пополнение баланса водителя
-category_id: FLEET_BONUS_CATEGORY_ID,
-// или свой category_id из настроек парка
-    // amount — строкой, в минимальных единицах валюты (например, копейки/тийин)
+    category_id: FLEET_BONUS_CATEGORY_ID, // или свой category_id из настроек парка
+
+    // amount — строкой, в минимальных единицах валюты (тийин/копейки)
     amount: String(amount),
 
     // необязательное текстовое описание
@@ -1324,6 +1323,7 @@ category_id: FLEET_BONUS_CATEGORY_ID,
 
   return { ok: true, data: res.data };
 }
+
 
 
 async function callFleetPostIdempotent(path, payload, idempotencyKey) {
@@ -1805,6 +1805,8 @@ async function createCarInFleet(carPayload, session) {
 }
 
 
+
+
 /**
  * Поиск водителя по телефону (рабочий вариант как в хантер-боте)
  */
@@ -2119,11 +2121,13 @@ function buildDocsMenuKeyboard() {
   return {
     keyboard: [
       [{ text: "📄 Litsenziya va OSAGO" }],
+      [{ text: "🚗 Avtomobil qo‘shish" }],
       [{ text: "⬅️ Asosiy menyuga qaytish" }],
     ],
     resize_keyboard: true,
   };
 }
+
 
 function buildContactMenuKeyboard() {
   return {
@@ -2167,6 +2171,89 @@ async function ensurePhoneForStatus(chatId, session) {
   );
 
   return null;
+}
+// 🔧 Yangi: avtomobil qo‘shish uchun telefonni so‘rash
+async function askPhoneForCar(chatId, session) {
+  const existing =
+    session.phone || (session.data && session.data.phone);
+
+  if (existing) {
+    // Agar telefon allaqachon ma'lum bo‘lsa — darhol 2-bosqichni boshlaymiz
+    await beginCarAddWithKnownPhone(chatId, session);
+    return;
+  }
+
+  session.step = "waiting_phone_for_car";
+
+  await sendTelegramMessage(
+    chatId,
+    "Avtomobilni qo‘shish uchun Yandex tizimida ro‘yxatdan o‘tgan telefon raqamingiz kerak.\n" +
+      "Iltimos, quyidagi tugma orqali telefon raqamingizni yuboring.",
+    {
+      reply_markup: {
+        keyboard: [
+          [
+            {
+              text: "📲 Telefon raqamni yuborish",
+              request_contact: true,
+            },
+          ],
+          [{ text: "⬅️ Asosiy menyuga qaytish" }],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: false,
+      },
+    }
+  );
+}
+
+// 🔧 Yangi: telefon ma'lum bo‘lganda 2-bosqichni boshlash (faqat avtomobil)
+async function beginCarAddWithKnownPhone(chatId, session) {
+  const phone =
+    session.phone || (session.data && session.data.phone);
+  if (!phone) {
+    await askPhoneForCar(chatId, session);
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    "🔍 Telefon raqamingiz bo‘yicha Yandex tizimida haydovchi mavjudligini tekshiryapman..."
+  );
+
+  const found = await findDriverByPhone(phone);
+
+  if (!found.ok) {
+    await sendTelegramMessage(
+      chatId,
+      "❗️ Yandex tizimi bilan bog‘lanishda xatolik yuz berdi.\n" +
+        "Iltimos, birozdan keyin yana urinib ko‘ring yoki operatorga yozing: @AsrTaxiAdmin."
+    );
+    return;
+  }
+
+  if (!found.found || !found.driver || !found.driver.id) {
+    await sendTelegramMessage(
+      chatId,
+      "ℹ️ Bu telefon raqami bo‘yicha parkda faol haydovchi topilmadi.\n" +
+        "Avval haydovchi sifatida ro‘yxatdan o‘ting, so‘ng avtomobilni qo‘shish mumkin bo‘ladi."
+    );
+    return;
+  }
+
+  session.driverFleetId = found.driver.id;
+  session.driverName = found.driver.name || session.driverName || null;
+  session.isExistingDriver = true;
+  session.registrationFlow = "car_only";
+
+  await sendTelegramMessage(
+    chatId,
+    "✅ Haydovchi topildi. Endi avtomobil ma'lumotlarini qo‘shamiz.\n\n" +
+      "Avval avtomobil *markasini* tanlang.",
+    { parse_mode: "Markdown" }
+  );
+
+  await askCarBrand(chatId, session);
 }
 
 
@@ -2774,6 +2861,9 @@ async function autoRegisterInYandexFleet(chatId, session) {
   const brandCode = session.carBrandCode;
   const brandLabel = session.carBrandLabel;
   const phone = session.phone || d.phone;
+  const hasCarDocs =
+    session.docs &&
+    (session.docs.tech_front || session.docs.tech_back);
 
   // 1) Определяем тарифы по машине / грузовой
   let tariffsInfo = { tariffs: [], hasRules: false };
@@ -2812,6 +2902,185 @@ async function autoRegisterInYandexFleet(chatId, session) {
       session.registerWithoutCar = true;
     }
   }
+// ===== 2-bosqich: faqat avtomobilni yaratish va haydovchiga biriktirish =====
+async function autoRegisterCarOnly(chatId, session) {
+  const d = session.data || {};
+  const brandCode = session.carBrandCode;
+  const brandLabel = session.carBrandLabel;
+  const phone = session.phone || d.phone;
+
+  // Agar Fleet sozlanmagan bo‘lsa
+  const cfg = ensureFleetConfigured();
+  if (!cfg.ok) {
+    await sendTelegramMessage(
+      chatId,
+      "❗️ Yandex Fleet integratsiyasi sozlanmagan. Operatorga yozing: @AsrTaxiAdmin."
+    );
+    return;
+  }
+
+  // Haydovchi ID bo‘lmasa — telefon bo‘yicha topib olamiz
+  if (!session.driverFleetId) {
+    const found = await findDriverByPhone(phone);
+    if (!found.ok || !found.found || !found.driver || !found.driver.id) {
+      await sendTelegramMessage(
+        chatId,
+        "❗️ Bu telefon raqami bo‘yicha parkda haydovchi topilmadi.\n" +
+          "Avval haydovchi sifatida ro‘yxatdan o‘ting."
+      );
+      return;
+    }
+    session.driverFleetId = found.driver.id;
+    session.driverName = found.driver.name || session.driverName || null;
+  }
+
+  // 1) Tariflarni aniqlash
+  let tariffsInfo = { tariffs: [], hasRules: false };
+
+  if (brandCode && !session.isCargo) {
+    const shortModel =
+      (session.carModelLabel || "").replace(`${brandLabel} `, "").trim();
+    tariffsInfo = getTariffsForCar(brandCode, shortModel, d.carYear);
+    session.assignedTariffs = tariffsInfo.tariffs || [];
+  } else if (session.isCargo) {
+    session.assignedTariffs = ["Cargo"];
+    tariffsInfo = { tariffs: ["Cargo"], hasRules: true };
+  }
+
+  if (!tariffsInfo.hasRules) {
+    session.registerWithoutCar = true;
+  }
+
+  const { brand, model } = splitCarBrandModel(session.carModelLabel || "");
+  const nowYear = new Date().getFullYear();
+  const carYearInt = parseInt(d.carYear, 10);
+
+  let canCreateCar = !session.registerWithoutCar;
+  if (canCreateCar) {
+    if (!brand || !d.plateNumber) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+  if (canCreateCar) {
+    if (!carYearInt || carYearInt < 1980 || carYearInt > nowYear + 1) {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+
+  const hasCarDocs =
+    session.docs &&
+    (session.docs.tech_front || session.docs.tech_back);
+
+  if (!canCreateCar) {
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Avtomobil ma'lumotlari to‘liq emas yoki tariflarga mos emas.\n" +
+        "Avtomobilni avtomatik qo‘shib bo‘lmadi, operator uni qo‘lda qo‘shadi."
+    );
+
+    await sendDocsToOperators(chatId, session, {
+      note:
+        "Регистрация АВТОМОБИЛЯ не удалась (недостаточно данных или авто не соответствует тарифам). Требуется ручная проверка и добавление.",
+    });
+
+    session.step = "driver_menu";
+    await sendTelegramMessage(
+      chatId,
+      "Asosiy menyuga qaytdik.",
+      { reply_markup: buildDriverMenuKeyboard() }
+    );
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    "2-bosqich: avtomobilni Yandex tizimiga qo‘shmoqdaman..."
+  );
+
+  const pozivnoiSource = String(phone || "").replace(/[^\d]/g, "");
+  const pozivnoi = pozivnoiSource.slice(-7) || null;
+
+  const carPayload = {
+    brand,
+    model,
+    year: d.carYear,
+    color: session.carColor,
+    plate_number: d.plateNumber,
+    body_number: d.bodyNumber,
+    call_sign: pozivnoi,
+    tariffs: session.assignedTariffs || [],
+    is_cargo: session.isCargo,
+    cargo_dimensions: session.cargoDimensions || null,
+    tech_full: d.techFull,
+    tech_number: d.techNumber,
+  };
+
+  const carRes = await createCarInFleet(carPayload, session);
+  let carId = null;
+
+  if (!carRes.ok) {
+    session.registerWithoutCar = true;
+
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Avtomobilni avtomatik qo‘shib bo‘lmadi. Operator uni qo‘lda qo‘shadi."
+    );
+
+    await sendOperatorAlert(
+      "*Ошибка добавления автомобиля в Yandex Fleet (2-bosqich faqat avto)*\n\n" +
+        `Телефон: \`${phone || "—"}\`\n` +
+        `Xato: ${carRes.error || "noma'lum"}`
+    );
+  } else {
+    carId = carRes.carId || null;
+    session.carFleetId = carId;
+
+    await sendTelegramMessage(
+      chatId,
+      "✅ Avtomobil Yandex tizimiga muvaffaqiyatli qo‘shildi."
+    );
+  }
+
+  // Agar mashina yaratildi bo‘lsa — haydovchiga biriktiramiz
+  if (session.driverFleetId && carId) {
+    const bindRes = await bindCarToDriver(session.driverFleetId, carId);
+    if (!bindRes.ok) {
+      await sendOperatorAlert(
+        "*Ошибка привязки автомобиля к водителю (2-bosqich)*\n\n" +
+          `Телефон: \`${phone || "—"}\`\n` +
+          `Xato: ${bindRes.error || "noma'lum"}`
+      );
+    }
+  }
+
+  // Operatorlarga hujjatlar
+  await sendDocsToOperators(chatId, session, {
+    note: carId
+      ? "Существующему водителю добавлен НОВЫЙ АВТОМОБИЛЬ (2-й этап регистрации)."
+      : "Попытка добавления автомобиля существующему водителю не удалась — требуется ручная проверка.",
+  });
+
+  const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
+
+  let finishText =
+    "🎉 Avtomobil ma'lumotlaringiz muvaffaqiyatli qayd etildi.\n\n" +
+    `Ulanilgan tariflar: *${tariffStr}*.` +
+    "\n\nEndi buyurtmalarni qabul qilishga tayyor bo‘lasiz.";
+
+  if (session.wantsDelivery) {
+    finishText +=
+      "\n\n📦 Sizga qo‘shimcha ravishda *Delivery (yetkazib berish)* buyurtmalari ham yoqilishi mumkin (park siyosatiga qarab).";
+  }
+
+  await sendTelegramMessage(chatId, finishText, {
+    parse_mode: "Markdown",
+    reply_markup: buildDriverMenuKeyboard(),
+  });
+
+  session.step = "driver_menu";
+}
 
   // ========== ЭТАП 1/2: СОЗДАНИЕ ПРОФИЛЯ ВОДИТЕЛЯ ==========
 
@@ -2973,13 +3242,24 @@ async function autoRegisterInYandexFleet(chatId, session) {
     }
 
   } else {
-    // По тарифным правилам / данным авто нельзя создать автоматически
     session.registerWithoutCar = true;
-    await sendTelegramMessage(
-      chatId,
-      "⚠️ Avtomobil ma'lumotlari to‘liq emas yoki tariflarga mos emas.\n" +
-        "Haydovchi profili yaratildi, avtomobilni operator qo‘lda qo‘shadi."
-    );
+
+    if (!hasCarDocs) {
+      // Это наш 1-ый этап: авто ещё вообще не собирали
+      await sendTelegramMessage(
+        chatId,
+        "✅ Haydovchi sifatida ro‘yxatdan o‘tdingiz.\n\n" +
+          "Hozircha siz *avtomobilsiz* ulanganmisiz.\n" +
+          "Keyinchalik botdagi «🚗 Avtomobil qo‘shish» bo‘limi orqali mashinani qo‘shishingiz mumkin."
+      );
+    } else {
+      // Авто собирали, но оно не прошло условия / нет данных
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ Avtomobil ma'lumotlari to‘liq emas yoki tariflarga mos emas.\n" +
+          "Haydovchi profili yaratildi, avtomobilni operator qo‘lda qo‘shadi."
+      );
+    }
   }
 
   // Привязка авто к водителю, если всё-таки есть carId
@@ -2998,9 +3278,10 @@ async function autoRegisterInYandexFleet(chatId, session) {
 
   await sendDocsToOperators(chatId, session, {
     note: session.registerWithoutCar
-      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ* (недостаточно данных по авто или модель не найдена в тарифной базе, либо авто не удалось создать автоматически)."
+      ? "Регистрация ВОДИТЕЛЯ *БЕЗ АВТОМОБИЛЯ*. Автомобиль нужно будет добавить позже (через бота или вручную оператором)."
       : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
+
 
   const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
@@ -3013,12 +3294,20 @@ async function autoRegisterInYandexFleet(chatId, session) {
     finishText +=
       "\n\n📦 Sizga qo‘shimcha ravishda *Delivery (yetkazib berish)* buyurtmalari ham yoqilgan bo‘lishi mumkin (park siyosatiga qarab).";
   }
-
   if (session.registerWithoutCar) {
-    finishText +=
-      "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi yoki avtomatik qo‘shib bo‘lmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
-      "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
+    if (!hasCarDocs) {
+      // нормальный сценарий: сделали только 1 этап
+      finishText +=
+        "\n\nℹ️ Hozircha siz *avtomobilsiz* ro‘yxatdan o‘tgansiz.\n" +
+        "Keyinroq bot menyusidagi «🚗 Avtomobil qo‘shish» tugmasi orqali mashinani qo‘shishingiz mumkin.";
+    } else {
+      // авто было, но не создалось
+      finishText +=
+        "\n\n⚠️ Avtomobilingiz ma'lumotlari to‘liq aniqlanmadi yoki avtomatik qo‘shib bo‘lmadi, siz hozircha *avtomobilsiz* ro‘yxatdan o‘tdingiz.\n" +
+        "Operator tez orada siz bilan bog‘lanib, avtomobilni qo‘lda qo‘shadi.";
+    }
   }
+
 
   await sendTelegramMessage(chatId, finishText, {
     parse_mode: "Markdown",
@@ -3176,10 +3465,14 @@ async function handleDocumentPhoto(update, session, docType) {
 
     await sendTelegramMessage(
       chatId,
-      "✅ Haydovchilik guvohnomasi bo‘yicha Yandex tizimida ro‘yxatdan o‘tmagan.\nEndi avtomobil ma'lumotlarini kiritamiz."
+      "✅ Haydovchilik guvohnomasi bo‘yicha Yandex tizimida ro‘yxatdan o‘tmagan.\n" +
+        "Endi ma'lumotlarni tekshirib, haydovchi sifatida ro‘yxatdan o‘tamiz."
     );
 
-    await askCarBrand(chatId, session);
+    // 1-bosqich: faqat haydovchini ro‘yxatdan o‘tkazamiz (avtomobil keyinroq qo‘shiladi)
+    session.registrationFlow = "driver_only";
+
+    await startFirstConfirmation(chatId, session);
   } else if (docType === "tech_front") {
     await askDocTechBack(chatId, session);
   } else if (docType === "tech_back") {
@@ -3204,7 +3497,11 @@ async function handleDocumentPhoto(update, session, docType) {
         "✅ Barcha kerakli hujjatlar qabul qilindi."
       );
 
+      // Bu yerda biz 2-bosqichdamiz — faqat avtomobil qo‘shilmoqda
+      session.registrationFlow = "car_only";
+
       await askDeliveryOption(chatId, session);
+
     }
   }
 }
@@ -3494,7 +3791,7 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // выбор Delivery
+        // выбор Delivery
     if (data === "delivery_yes") {
       session.wantsDelivery = true;
       await sendTelegramMessage(
@@ -3502,7 +3799,15 @@ exports.handler = async (event) => {
         "📦 Delivery ulashga rozilik berdingiz. Yetkazib berish buyurtmalari park siyosatiga qarab sizga ochiladi.",
         { parse_mode: "Markdown" }
       );
-      await startFirstConfirmation(chatId, session);
+
+      if (session.registrationFlow === "car_only") {
+        // 2-bosqich: avtomobilni yaratamiz
+        await autoRegisterCarOnly(chatId, session);
+      } else {
+        // eski sxema: 1-bosqichda driver + (avto)
+        await startFirstConfirmation(chatId, session);
+      }
+
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
@@ -3513,10 +3818,17 @@ exports.handler = async (event) => {
         "🚕 Siz faqat taksi buyurtmalarini qabul qilasiz.",
         { parse_mode: "Markdown" }
       );
-      await startFirstConfirmation(chatId, session);
+
+      if (session.registrationFlow === "car_only") {
+        await autoRegisterCarOnly(chatId, session);
+      } else {
+        await startFirstConfirmation(chatId, session);
+      }
+
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
+
 
 // первая сводка
 if (data === "confirm1_yes") {
@@ -3535,17 +3847,23 @@ if (data === "confirm2_yes") {
   await answerCallbackQuery(cq.id);
   return { statusCode: 200, body: "OK" };
 }
-    // повторная попытка авто-регистрации в Yandex
+    // повторная попытка авто-регистрации (водитель или авто)
     if (data === "retry_autoreg") {
       await sendTelegramMessage(
         chatId,
         "🔁 Qayta urinib ko‘ryapmiz. Iltimos, bir necha soniya kuting..."
       );
 
-      await autoRegisterInYandexFleet(chatId, session);
+      if (session.registrationFlow === "car_only") {
+        await autoRegisterCarOnly(chatId, session);
+      } else {
+        await autoRegisterInYandexFleet(chatId, session);
+      }
+
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
+
 
 
     // 🔧 Одиночное редактирование конкретного поля из предпоказа
@@ -3709,6 +4027,9 @@ if (session.step === "driver_menu") {
         }
       );
       return { statusCode: 200, body: "OK" };
+    case "🚗 Avtomobil qo‘shish":
+      await askPhoneForCar(chatId, session);
+      return { statusCode: 200, body: "OK" };
 
     case "🤝 Aloqa va bonuslar":
       await sendTelegramMessage(
@@ -3787,10 +4108,10 @@ if (session.step === "driver_menu") {
     }
   }
 
-  // 1) Сначала — если ждём телефон и пришёл текст
 if (
   (session.step === "waiting_phone" ||
-    session.step === "waiting_phone_for_status") &&
+    session.step === "waiting_phone_for_status" ||
+    session.step === "waiting_phone_for_car") &&
   text
 ) {
   const phoneTyped = text.trim();
@@ -3812,9 +4133,26 @@ if (
     return { statusCode: 200, body: "OK" };
   }
 
+  if (session.step === "waiting_phone_for_car") {
+    session.phone = phoneTyped;
+    session.data = session.data || {};
+    session.data.phone = phoneTyped;
+
+    await sendTelegramMessage(
+      chatId,
+      `📞 Telefon qabul qilindi: *${phoneTyped}*`,
+      { parse_mode: "Markdown" }
+    );
+
+    await beginCarAddWithKnownPhone(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // обычная регистрация нового водителя
   await handlePhoneCaptured(chatId, session, phoneTyped);
   return { statusCode: 200, body: "OK" };
 }
+
 
 // 2) Отдельно — контакт (номер телефона)
 if (msg.contact) {
@@ -3838,6 +4176,22 @@ if (msg.contact) {
     return { statusCode: 200, body: "OK" };
   }
 
+  // 1.5) Telefon avtomobil qo‘shish uchun so‘ralgan
+  if (session.step === "waiting_phone_for_car") {
+    session.phone = contactPhone;
+    session.data = session.data || {};
+    session.data.phone = contactPhone;
+
+    await sendTelegramMessage(
+      chatId,
+      `📞 Telefon qabul qilindi: *${contactPhone}*`,
+      { parse_mode: "Markdown" }
+    );
+
+    await beginCarAddWithKnownPhone(chatId, session);
+    return { statusCode: 200, body: "OK" };
+  }
+
   // 2) Нормальный сценарий регистрации
   if (session.step === "waiting_phone") {
     await handlePhoneCaptured(chatId, session, contactPhone);
@@ -3857,6 +4211,7 @@ if (msg.contact) {
   );
   return { statusCode: 200, body: "OK" };
 }
+
 
 
 if (

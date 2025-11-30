@@ -615,15 +615,17 @@ function mapColorToYandex(session) {
 
 // ===== поля для редактирования =====
 
-// Поля ЭТАПА 1: только водитель
 const EDIT_FIELDS_DRIVER = [
   { key: "lastName", label: "Familiya" },
   { key: "firstName", label: "Ism" },
   { key: "middleName", label: "Otasining ismi" },
-  { key: "licenseSeries", label: "Haydovchilik guvohnomasi seriyasi" },
-  { key: "licenseNumber", label: "Haydovchilik guvohnomasi raqami" },
+  {
+    key: "licenseFull",
+    label: "Haydovchilik guvohnomasi seriyasi", // текст можешь поменять как хочешь
+  },
   { key: "pinfl", label: "JShShIR (PINFL)" },
 ];
+
 
 // Поля ЭТАПА 2: только автомобиль / техпаспорт
 const EDIT_FIELDS_CAR = [
@@ -852,7 +854,7 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
   const vu = docs.find((d) => d.docType === "vu_front");
   const tFront = docs.find((d) => d.docType === "tech_front");
   const tBack = docs.find((d) => d.docType === "tech_back");
-
+  const hasCarDocs = Boolean(tFront || tBack);   // 👈 вот это главное
   const fVu =
     (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
   const fTf =
@@ -910,21 +912,34 @@ function formatSummaryForDriverUz(docs, commonMeta = {}) {
   lines.push(`7. Amal qilish muddati: ${fVu.expiry_date || "—"}`);
   lines.push(`8. PINFL (agar ko‘rsatilgan bo‘lsa): ${driverPinfl}`);
 
-  lines.push("");
-  lines.push("🚗 Avtomobil ma'lumotlari");
-  lines.push("");
-  lines.push(`1. Davlat raqami: ${fTf.plate_number || "—"}`);
-  lines.push(`2. Marka/model (hujjat bo‘yicha): ${finalCarModelDoc}`);
-  lines.push(`3. Model (botda tanlangan): ${finalCarModelForm}`);
-  lines.push(`4. Rangi: ${finalCarColor}`);
-  lines.push(`5. Chiqarilgan yili: ${fTb.car_year || "—"}`);
-  lines.push(`6. Kuzov/shassi raqami: ${fTb.body_number || "—"}`);
-  lines.push(`7. Texpasport (seriya va raqam): ${techFull || "—"}`);
+   // 🚗 авто – ТОЛЬКО если есть техпаспорт
+  if (hasCarDocs) {
+    const techSeries = (fTb.tech_series || "").trim();
+    const techNumber = (fTb.tech_number || "").trim();
+    const techFullFromField = (fTb.tech_full || "").trim();
+    const techFullCombined = `${techSeries} ${techNumber}`.trim();
+    const techFull = techFullFromField || techFullCombined || "—";
 
-  if (isCargo) {
+    const finalCarColor = fTf.car_color_text || carColor || "—";
+    const finalCarModelForm = carModel || "—";
+    const finalCarModelDoc = fTf.car_model_text || "—";
+
     lines.push("");
-    lines.push("🚚 Yuk avtomobili ma'lumotlari");
-    lines.push(`Kuzov o‘lchami: ${cargoSize || "—"}`);
+    lines.push("🚗 Avtomobil ma'lumotlari");
+    lines.push("");
+    lines.push(`1. Davlat raqami: ${fTf.plate_number || "—"}`);
+    lines.push(`2. Marka/model (hujjat bo‘yicha): ${finalCarModelDoc}`);
+    lines.push(`3. Model (botda tanlangan): ${finalCarModelForm}`);
+    lines.push(`4. Rangi: ${finalCarColor}`);
+    lines.push(`5. Chiqarilgan yili: ${fTb.car_year || "—"}`);
+    lines.push(`6. Kuzov/shassi raqami: ${fTb.body_number || "—"}`);
+    lines.push(`7. Texpasport (seriya va raqam): ${techFull}`);
+
+    if (isCargo) {
+      lines.push("");
+      lines.push("🚚 Yuk avtomobili ma'lumotlari");
+      lines.push(`Kuzov o‘lchami: ${cargoSize || "—"}`);
+    }
   }
 
   if (tariffs && tariffs.length) {

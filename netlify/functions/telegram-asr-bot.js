@@ -615,21 +615,38 @@ function mapColorToYandex(session) {
 
 // ===== поля для редактирования =====
 
-const EDIT_FIELDS = [
+// Поля ЭТАПА 1: только водитель
+const EDIT_FIELDS_DRIVER = [
   { key: "lastName", label: "Familiya" },
   { key: "firstName", label: "Ism" },
   { key: "middleName", label: "Otasining ismi" },
   { key: "licenseSeries", label: "Haydovchilik guvohnomasi seriyasi" },
   { key: "licenseNumber", label: "Haydovchilik guvohnomasi raqami" },
+  { key: "pinfl", label: "JShShIR (PINFL)" },
+];
+
+// Поля ЭТАПА 2: только автомобиль / техпаспорт
+const EDIT_FIELDS_CAR = [
   { key: "techSeries", label: "Texpasport seriyasi" },
   { key: "techNumber", label: "Texpasport raqami" },
   { key: "plateNumber", label: "Davlat raqami" },
   { key: "carYear", label: "Avtomobil chiqarilgan yili" },
   { key: "bodyNumber", label: "Kuzov raqami" },
-  { key: "pinfl", label: "JShShIR (PINFL)" },
   { key: "carModelLabel", label: "Avtomobil modeli" },
   { key: "carColor", label: "Avtomobil rangi" },
 ];
+
+// Вспомогательная функция: какие поля показывать именно СЕЙЧАС
+function getEditFieldsForSession(session) {
+  // Для второго этапа (когда мы явно работаем только с машиной)
+  if (session.registrationFlow === "car_only") {
+    return EDIT_FIELDS_CAR;
+  }
+
+  // По умолчанию — этап 1: водитель
+  return EDIT_FIELDS_DRIVER;
+}
+
 
 // ===== Telegram helpers =====
 
@@ -2762,7 +2779,9 @@ async function startFirstConfirmation(chatId, session) {
     "Agar faqat bitta-ikkita maydonni o‘zgartirmoqchi bo‘lsangiz — kerakli maydon yonidagi ✏️ tugmasini bosing.\n" +
     "Agar hamma maydonlarni ketma-ket ko‘rib chiqmoqchi bo‘lsangiz — pastdagi *«Hammasini ketma-ket tekshirish»* tugmasidan foydalaning.";
 
-  const fieldButtons = EDIT_FIELDS.map((f) => [
+  const fields = getEditFieldsForSession(session);
+
+  const fieldButtons = fields.map((f) => [
     {
       text: `✏️ ${f.label}`,
       callback_data: `edit_one:${f.key}`,
@@ -2772,17 +2791,19 @@ async function startFirstConfirmation(chatId, session) {
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
     disable_web_page_preview: true,
-reply_markup: {
-  inline_keyboard: [
-    [
-      { text: "✅ Ha, hammasi to‘g‘ri", callback_data: "confirm1_yes" },
-    ],
-    ...fieldButtons,
-  ],
-},
-
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Ha, hammasi to‘g‘ri", callback_data: "confirm1_yes" },
+        ],
+        ...fieldButtons,
+        // при желании сюда можно добавить кнопку
+        // [{ text: "🔁 Hammasini ketma-ket tekshirish", callback_data: "edit_sequence_start" }],
+      ],
+    },
   });
 }
+
 
 async function startSecondConfirmation(chatId, session) {
   session.confirmStage = "second";
@@ -2795,7 +2816,9 @@ async function startSecondConfirmation(chatId, session) {
     "Agar faqat ayrim maydonlarni o‘zgartirmoqchi bo‘lsangiz — pastdagi ✏️ tugmalaridan foydalaning.\n" +
     "Agar hammasini ketma-ket ko‘rib chiqmoqchi bo‘lsangiz — *«Hammasini ketma-ket tekshirish»* tugmasini bosing.";
 
-  const fieldButtons = EDIT_FIELDS.map((f) => [
+  const fields = getEditFieldsForSession(session);
+
+  const fieldButtons = fields.map((f) => [
     {
       text: `✏️ ${f.label}`,
       callback_data: `edit_one:${f.key}`,
@@ -2804,29 +2827,47 @@ async function startSecondConfirmation(chatId, session) {
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
-reply_markup: {
-  inline_keyboard: [
-    [
-      {
-        text: "✅ Ha, tasdiqlayman",
-        callback_data: "confirm2_yes",
-      },
-    ],
-    ...fieldButtons,
-  ],
-},
-
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "✅ Ha, tasdiqlayman",
+            callback_data: "confirm2_yes",
+          },
+        ],
+        ...fieldButtons,
+        // сюда тоже при желании можно добавить кнопку "edit_sequence_start"
+      ],
+    },
   });
 }
 
+
 async function askNextEditField(chatId, session) {
+  const fields = getEditFieldsForSession(session);
   const idx = session.editIndex || 0;
-  if (idx >= EDIT_FIELDS.length) {
-    await startFirstConfirmation(chatId, session);
+
+  if (!fields.length) {
+    // На всякий случай — если набор полей пуст
+    if (session.confirmStage === "second") {
+      await startSecondConfirmation(chatId, session);
+    } else {
+      await startFirstConfirmation(chatId, session);
+    }
     return;
   }
 
-  const field = EDIT_FIELDS[idx];
+  if (idx >= fields.length) {
+    // Все поля пройдены — возвращаемся к текущей сводке
+    if (session.confirmStage === "second") {
+      await startSecondConfirmation(chatId, session);
+    } else {
+      await startFirstConfirmation(chatId, session);
+    }
+    return;
+  }
+
+  const field = fields[idx];
   session.currentFieldKey = field.key;
   session.editAwaitingValue = false;
   session.step = "editing_field";
@@ -2851,6 +2892,7 @@ async function askNextEditField(chatId, session) {
     },
   });
 }
+
 
 // ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET =====
 
@@ -3866,38 +3908,40 @@ if (data === "confirm2_yes") {
 
 
 
-    // 🔧 Одиночное редактирование конкретного поля из предпоказа
-    if (data.startsWith("edit_one:")) {
-      const key = data.split(":")[1];
-      const field = EDIT_FIELDS.find((f) => f.key === key);
+// 🔧 Одиночное редактирование конкретного поля из предпоказа
+if (data.startsWith("edit_one:")) {
+  const key = data.split(":")[1];
 
-      if (!field) {
-        await sendTelegramMessage(
-          chatId,
-          "Bu maydonni tahrirlab bo‘lmadi. Iltimos, qayta urinib ko‘ring yoki operatorga yozing."
-        );
-        await answerCallbackQuery(cq.id);
-        return { statusCode: 200, body: "OK" };
-      }
+  const fields = getEditFieldsForSession(session);
+  const field = fields.find((f) => f.key === key);
 
-      session.currentFieldKey = key;
-      session.editAwaitingValue = true;
-      session.editMode = "single";   // <<< ВАЖНО
-      session.step = "editing_field";
+  if (!field) {
+    await sendTelegramMessage(
+      chatId,
+      "Bu maydonni tahrirlab bo‘lmadi. Iltimos, qayta urinib ko‘ring yoki operatorga yozing."
+    );
+    await answerCallbackQuery(cq.id);
+    return { statusCode: 200, body: "OK" };
+  }
 
-      const currentValue = getFieldValue(session, key) || "ko‘rsatilmagan";
+  session.currentFieldKey = key;
+  session.editAwaitingValue = true;
+  session.editMode = "single"; // важно — чтобы отличать от последовательного режима
+  session.step = "editing_field";
 
-      await sendTelegramMessage(
-        chatId,
-        `✏️ *${field.label}* maydonini tahrirlash.\n` +
-          `Joriy qiymat: \`${currentValue}\`.\n\n` +
-          "Iltimos, yangi qiymatni bitta xabar bilan yuboring.",
-        { parse_mode: "Markdown" }
-      );
+  const currentValue = getFieldValue(session, key) || "ko‘rsatilmagan";
 
-      await answerCallbackQuery(cq.id);
-      return { statusCode: 200, body: "OK" };
-    }
+  await sendTelegramMessage(
+    chatId,
+    `✏️ *${field.label}* maydonini tahrirlash.\n` +
+      `Joriy qiymat: \`${currentValue}\`.\n\n` +
+      "Iltimos, yangi qiymatni bitta xabar bilan yuboring.",
+    { parse_mode: "Markdown" }
+  );
+
+  await answerCallbackQuery(cq.id);
+  return { statusCode: 200, body: "OK" };
+}
 
 
 

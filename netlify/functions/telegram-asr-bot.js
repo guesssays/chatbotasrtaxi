@@ -1330,7 +1330,7 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
     lines.push("🚗 *Авто*");
     lines.push(`Гос номер: ${plateNumber}`);
     lines.push(`Марка: ${brand}`);
-    lines.push(`Модель: ${model}`);А
+    lines.push(`Модель: ${model}`);
     lines.push(`Цвет: ${colorDocOrForm}`);
     lines.push(`Год выпуска авто: ${carYear}`);
   }

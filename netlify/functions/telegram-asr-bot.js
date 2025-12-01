@@ -2060,9 +2060,14 @@ async function createDriverInFleet(driverPayload) {
     };
   }
 
-  const phoneNorm = normalizePhoneForYandex(driverPayload.phone);
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const idempotencyKey = `driver-${FLEET_PARK_ID}-${phoneNorm || ""}`;
+const phoneNorm = normalizePhoneForYandex(driverPayload.phone);
+const todayIso = new Date().toISOString().slice(0, 10);
+
+// генерим УНИКАЛЬНЫЙ ключ на каждую попытку
+const idempotencyKey = makeIdempotencyKey(
+  `driver-${FLEET_PARK_ID}-${phoneNorm || "no-phone"}`
+);
+
 
   const fullName = {
     first_name: driverPayload.first_name || driverPayload.firstName || "",

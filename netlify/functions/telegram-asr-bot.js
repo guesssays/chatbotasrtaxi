@@ -2044,20 +2044,30 @@ function makeIdempotencyKey(prefix, parts = []) {
   const safe = (v) =>
     String(v || "")
       .trim()
-      .replace(/[^a-zA-Z0-9_-]/g, "");
+      // только печатные ASCII, чтобы точно попасть в [\x20-\x8e]
+      .replace(/[^\x20-\x7E]/g, "");
 
   const base = [prefix, ...parts.map(safe)].filter(Boolean).join("-");
 
+  // небольшой рандом в конце, чтобы не конфликтовать между разными запросами
   const rand = Math.random().toString(36).slice(2, 10);
-  const ts = Date.now().toString(36);
 
-  let key = `${base}-${ts}-${rand}`;
-  // Yandex Fleet обычно ожидает токены разумной длины
-  if (key.length > 80) {
-    key = key.slice(0, 80);
+  let key = `${base}-${rand}`;
+
+  // ✅ максимум 64 символа (условие Яндекса)
+  if (key.length > 64) {
+    key = key.slice(0, 64);
   }
+
+  // ✅ минимум 16 символов (если вдруг получилось слишком коротко – дополняем)
+  if (key.length < 16) {
+    const pad = Math.random().toString(36).repeat(3);
+    key = (key + pad).slice(0, 16);
+  }
+
   return key;
 }
+
 async function createDriverInFleet(driverPayload) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };

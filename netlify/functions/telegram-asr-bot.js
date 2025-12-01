@@ -1222,6 +1222,9 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   const tFront = docs.find((d) => d.docType === "tech_front");
   const tBack = docs.find((d) => d.docType === "tech_back");
 
+  const hasDriverDoc = Boolean(vu);
+  const hasCarDocs = Boolean(tFront || tBack);
+
   const fVu =
     (vu && vu.result && vu.result.parsed && vu.result.parsed.fields) || {};
   const fTf =
@@ -1248,7 +1251,6 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
     fVu.pinfl ||
     fVu.driver_pinfl ||
     "—";
-
 
   const plateNumber = fTf.plate_number || "—";
 
@@ -1280,8 +1282,6 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
 
   const colorDocOrForm = fTf.car_color_text || carColor || "—";
   const carYear = fTb.car_year || "—";
-  const bodyNumber = fTb.body_number || "—";
-  const techSeries = (fTb.tech_series || "").trim() || "—";
 
   const lines = [];
 
@@ -1293,10 +1293,18 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   lines.push("📄 *Набор документов от водителя ASR TAXI*");
   lines.push("");
 
+  // 🔧 Общие данные показываем всегда
   lines.push(`Телефон: ${phone ? "`" + phone + "`" : "—"}`);
   lines.push(`Chat ID: ${tg_id ? "`" + tg_id + "`" : "—"}`);
-  lines.push(`Цвет авто (выбор в боте): ${carColor || "—"}`);
-  lines.push(`Модель авто (выбор в боте): ${carModel || "—"}`);
+
+  // 🔧 Цвет/модель по выбору в боте — ТОЛЬКО если реально выбраны (не "—")
+  if (carColor) {
+    lines.push(`Цвет авто (выбор в боте): ${carColor}`);
+  }
+  if (carModel) {
+    lines.push(`Модель авто (выбор в боте): ${carModel}`);
+  }
+
   if (isCargo) {
     lines.push(`Грузовой кузов: ${cargoSize || "—"}`);
   }
@@ -1305,24 +1313,31 @@ function formatSummaryForOperators(docs, commonMeta = {}, options = {}) {
   }
   lines.push("");
 
-  lines.push("👤 *Водитель*");
-  lines.push(`Фамилия: ${fam || "—"}`);
-  lines.push(`Имя: ${name || "—"}`);
-  lines.push(`Дата выдачи ВУ: ${issuedDate}`);
-  lines.push(`Дата истечения срока ВУ: ${expiryDate}`);
-  lines.push(`ПИНФЛ: ${driverPinfl}`);
-  lines.push(`Серия В/У: ${licenseSeries || "—"}`);
-  lines.push("");
+  // 🔧 БЛОК ВОДИТЕЛЯ — только если есть ВУ (этап 1 или полный комплект)
+  if (hasDriverDoc) {
+    lines.push("👤 *Водитель*");
+    lines.push(`Фамилия: ${fam || "—"}`);
+    lines.push(`Имя: ${name || "—"}`);
+    lines.push(`Дата выдачи ВУ: ${issuedDate}`);
+    lines.push(`Дата истечения срока ВУ: ${expiryDate}`);
+    lines.push(`ПИНФЛ: ${driverPinfl}`);
+    lines.push(`Серия В/У: ${licenseSeries || "—"}`);
+    lines.push("");
+  }
 
-  lines.push("🚗 *Авто*");
-  lines.push(`Гос номер: ${plateNumber}`);
-  lines.push(`Марка: ${brand}`);
-  lines.push(`Модель: ${model}`);
-  lines.push(`Цвет: ${colorDocOrForm}`);
-  lines.push(`Год выпуска авто: ${carYear}`);
+  // 🔧 БЛОК АВТО — только если есть техпаспорт (этап 2 или полный комплект)
+  if (hasCarDocs) {
+    lines.push("🚗 *Авто*");
+    lines.push(`Гос номер: ${plateNumber}`);
+    lines.push(`Марка: ${brand}`);
+    lines.push(`Модель: ${model}`);А
+    lines.push(`Цвет: ${colorDocOrForm}`);
+    lines.push(`Год выпуска авто: ${carYear}`);
+  }
 
   return lines.join("\n");
 }
+
 
 
 function formatSummaryForDriverUz(docs, commonMeta = {}) {
@@ -1790,7 +1805,7 @@ async function callFleetGet(path, query) {
 
 /**
  * Начисление бонуса водителю через Transactions API
- * v3 /parks/driver-profiles/transactions
+ * /parks/driver-profiles/transactions
  */
 async function createDriverBonusTransaction(driverId, amount, description) {
   const cfg = ensureFleetConfigured();
@@ -1803,39 +1818,44 @@ async function createDriverBonusTransaction(driverId, amount, description) {
   }
 
   if (!FLEET_PARK_ID) {
-    return { ok: false, error: "FLEET_PARK_ID не задан для бонусной транзакции" };
+    console.error("FLEET_PARK_ID is not set in environment");
+    return { ok: false, error: "FLEET_PARK_ID is not set" };
   }
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  // ✅ Тело БЕЗ обёртки data, как для v3
+  // 🚀 ВАЖНО: без вложенного data, поля на верхнем уровне
   const body = {
+    park_id: FLEET_PARK_ID,
     contractor_profile_id: driverId,
-    category_id: FLEET_BONUS_CATEGORY_ID,
+    category_id: FLEET_BONUS_CATEGORY_ID, // ID категории из кабинета
     amount: String(amount),
     description:
       description ||
       "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
   };
 
-  // ✅ park_id передаём в query
-  const path = `/v3/parks/driver-profiles/transactions?park_id=${encodeURIComponent(
-    FLEET_PARK_ID
-  )}`;
+  console.log("BONUS DEBUG FLEET_PARK_ID =", FLEET_PARK_ID, typeof FLEET_PARK_ID);
+  console.log("BONUS DEBUG body before request =", JSON.stringify(body, null, 2));
 
-  const res = await callFleetPostIdempotent(path, body, idempotencyKey);
+  const res = await callFleetPostIdempotent(
+    "/v3/parks/driver-profiles/transactions",
+    body,
+    idempotencyKey
+  );
 
   if (!res.ok) {
     console.error("createDriverBonusTransaction error:", res);
     return {
       ok: false,
-      error: res.message || "transactions error",
-      raw: res.raw,
+      error: res.error || res.message || "Transactions API error",
+      raw: res,
     };
   }
 
-  return { ok: true, data: res.data };
+  return { ok: true, data: res.data || res };
 }
+
 
 
 

@@ -1,5 +1,6 @@
 // netlify/functions/telegram-asr-bot.js
 
+
 const TELEGRAM_TOKEN = process.env.TG_BOT_TOKEN;
 const TELEGRAM_API = TELEGRAM_TOKEN
   ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
@@ -26,6 +27,8 @@ const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || null;
 const FLEET_PARK_ID = process.env.FLEET_PARK_ID || null;
 const FLEET_BONUS_CATEGORY_ID =
   process.env.FLEET_BONUS_CATEGORY_ID || "partner_service";
+
+
 
 // из ТЗ про условия работы и оплату:
 const FLEET_WORK_RULE_ID_DEFAULT =
@@ -54,7 +57,8 @@ const FLEET_DEFAULT_FUEL_TYPE =
 const FLEET_API_BASE_URL =
   (FLEET_API_URL && FLEET_API_URL.replace(/\/$/, "")) ||
   "https://fleet-api.taxi.yandex.net";
-
+console.log("FLEET_PARK_ID:", FLEET_PARK_ID);
+console.log("FLEET_API_BASE_URL:", FLEET_API_BASE_URL);
 if (!TELEGRAM_TOKEN) {
   console.error("TG_BOT_TOKEN is not set (telegram-asr-bot.js)");
 }
@@ -3694,7 +3698,8 @@ async function autoRegisterInYandexFleet(chatId, session) {
         "*Xato: haydovchiga bonusni hisoblash muvaffaqiyatsiz bo‘ldi*\n\n" +
           `Driver ID (Fleet): \`${session.driverFleetId}\`\n` +
           `Telefon: \`${phone || "—"}\`\n` +
-          `Xato: ${bonusRes.error || "noma'lum"}`
+          `Xato: ${bonusRes.error || "noma'lum"}\nRaw: ${JSON.stringify(bonusRes.raw || {}, null, 2)}`
+
       );
 } else {
   const prettyAmount = DRIVER_REGISTRATION_BONUS_AMOUNT.toLocaleString("ru-RU");

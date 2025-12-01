@@ -219,6 +219,7 @@ const CAR_BRANDS = [
 
 const CAR_MODELS_BY_BRAND = {
   CHEVROLET: [
+    "Matiz",
     "Cobalt",
     "Nexia",
     "Gentra",

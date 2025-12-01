@@ -2762,60 +2762,25 @@ async function checkSelfEmploymentAndCommittentInFleet(driverId, hunter) {
 
 
 /**
- * Реальная выдача бонуса хантеру через баланс его профиля в Yandex Fleet.
- * Использует метод:
- *   POST /v3/parks/driver-profiles/transactions
- *   https://fleet.yandex.ru/docs/api/ru/openapi/Transactions/v3parksdriver-profilestransactions-post
+ * Выдача бонуса самому водителю (не хантеру) через его баланс в Yandex Fleet.
  *
- * hunter: объект хантера из стора (chatId, phone, name, ...).
- * driverState: объект с информацией о водителе, за которого выдаётся бонус.
+ * driverState: объект с информацией о водителе (должен содержать driverId).
  * amount: число в сумах (целое).
  */
-async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
+async function grantBonusToDriverViaFleet(driverState, amount) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) {
     return { ok: false, message: cfg.message };
   }
 
-  if (!hunter) {
-    return { ok: false, message: "No hunter object passed." };
-  }
-
-  const phoneRaw =
-    hunter.phone ||
-    (typeof hunter.contact_phone === "string" && hunter.contact_phone) ||
-    driverState?.hunterPhone ||
-    null;
-
-  if (!phoneRaw) {
+  if (!driverState || !driverState.driverId) {
     return {
       ok: false,
-      message:
-        "Hunter phone is missing — невозможно найти его профиль в Yandex Fleet.",
+      message: "No driverId passed for bonus transaction.",
     };
   }
 
-  // Ищем профиль хантера по телефону (driver_profile_id / contractor_profile_id)
-  const found = await findDriverByPhone(phoneRaw);
-  if (!found.ok) {
-    return {
-      ok: false,
-      message:
-        found.error ||
-        "Fleet error while trying to find hunter contractor profile.",
-    };
-  }
-
-  if (!found.found || !found.driver || !found.driver.id) {
-    return {
-      ok: false,
-      message:
-        "В Yandex Fleet не найден профиль хантера по его телефону. " +
-        "Создай для него водительский профиль в парке или привяжи существующий телефон.",
-    };
-  }
-
-  const contractorProfileId = found.driver.id;
+  const contractorProfileId = driverState.driverId;
 
   const amountInt = Math.trunc(Number(amount) || 0);
   if (!amountInt || amountInt <= 0) {
@@ -2824,27 +2789,26 @@ async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
   const amountStr = String(amountInt);
 
   let description =
-    `Bonus hunteri uchun: ${driverState?.driverFullName || ""}`.trim();
+    `Bonus haydovchi uchun: ${driverState.driverFullName || ""}`.trim();
   if (!description) {
-    description = "Bonus hunteri uchun";
+    description = "Bonus haydovchi uchun";
   }
   if (description.length > 255) {
     description = description.slice(0, 255);
   }
 
-  // Тело запроса согласно v3 /parks/driver-profiles/transactions
+  // v3 /parks/driver-profiles/transactions — как в основном боте
   const body = {
     park_id: FLEET_PARK_ID,
     contractor_profile_id: contractorProfileId,
     amount: amountStr,
     description,
     data: {
-      // Используем тип "bonus" (BonusData)
       kind: "bonus",
     },
   };
 
-  const idempotencyKey = makeIdempotencyKey("hunter-bonus");
+  const idempotencyKey = makeIdempotencyKey("driver-bonus");
 
   const res = await callFleetPostIdempotent(
     "/v3/parks/driver-profiles/transactions",
@@ -2854,7 +2818,7 @@ async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
 
   if (!res.ok) {
     console.error(
-      "grantBonusToHunterViaFleet error:",
+      "grantBonusToDriverViaFleet error:",
       res.status,
       res.message,
       res.raw
@@ -2863,7 +2827,7 @@ async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
       ok: false,
       message:
         res.message ||
-        "Yandex Fleet bonus transaction error for hunter balance.",
+        "Yandex Fleet bonus transaction error for driver balance.",
       raw: res.raw,
       status: res.status ?? null,
     };
@@ -2871,6 +2835,7 @@ async function grantBonusToHunterViaFleet(hunter, driverState, amount) {
 
   return { ok: true, data: res.data };
 }
+
 
 // ================== CALLBACK QUERY ==================
 async function handleCallback(chatId, session, callback) {
@@ -3053,14 +3018,12 @@ const check = await checkSelfEmploymentAndCommittentInFleet(driverId, hunter);
       await saveHunterToStorage(hunter);
       return;
     }
+// Реальная выдача бонуса на баланс самого водителя в Fleet
+const bonusRes = await grantBonusToDriverViaFleet(
+  driverState,
+  50000
+);
 
-    // Здесь реальная выдача (пока stub)
-    // Реальная выдача бонуса через баланс хантера в Fleet
-    const bonusRes = await grantBonusToHunterViaFleet(
-      hunter,
-      driverState,
-      50000
-    );
 
     if (!bonusRes.ok) {
       await sendTelegramMessage(

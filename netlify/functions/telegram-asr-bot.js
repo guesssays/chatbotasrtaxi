@@ -2039,7 +2039,25 @@ function normalizeDriverLicenseNumber(countryCode, licenseSeries, licenseNumber,
   if (!v) return null;
   return v;
 }
+// ===== Idempotency key helper (для Yandex Fleet) =====
+function makeIdempotencyKey(prefix, parts = []) {
+  const safe = (v) =>
+    String(v || "")
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, "");
 
+  const base = [prefix, ...parts.map(safe)].filter(Boolean).join("-");
+
+  const rand = Math.random().toString(36).slice(2, 10);
+  const ts = Date.now().toString(36);
+
+  let key = `${base}-${ts}-${rand}`;
+  // Yandex Fleet обычно ожидает токены разумной длины
+  if (key.length > 80) {
+    key = key.slice(0, 80);
+  }
+  return key;
+}
 async function createDriverInFleet(driverPayload) {
   const cfg = ensureFleetConfigured();
   if (!cfg.ok) return { ok: false, error: cfg.message };

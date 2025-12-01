@@ -1802,34 +1802,41 @@ async function createDriverBonusTransaction(driverId, amount, description) {
     return { ok: false, error: "driverId не передан для бонусной транзакции" };
   }
 
+  if (!FLEET_PARK_ID) {
+    return { ok: false, error: "FLEET_PARK_ID не задан для бонусной транзакции" };
+  }
+
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  // ✅ Правильное тело для v3: всё внутри data
+  // ✅ Тело БЕЗ обёртки data, как для v3
   const body = {
-    data: {
-      park_id: FLEET_PARK_ID,
-      contractor_profile_id: driverId,
-      category_id: FLEET_BONUS_CATEGORY_ID,
-      amount: String(amount),
-      description:
-        description ||
-        "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
-    },
+    contractor_profile_id: driverId,
+    category_id: FLEET_BONUS_CATEGORY_ID,
+    amount: String(amount),
+    description:
+      description ||
+      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
   };
 
-  const res = await callFleetPostIdempotent(
-    "/v3/parks/driver-profiles/transactions",
-    body,
-    idempotencyKey
-  );
+  // ✅ park_id передаём в query
+  const path = `/v3/parks/driver-profiles/transactions?park_id=${encodeURIComponent(
+    FLEET_PARK_ID
+  )}`;
+
+  const res = await callFleetPostIdempotent(path, body, idempotencyKey);
 
   if (!res.ok) {
     console.error("createDriverBonusTransaction error:", res);
-    return { ok: false, error: res.message || "transactions error", raw: res.raw };
+    return {
+      ok: false,
+      error: res.message || "transactions error",
+      raw: res.raw,
+    };
   }
 
   return { ok: true, data: res.data };
 }
+
 
 
 

@@ -1805,7 +1805,7 @@ async function callFleetGet(path, query) {
 
 /**
  * Начисление бонуса водителю через Transactions API
- * /parks/driver-profiles/transactions
+ * POST /v3/parks/driver-profiles/transactions
  */
 async function createDriverBonusTransaction(driverId, amount, description) {
   const cfg = ensureFleetConfigured();
@@ -1824,18 +1824,30 @@ async function createDriverBonusTransaction(driverId, amount, description) {
 
   const idempotencyKey = `bonus-${FLEET_PARK_ID}-${driverId}-${amount}`;
 
-  // 🚀 ВАЖНО: без вложенного data, поля на верхнем уровне
+  const bonusText =
+    description ||
+    "Ro‘yxatdan o‘tganlik uchun bonus (avtomobil qo‘shilishidan oldin)";
+
+  // ✅ Структура строго по доке:
+  // park_id / contractor_profile_id / amount / description на верхнем уровне
+  // data = BonusData
   const body = {
     park_id: FLEET_PARK_ID,
     contractor_profile_id: driverId,
-    category_id: FLEET_BONUS_CATEGORY_ID, // ID категории из кабинета
-    amount: String(amount),
-    description:
-      description ||
-      "Bonus za muvaffaqiyatli ro‘yxatdan o‘tish (avtomobil qo‘shilmasdan oldin)",
+    amount: String(amount), // "50000"
+    description: bonusText,
+    data: {
+      kind: "bonus",
+      orders_count: 0, // 0 — бонус при найме
+      receipt_condition: bonusText,
+    },
   };
 
-  console.log("BONUS DEBUG FLEET_PARK_ID =", FLEET_PARK_ID, typeof FLEET_PARK_ID);
+  console.log(
+    "BONUS DEBUG FLEET_PARK_ID =",
+    FLEET_PARK_ID,
+    typeof FLEET_PARK_ID
+  );
   console.log("BONUS DEBUG body before request =", JSON.stringify(body, null, 2));
 
   const res = await callFleetPostIdempotent(

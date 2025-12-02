@@ -1,5 +1,4 @@
 // netlify/functions/manychat-prompt-config.js
-
 const { getStore } = require("@netlify/blobs");
 
 const JSON_HEADERS = {
@@ -9,9 +8,6 @@ const JSON_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const store = getStore("manychat-prompts");
-
-// простой токен для защиты (задай в Netlify env)
 const ADMIN_TOKEN = process.env.PROMPT_ADMIN_TOKEN || "";
 
 function checkAuth(event) {
@@ -35,9 +31,11 @@ exports.handler = async (event) => {
     };
   }
 
+  // ✅ ВАЖНО: getStore вызываем ТУТ, внутри handler
+  const store = getStore("manychat-prompts");
+
   try {
     if (event.httpMethod === "GET") {
-      // читаем сохранённый промпт
       const systemPrompt = (await store.get("systemPrompt")) || "";
       return {
         statusCode: 200,
@@ -59,7 +57,6 @@ exports.handler = async (event) => {
       }
 
       const systemPrompt = body.systemPrompt || "";
-      // сохраняем промпт
       await store.set("systemPrompt", systemPrompt);
 
       return {

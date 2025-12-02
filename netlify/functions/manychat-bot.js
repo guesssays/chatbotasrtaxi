@@ -185,9 +185,7 @@ exports.handler = async (event) => {
   }
 };
 
-// netlify/functions/manychat-bot.js (добавить вверху файла)
 const { getStore } = require("@netlify/blobs");
-const promptStore = getStore("manychat-prompts");
 
 // дефолтный промпт на случай, если в хранилище ещё пусто
 const DEFAULT_SYSTEM_PROMPT = `
@@ -920,8 +918,10 @@ UZ:
 	•	Контекстни эслаб, бир хил маълумотни қайта-қайта тўлиқ такрорламайди.
 `;
 
+// ✅ getStore вызываем внутри функции
 async function getSystemPrompt() {
   try {
+    const promptStore = getStore("manychat-prompts");
     const saved = await promptStore.get("systemPrompt");
     if (saved && saved.trim().length > 0) return saved;
   } catch (e) {
@@ -956,7 +956,7 @@ async function generateReply(userMessage, contactId, context = "") {
 
   try {
     const systemPrompt = await getSystemPrompt();
-    
+
  const formatPrompt = `
 СЕЙЧАС ОЧЕНЬ ВАЖНО: отвечай СТРОГО одним JSON-объектом БЕЗ форматирования кода, 
 БЕЗ тройных кавычек и блоков \`\`\`.

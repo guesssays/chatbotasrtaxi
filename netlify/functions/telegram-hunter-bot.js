@@ -1217,6 +1217,7 @@ async function handleHunterContact(chatId, session, contact) {
 }
 
 // ================== ВОПРОСЫ ПРО АВТО (ЭТАП 2) ==================
+// ================== ВОПРОСЫ ПРО АВТО (ЭТАП 2) ==================
 async function askCarBrand(chatId, session) {
   session.step = "driver_car_brand";
 
@@ -1238,9 +1239,25 @@ async function askCarBrand(chatId, session) {
     rows.push(row);
   }
 
+  // 🔹 В конце — "другая марка"
+  rows.push([
+    {
+      text: "🔤 Boshqa marka",
+      callback_data: "car_brand_other",
+    },
+  ]);
+
+  // 🔹 И кнопка "назад"
+  rows.push([
+    {
+      text: "⬅️ Ortga",
+      callback_data: "car_brand_back",
+    },
+  ]);
+
   const text =
     "🚗 Avtomobil *brendini* quyidagi ro‘yxatdan tanlang.\n\n" +
-    "Agar kerakli brend bo‘lmasa — eng yaqinini tanlang, operator keyin uni to‘g‘rilashi mumkin.";
+    "Agar kerakli brend bo‘lmasa — eng yaqinini tanlang yoki *«Boshqa marka»* tugmasini bosing.";
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
@@ -1249,6 +1266,7 @@ async function askCarBrand(chatId, session) {
     },
   });
 }
+
 
 async function askCarModelForBrand(chatId, session) {
   const draft = session.driverDraft || (session.driverDraft = {});
@@ -1286,9 +1304,25 @@ async function askCarModelForBrand(chatId, session) {
     rows.push(row);
   }
 
+  // 🔹 В конце — "другая модель"
+  rows.push([
+    {
+      text: "🔤 Boshqa model",
+      callback_data: `car_model_other:${brandCode}`,
+    },
+  ]);
+
+  // 🔹 И кнопка "назад" (вернуться к выбору марки)
+  rows.push([
+    {
+      text: "⬅️ Ortga",
+      callback_data: "car_model_back",
+    },
+  ]);
+
   const text =
-    `🚗 Brend: *${brandLabel}*\n\n` +
-    "Endi avtomobil *modelini* tanlang:";
+    `🚗 *${brandLabel}* uchun modelni tanlang.\n\n` +
+    "Agar kerakli model bo‘lmasa — *«Boshqa model»* tugmasini bosing, avtomobilni park operatori qo‘shadi.";
 
   await sendTelegramMessage(chatId, text, {
     parse_mode: "Markdown",
@@ -1297,6 +1331,7 @@ async function askCarModelForBrand(chatId, session) {
     },
   });
 }
+
 
 async function askCarColor(chatId, session) {
   session.step = "driver_car_color";
@@ -1324,6 +1359,51 @@ async function askCarColor(chatId, session) {
     },
   });
 }
+
+async function askDriverCategory(chatId, session) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  // Текущая выбранная категория (если уже меняли)
+  const current = draft.driverCategory || "taxi";
+
+  const text =
+    "🚗 *Haydovchi faoliyati turini tanlang*\n\n" +
+    "Bu tanlov Yandex Fleetdagi profil turiga taʼsir qiladi.\n\n" +
+    "Variantlar:\n" +
+    "• 🚕 *Taksi* — oddiy yo‘lovchi tashish\n" +
+    "• 📦 *Kurier (avtomobil)* — yetkazib berish xizmati\n" +
+    "• 🚚 *Yuk tashish* — yuk mashinalari va katta yuklar\n\n" +
+    "Iltimos, mos bo‘lgan turini tugma orqali tanlang.";
+
+  session.step = "driver_category";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: (current === "taxi" ? "✅ " : "") + "🚕 Taksi",
+            callback_data: "driver_prof:taxi",
+          },
+        ],
+        [
+          {
+            text: (current === "courier" ? "✅ " : "") + "📦 Kurʼer (avto)",
+            callback_data: "driver_prof:courier",
+          },
+        ],
+        [
+          {
+            text: (current === "cargo" ? "✅ " : "") + "🚚 Yuk tashish",
+            callback_data: "driver_prof:cargo",
+          },
+        ],
+      ],
+    },
+  });
+}
+
 
 async function askVuPhoto(chatId, session) {
   session.step = "driver_vu_front";
@@ -1362,13 +1442,16 @@ async function beginDriverRegistration(chatId, session) {
     return;
   }
 
-  session.driverDraft = {
-    flowType: "driver",
-    hunterChatId: session.hunter.chatId,
-    hunterPhone: session.hunter.phone,
-    hunterName: session.hunter.name,
-    createdAt: new Date().toISOString(),
-  };
+session.driverDraft = {
+  flowType: "driver",
+  hunterChatId: session.hunter.chatId,
+  hunterPhone: session.hunter.phone,
+  hunterName: session.hunter.name,
+  // категория по умолчанию — такси
+  driverCategory: "taxi", // taxi | courier | cargo
+  createdAt: new Date().toISOString(),
+};
+
   session.editField = null;
 
   session.step = "driver_phone";
@@ -1432,8 +1515,8 @@ async function handleDriverPhone(chatId, session, value) {
     );
     return;
   }
-
-  await askVuPhoto(chatId, session);
+  // ⬇️ сначала выбираем категорию водителя
+  await askDriverCategory(chatId, session);
 }
 
 // ================== ПРЕДПРОСМОТР И РЕДАКТИРОВАНИЕ ПОЛЕЙ ==================
@@ -1469,6 +1552,11 @@ function buildDriverDraftSummaryText(draft) {
   lines.push("");
   lines.push(`👤 F.I.Sh.: ${draft.driverFullName || "—"}`);
   lines.push(`📞 Telefon: ${draft.driverPhone || "—"}`);
+  const cat = draft.driverCategory || "taxi";
+  let catLabel = "🚕 Taksi";
+  if (cat === "courier") catLabel = "📦 Kurʼer (avtomobil)";
+  if (cat === "cargo") catLabel = "🚚 Yuk tashish";
+  lines.push(`🧾 Faoliyat turi: ${catLabel}`);
     lines.push(`PINFL: ${draft.driverPinfl || "—"}`);
   const licLine =
     `${draft.licenseSeries || ""} ${draft.licenseNumber || ""}`.trim() || "—";
@@ -2492,6 +2580,47 @@ async function finalizeCarRegistration(chatId, session) {
     });
     return;
   }
+  // 🔹 NEW: проверка региона госномера — 90 / 95 => авто НЕ добавляем автоматически
+  const plateRaw = String(draft.carPlate || "").replace(/\s+/g, ""); // убираем пробелы
+  const match = plateRaw.match(/^(\d{2})/); // берём первые две цифры в начале строки
+  const regionCode = match ? match[1] : null;
+
+  if (regionCode === "90" || regionCode === "95") {
+    const driverIdStr = driverId || "—";
+
+// Сообщение водителю: нужна доп. проверка оператором
+await sendTelegramMessage(
+  chatId,
+  "⚠️ Avtomobil ma'lumotlari qo‘shimcha tekshiruvdan o‘tishi kerak.\n\n" +
+    "Park operatori ma'lumotlarni ko‘rib chiqadi va zarur bo‘lsa, avtomobilni qo‘lda tizimga qo‘shadi.",
+  { parse_mode: "Markdown" }
+);
+
+
+    // Алерт операторам: авто не создавали в Yandex, нужно решать вручную
+    await sendOperatorAlert(
+      "🟡 Qo‘shimcha tekshiruv uchun avtomobil (region 90/95 — avtomatik qo‘shilmadi)\n\n" +
+        `👤 Хантер: ${draft.hunterName || "—"} (chat_id: ${
+          draft.hunterChatId || "—"
+        })\n` +
+        `📞 Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
+        `🚗 Avto: ${draft.carBrand || ""} ${draft.carModel || ""}, ${
+          draft.carYear || ""
+        }\n` +
+        `🔢 Davlat raqami: ${draft.carPlate || "—"}\n` +
+        `Driver ID (Fleet): ${driverIdStr}\n` +
+        "Iltimos, avtomobilni Fleet’da qo‘lda tekshirib, kerak bo‘lsa yarating va haydovchiga biriktiring."
+    );
+
+    // Завершаем поток добавления авто и возвращаем в главное меню
+    session.driverDraft = null;
+    session.step = "main_menu";
+    await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
+      reply_markup: mainMenuKeyboard(),
+    });
+    return;
+  }
+
 
   await sendTelegramMessage(
     chatId,
@@ -2841,6 +2970,115 @@ async function grantBonusToDriverViaFleet(driverState, amount) {
 async function handleCallback(chatId, session, callback) {
   const data = callback.data || "";
   const draft = session.driverDraft || (session.driverDraft = {});
+
+  // ====== Выбор категории водителя (такси / курьер / грузовой) ======
+  if (data.startsWith("driver_prof:")) {
+    const value = data.split(":")[1] || "taxi";
+
+    // сохраняем выбор в черновик
+    if (value === "courier" || value === "cargo" || value === "taxi") {
+      draft.driverCategory = value;
+    } else {
+      draft.driverCategory = "taxi";
+    }
+
+    await answerCallbackQuery(callback.id);
+
+    // после выбора категории переходим к загрузке ВУ
+    await askVuPhoto(chatId, session);
+    return;
+  }
+
+  // ====== Назад и "другая марка/модель" при выборе авто ======
+
+  // 🔙 Назад из списка брендов – возвращаемся к экрану подтверждения
+  if (data === "car_brand_back") {
+    await answerCallbackQuery(callback.id);
+    session.step = "driver_confirm";
+    await showDriverSummaryForConfirm(chatId, session);
+    return;
+  }
+
+  // 🔁 Другая марка – авто НЕ создаём, шлём алерт операторам
+  if (data === "car_brand_other") {
+    await answerCallbackQuery(callback.id);
+
+    const driverId = draft.driverIdForCar || draft.driverId || "—";
+
+    await sendTelegramMessage(
+      chatId,
+      "🔤 Siz *«Boshqa marka»* tugmasini tanladingiz.\n\n" +
+        "Avtomobil ma’lumotlari park operatoriga yuborildi. U avtomobilni qo‘lda qo‘shadi va haydovchiga biriktiradi.",
+      { parse_mode: "Markdown" }
+    );
+
+    await sendOperatorAlert(
+      "🚗 Qo‘lda avtomobil qo‘shish kerak (Boshqa marka)\n\n" +
+        `👤 Хантер: ${draft.hunterName || "—"} (chat_id: ${
+          draft.hunterChatId || "—"
+        })\n` +
+        `📞 Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
+        `Driver ID (Fleet): ${driverId}\n` +
+        "Hunter avtomobil markasini ro‘yxatdan tanlay olmadi (Boshqa marka). " +
+        "Iltimos, avtomobilni Fleet’da qo‘lda yarating va haydovchiga biriktiring."
+    );
+
+    // Завершаем поток добавления авто и возвращаем в главное меню
+    session.step = "main_menu";
+    session.driverDraft = null;
+    await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
+      reply_markup: mainMenuKeyboard(),
+    });
+    return;
+  }
+
+  // 🔙 Назад из списка моделей – возвращаемся к выбору бренда
+  if (data === "car_model_back") {
+    await answerCallbackQuery(callback.id);
+    // Можно просто снова показать бренды
+    await askCarBrand(chatId, session);
+    return;
+  }
+
+  // 🔁 Другая модель – авто тоже НЕ создаём, алерт операторам
+  if (data.startsWith("car_model_other:")) {
+    await answerCallbackQuery(callback.id);
+
+    const [, brandCode] = data.split(":");
+    const brand = CAR_BRANDS.find((b) => b.code === brandCode);
+    const brandLabel = brand ? brand.label : brandCode;
+
+    const driverId = draft.driverIdForCar || draft.driverId || "—";
+
+    await sendTelegramMessage(
+      chatId,
+      "🔤 Siz *«Boshqa model»* tugmasini tanladingiz.\n\n" +
+        "Avtomobil modeli park operatoriga yuborildi. U avtomobilni qo‘lda qo‘shadi va haydovchiga biriktiradi.",
+      { parse_mode: "Markdown" }
+    );
+
+    await sendOperatorAlert(
+      "🚗 Qo‘lda avtomobil qo‘shish kerak (Boshqa model)\n\n" +
+        `👤 Хантер: ${draft.hunterName || "—"} (chat_id: ${
+          draft.hunterChatId || "—"
+        })\n` +
+        `📞 Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
+        `Driver ID (Fleet): ${driverId}\n` +
+        `Brend (botda): ${brandLabel}\n` +
+        "Hunter kerakli modelni ro‘yxatdan tanlay olmadi (Boshqa model). " +
+        "Iltimos, avtomobilni Fleet’da qo‘lda yarating va haydovchiga biriktiring."
+    );
+
+    session.step = "main_menu";
+    session.driverDraft = null;
+    await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
+      reply_markup: mainMenuKeyboard(),
+    });
+    return;
+  }
+
+
+
   if (data === "edit_car_brand_model") {
     // запускаем заново выбор бренда/модели/цвета, но в режиме редактирования
     session.editField = "carBrandModel";

@@ -145,19 +145,24 @@ function getSession(chatId) {
 
       data: {},
 
-      confirmStage: "none",    // none | first | second
+      confirmStage: "none",
       editIndex: 0,
       editAwaitingValue: false,
       currentFieldKey: null,
-      editMode: "none",        // "none" | "sequence" | "single"
+      editMode: "none",
 
       isHunterReferral: false,
       hunterCode: null,
       wantsDelivery: false,
+
+      // 🔹 НОВОЕ: выбранная категория исполнителя
+      // taxi/driver | cargo/courier/on-car | cargo/courier/on-truck
+      driverProfession: "taxi/driver",
     });
   }
   return sessions.get(chatId);
 }
+
 
 
 function resetSession(chatId) {
@@ -199,6 +204,7 @@ function applyStartPayloadToSession(session, payloadRaw) {
 
   // другие варианты реферальных меток можно обработать здесь
 }
+
 
 // ===== МАРКИ / МОДЕЛИ / ГРУЗОВЫЕ =====
 
@@ -1151,6 +1157,22 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
     console.error("sendTelegramMessage exception:", e);
   }
 }
+
+async function sendYandexProLinks(chatId) {
+  const text =
+    "📲 *Yandex Pro ilovasini yuklab oling*\n\n" +
+    "Buyurtmalarni qabul qilish uchun Yandex Pro ilovasi kerak bo‘ladi.\n\n" +
+    "🔹 *Android (Google Play):*\n" +
+    "https://play.google.com/store/apps/details?id=ru.yandex.taximeter\n\n" +
+    "🔹 *iOS (App Store):*\n" +
+    "https://apps.apple.com/uz/app/yandex-pro/id1496904594";
+
+  await sendTelegramMessage(chatId, text, {
+    parse_mode: "Markdown",
+    disable_web_page_preview: false,
+  });
+}
+
 
 async function answerCallbackQuery(callbackQueryId) {
   if (!TELEGRAM_API || !callbackQueryId) return;
@@ -3141,6 +3163,20 @@ async function askCarBrand(chatId, session) {
     rows.push(row);
   }
 
+  // 🔽 В конец списка добавляем «Boshqa marka» и «Orqaga»
+  rows.push([
+    {
+      text: "➕ Boshqa marka",
+      callback_data: "car_brand_other",
+    },
+  ]);
+  rows.push([
+    {
+      text: "⬅️ Orqaga",
+      callback_data: "car_brand_back",
+    },
+  ]);
+
   const text =
     "🚗 Avtomobil *markasini* quyidagi ro‘yxatdan tanlang.\n\n" +
     "Agar yuk mashinasi bo‘lsa — «Yuk avtomobillari» bandini tanlang.";
@@ -3152,6 +3188,8 @@ async function askCarBrand(chatId, session) {
     },
   });
 }
+
+
 
 async function askCarModelForBrand(chatId, session) {
   const brandCode = session.carBrandCode;
@@ -3187,6 +3225,20 @@ async function askCarModelForBrand(chatId, session) {
     rows.push(row);
   }
 
+  // 🔽 В конец списка «Boshqa model» и «Orqaga»
+  rows.push([
+    {
+      text: "➕ Boshqa model",
+      callback_data: "car_model_other",
+    },
+  ]);
+  rows.push([
+    {
+      text: "⬅️ Orqaga",
+      callback_data: "car_model_back",
+    },
+  ]);
+
   const text =
     `🚗 Marka: *${brandLabel}*\n\n` +
     "Endi *avtomobil modelini* tanlang:";
@@ -3198,6 +3250,8 @@ async function askCarModelForBrand(chatId, session) {
     },
   });
 }
+
+
 
 async function askCarColor(chatId, session) {
   session.step = "waiting_car_color";
@@ -3253,6 +3307,47 @@ async function askCargoSize(chatId, session) {
     },
   });
 }
+
+// ===== ПРОФЕССИЯ ИСПОЛНИТЕЛЯ (Такси / Курьер / Грузовой) =====
+
+function getProfessionLabel(profession) {
+  switch (profession) {
+    case "cargo/courier/on-car":
+      return "Курьер на авто";
+    case "cargo/courier/on-truck":
+      return "Грузовой";
+    case "taxi/driver":
+    default:
+      return "Такси";
+  }
+}
+
+async function askDriverProfession(chatId, session) {
+  session.step = "waiting_driver_profession";
+
+  const text =
+    "🚗 Siz qaysi turdagi ishni bajarishni rejalashtiryapsiz?\n\n" +
+    "Pastdagi tugmalardan birini tanlang:";
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "🚕 Taksi", callback_data: "prof:taxi/driver" },
+      ],
+      [
+        { text: "📦 Avto Kuryer", callback_data: "prof:cargo/courier/on-car" },
+      ],
+      [
+        { text: "🚚 Gruzovoy", callback_data: "prof:cargo/courier/on-truck" },
+      ],
+    ],
+  };
+
+  await sendTelegramMessage(chatId, text, {
+    reply_markup: keyboard,
+  });
+}
+
 
 async function askDocVuFront(chatId, session) {
   session.step = "waiting_vu_front";
@@ -3530,6 +3625,20 @@ async function autoRegisterCarOnly(chatId, session) {
     }
   }
 
+  // 🔎 2.1) Доп. проверка региона госномера: 90 и 95 — только вручную
+  if (canCreateCar) {
+    const cleanedPlate = String(d.plateNumber || "").replace(/\s+/g, "");
+    const match = cleanedPlate.match(/^(\d{2})/);
+    const regionCode = match ? match[1] : null;
+
+    if (regionCode === "90" || regionCode === "95") {
+      // автодобавление авто запрещаем
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+
+
   const hasCarDocs =
     session.docs &&
     (session.docs.tech_front || session.docs.tech_back);
@@ -3554,6 +3663,7 @@ async function autoRegisterCarOnly(chatId, session) {
     );
     return;
   }
+
 
   await sendTelegramMessage(
     chatId,
@@ -3640,8 +3750,12 @@ async function autoRegisterCarOnly(chatId, session) {
     reply_markup: buildDriverMenuKeyboard(),
   });
 
+  // 👉 Новое: ещё раз даём ссылки на Yandex Pro после добавления авто
+  await sendYandexProLinks(chatId);
+
   session.step = "driver_menu";
 }
+
 
 // ===== АВТО-РЕГИСТРАЦИЯ В YANDEX FLEET (2 ЭТАПА) =====
 
@@ -3691,6 +3805,20 @@ async function autoRegisterInYandexFleet(chatId, session) {
       session.registerWithoutCar = true;
     }
   }
+
+  // 🔎 2.1) Доп. проверка региона госномера: 90 и 95 — авто только вручную
+  if (canCreateCar) {
+    const cleanedPlate = String(d.plateNumber || "").replace(/\s+/g, "");
+    const match = cleanedPlate.match(/^(\d{2})/);
+    const regionCode = match ? match[1] : null;
+
+    if (regionCode === "90" || regionCode === "95") {
+      canCreateCar = false;
+      session.registerWithoutCar = true;
+    }
+  }
+
+
 
 
   // ========== ЭТАП 1/2: СОЗДАНИЕ ПРОФИЛЯ ВОДИТЕЛЯ ==========
@@ -3956,8 +4084,12 @@ async function autoRegisterInYandexFleet(chatId, session) {
     },
   });
 
+  // 👉 Новое: даём ссылки на приложение Yandex Pro
+  await sendYandexProLinks(chatId);
+
   session.step = "driver_menu";
 }
+
 
 
 // ===== ОБРАБОТКА ФОТО ДОКУМЕНТОВ =====
@@ -4251,9 +4383,12 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
         "Hozircha ro‘yxatdan o‘tishni yangi haydovchi sifatida davom ettiramiz."
     );
     session.isExistingDriver = false;
-    await askDocVuFront(chatId, session);
+
+    // 🔹 сначала спрашиваем категорию (Такси / Курьер / Грузовой)
+    await askDriverProfession(chatId, session);
     return;
   }
+
 
   if (found.found && found.driver) {
     await sendTelegramMessage(
@@ -4265,11 +4400,13 @@ async function handlePhoneCaptured(chatId, session, phoneRaw) {
   } else {
     await sendTelegramMessage(
       chatId,
-      "ℹ️ Bu telefon raqami bo‘yicha Yandex tizimida haydovchi topilmadi.\n" +
-        "Endi yangi haydovchi sifatida ro‘yxatdan o‘tamiz."
+      "📱 Siz Yandex tizimida hali haydovchi sifatida ro‘yxatdan o‘tmagansiz.\n" +
+        "Endi yangi ro‘yxatdan o‘tishni boshlaymiz."
     );
     session.isExistingDriver = false;
-    await askDocVuFront(chatId, session);
+
+    // 🔹 сначала выбор категории
+    await askDriverProfession(chatId, session);
   }
 }
 
@@ -4302,7 +4439,29 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    const session = getSession(chatId);
+  const session = getSession(chatId);
+
+  // 🔹 Выбор категории исполнителя (Такси / Курьер на авто / Грузовой)
+  if (data.startsWith("prof:")) {
+    const profession = data.slice("prof:".length);
+
+    // сохраняем выбор
+    session.driverProfession = profession;
+
+    // простые флаги на будущее (для тарифов/лимитов и т.п.)
+    session.isCargo = profession === "cargo/courier/on-truck";
+    session.wantsDelivery =
+      profession === "cargo/courier/on-car" ||
+      profession === "cargo/courier/on-truck";
+
+    await answerCallbackQuery(cq.id);
+
+    // после выбора категории сразу просим ВУ
+    await askDocVuFront(chatId, session);
+
+    return { statusCode: 200, body: "OK" };
+  }
+    
   // 🔁 Повтор авто-регистрации (водитель+авто или только авто)
   if (data === "retry_autoreg") {
     try {
@@ -4325,6 +4484,90 @@ exports.handler = async (event) => {
     await answerCallbackQuery(cq.id);
     return { statusCode: 200, body: "OK" };
   }
+
+    // 🔙 Назад из выбора модели к выбору марки
+    if (data === "car_model_back") {
+      // очищаем выбранную модель
+      session.carModelCode = null;
+      session.carModelLabel = null;
+      if (session.data) {
+        delete session.data.carModelLabel;
+      }
+
+      await askCarBrand(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // ➕ «Boshqa model» — авто только к оператору + алерт
+    if (data === "car_model_other") {
+      // флаг: машину не создаём через Fleet
+      session.registerWithoutCar = true;
+
+      await sendOperatorAlert(
+        "*Haydovchi avtomobil uchun «Boshqa model»ni tanladi*\n\n" +
+          `Chat ID: \`${chatId}\`\n` +
+          `Telefon: \`${session.phone || "—"}\`\n` +
+          `Marka: ${session.carBrandLabel || "—"}\n` +
+          "Avtomobil operator tomonidan qo‘lda qo‘shilishi kerak."
+      );
+
+      await sendTelegramMessage(
+        chatId,
+        "Siz «Boshqa model» variantini tanladingiz.\n\n" +
+          "Avtomobil operator tomonidan qo‘lda qo‘shiladi. " +
+          "Endi avtomobil texpasportining *old tomonini* yuboring."
+      );
+
+      await askDocTechFront(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // 🔙 Назад из выбора марки — в основное меню водителя
+    if (data === "car_brand_back") {
+      session.carBrandCode = null;
+      session.carBrandLabel = null;
+      session.carModelCode = null;
+      session.carModelLabel = null;
+
+      session.step = "driver_menu";
+      await sendTelegramMessage(chatId, "Asosiy menyuga qaytdik.", {
+        reply_markup: buildDriverMenuKeyboard(),
+      });
+
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
+
+    // ➕ «Boshqa marka» — авто только к оператору + алерт
+    if (data === "car_brand_other") {
+      session.carBrandCode = null;
+      session.carBrandLabel = null;
+      session.carModelCode = null;
+      session.carModelLabel = null;
+
+      // Машину не создаём автоматом
+      session.registerWithoutCar = true;
+
+      await sendOperatorAlert(
+        "*Haydovchi avtomobil uchun «Boshqa marka»ni tanladi*\n\n" +
+          `Chat ID: \`${chatId}\`\n` +
+          `Telefon: \`${session.phone || "—"}\`\n` +
+          "Avtomobil operator tomonidan qo‘lda qo‘shilishi kerak."
+      );
+
+      await sendTelegramMessage(
+        chatId,
+        "Siz «Boshqa marka» variantini tanladingiz.\n\n" +
+          "Avtomobil operator tomonidan qo‘lda qo‘shiladi. " +
+          "Endi avtomobil texpasportining *old tomonini* yuboring."
+      );
+
+      await askDocTechFront(chatId, session);
+      await answerCallbackQuery(cq.id);
+      return { statusCode: 200, body: "OK" };
+    }
 
     // выбор бренда
     if (data.startsWith("car_brand:")) {

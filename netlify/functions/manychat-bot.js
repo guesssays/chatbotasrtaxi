@@ -185,32 +185,13 @@ exports.handler = async (event) => {
   }
 };
 
-async function generateReply(userMessage, contactId, context = "") {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    console.error("OPENAI_API_KEY is not set");
-    return {
-      reply: `Вы написали: "${userMessage}"`,
-      handover: 0,
-      operator_note: "",
-    };
-  }
+// netlify/functions/manychat-bot.js (добавить вверху файла)
+const { getStore } = require("@netlify/blobs");
+const promptStore = getStore("manychat-prompts");
 
-
-  const MAX_CONTEXT_CHARS = 4000; 
-  let safeContext = "";
-
-  if (typeof context === "string" && context.trim().length > 0) {
-    safeContext = context.trim();
-    if (safeContext.length > MAX_CONTEXT_CHARS) {
-   
-      safeContext = safeContext.slice(-MAX_CONTEXT_CHARS);
-    }
-  }
-
-  try {
-    const systemPrompt =`
-	1.	РОЛЬ ВА МАҚСАД
+// дефолтный промпт на случай, если в хранилище ещё пусто
+const DEFAULT_SYSTEM_PROMPT = `
+1.	РОЛЬ ВА МАҚСАД
 
 Сен ASR TAXI таксопаркининг Instagram ассистентисан.
 Сен жонли одамдек ёзасан. Ҳеч қачон “ботман”, “ИИман”, “нейросетьман” демайсан.
@@ -937,8 +918,45 @@ UZ:
 	•	Асосий мақсад — ҳайдовчини безор қилмасдан, босиқ суҳбат орқали рўйхатдан ўтказиш.
 	•	Ортиқча “роботга ўхшаш” жумла ва шаблонларсиз.
 	•	Контекстни эслаб, бир хил маълумотни қайта-қайта тўлиқ такрорламайди.
-
 `;
+
+async function getSystemPrompt() {
+  try {
+    const saved = await promptStore.get("systemPrompt");
+    if (saved && saved.trim().length > 0) return saved;
+  } catch (e) {
+    console.error("getSystemPrompt error, use default:", e);
+  }
+  return DEFAULT_SYSTEM_PROMPT;
+}
+
+
+async function generateReply(userMessage, contactId, context = "") {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error("OPENAI_API_KEY is not set");
+    return {
+      reply: `Вы написали: "${userMessage}"`,
+      handover: 0,
+      operator_note: "",
+    };
+  }
+
+
+  const MAX_CONTEXT_CHARS = 4000; 
+  let safeContext = "";
+
+  if (typeof context === "string" && context.trim().length > 0) {
+    safeContext = context.trim();
+    if (safeContext.length > MAX_CONTEXT_CHARS) {
+   
+      safeContext = safeContext.slice(-MAX_CONTEXT_CHARS);
+    }
+  }
+
+  try {
+    const systemPrompt = await getSystemPrompt();
+    
  const formatPrompt = `
 СЕЙЧАС ОЧЕНЬ ВАЖНО: отвечай СТРОГО одним JSON-объектом БЕЗ форматирования кода, 
 БЕЗ тройных кавычек и блоков \`\`\`.

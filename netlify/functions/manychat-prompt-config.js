@@ -19,8 +19,14 @@ function getPromptStore() {
     throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
   }
 
-  return getStore("manychat-prompts", { siteID, token });
+  // ✅ Правильный вызов для @netlify/blobs 10.x
+  return getStore({
+    name: "manychat-prompts",
+    siteID,
+    token,
+  });
 }
+
 
 function checkAuth(event) {
   const qs = event.queryStringParameters || {};

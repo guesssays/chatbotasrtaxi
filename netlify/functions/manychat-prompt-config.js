@@ -10,6 +10,18 @@ const JSON_HEADERS = {
 
 const ADMIN_TOKEN = process.env.PROMPT_ADMIN_TOKEN || "";
 
+// 🔹 Хелпер для доступа к Blobs c ручной конфигурацией
+function getPromptStore() {
+  const siteID = process.env.BLOBS_SITE_ID;
+  const token = process.env.BLOBS_TOKEN;
+
+  if (!siteID || !token) {
+    throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
+  }
+
+  return getStore("manychat-prompts", { siteID, token });
+}
+
 function checkAuth(event) {
   const qs = event.queryStringParameters || {};
   const token = qs.token || "";
@@ -31,8 +43,21 @@ exports.handler = async (event) => {
     };
   }
 
-  // ✅ ВАЖНО: getStore вызываем ТУТ, внутри handler
-  const store = getStore("manychat-prompts");
+  let store;
+  try {
+    // ✅ создаём store с siteID + token
+    store = getPromptStore();
+  } catch (e) {
+    console.error("Blobs not configured:", e);
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        error:
+          "Netlify Blobs не настроены (нет BLOBS_SITE_ID или BLOBS_TOKEN).",
+      }),
+    };
+  }
 
   try {
     if (event.httpMethod === "GET") {

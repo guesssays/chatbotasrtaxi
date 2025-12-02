@@ -185,7 +185,20 @@ exports.handler = async (event) => {
   }
 };
 
+// netlify/functions/manychat-bot.js
 const { getStore } = require("@netlify/blobs");
+
+// 🔹 тот же хелпер, можно даже вынести в общий модуль
+function getPromptStore() {
+  const siteID = process.env.BLOBS_SITE_ID;
+  const token = process.env.BLOBS_TOKEN;
+
+  if (!siteID || !token) {
+    throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
+  }
+
+  return getStore("manychat-prompts", { siteID, token });
+}
 
 // дефолтный промпт на случай, если в хранилище ещё пусто
 const DEFAULT_SYSTEM_PROMPT = `
@@ -918,11 +931,11 @@ UZ:
 	•	Контекстни эслаб, бир хил маълумотни қайта-қайта тўлиқ такрорламайди.
 `;
 
-// ✅ getStore вызываем внутри функции
+// 🔹 сюда подтягиваем сохранённый промпт
 async function getSystemPrompt() {
   try {
-    const promptStore = getStore("manychat-prompts");
-    const saved = await promptStore.get("systemPrompt");
+    const store = getPromptStore();
+    const saved = await store.get("systemPrompt");
     if (saved && saved.trim().length > 0) return saved;
   } catch (e) {
     console.error("getSystemPrompt error, use default:", e);

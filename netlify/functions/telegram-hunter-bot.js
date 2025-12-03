@@ -37,6 +37,9 @@ const FLEET_API_URL = process.env.FLEET_API_URL || null;
 const FLEET_API_KEY = process.env.FLEET_API_KEY || null;
 const FLEET_CLIENT_ID = process.env.FLEET_CLIENT_ID || null;
 const FLEET_PARK_ID = process.env.FLEET_PARK_ID || null;
+const HUNTER_DRIVER_BONUS_AMOUNT = Number(
+  process.env.HUNTER_DRIVER_BONUS_AMOUNT || "50000"
+);
 
 // Work rule — ТОЛЬКО hunter
 const FLEET_WORK_RULE_ID_HUNTER =
@@ -1056,6 +1059,7 @@ async function appendDriverToGoogleSheets(driverState, eventType = "registration
 // ✅Водитель стал комитентом!
 // ...
 // 🌐 Посмотреть в Яндексе (https://fleet.yandex.uz/drivers/e13...bb/details?park_id=...)
+// 🌐 Посмотреть в Яндексе (https://fleet.yandex.uz/drivers/e13...bb/details?park_id=...)
 async function handleAsrPulStatusMessage(msg) {
   if (!ASRPUL_STATUS_CHAT_ID) return;
   if (!msg || !msg.text) return;
@@ -1137,11 +1141,50 @@ async function handleAsrPulStatusMessage(msg) {
       lastStatusCheckAt: nowIso,
     };
 
+    // 🔹 Пишем статусы в таблицу как отдельное событие
+    await appendDriverToGoogleSheets(driverState, "selfemployment_committent");
+
+    // 🔹 Если бонус ещё не выдавался — пробуем выдать АВТОМАТИЧЕСКИ
+    if (!driverState.bonusGiven && HUNTER_DRIVER_BONUS_AMOUNT > 0) {
+      const bonusRes = await grantBonusToDriverViaFleet(
+        driverState,
+        HUNTER_DRIVER_BONUS_AMOUNT
+      );
+
+      if (!bonusRes.ok) {
+        console.error(
+          "AsrPul auto bonus error for driver",
+          driverId,
+          bonusRes
+        );
+
+        await sendOperatorAlert(
+          "❗ AsrPul orqali avtomatik bonus berishda xatolik\n\n" +
+            `Hunter chat_id: ${hunterChatId}\n` +
+            `Driver ID: ${driverId}\n` +
+            (bonusRes.message ? `Xato: ${bonusRes.message}` : "")
+        );
+      } else {
+        driverState.bonusGiven = true;
+        driverState.bonusGivenAt = nowIso;
+
+        // Лог в таблицу именно как событие "bonus"
+        await appendDriverToGoogleSheets(driverState, "bonus");
+
+        // Сообщение хантеру, что AsrPul всё подтвердил и бонус ушёл водителю
+        await sendTelegramMessage(
+          hunterChatId,
+          "✅ AsrPul bot самозанятость ва комитентни тасдиқлади.\n" +
+            `Haydovchi balansiga ${HUNTER_DRIVER_BONUS_AMOUNT.toLocaleString(
+              "ru-RU"
+            )} so'm bonus berildi.`
+        );
+      }
+    }
+
+    // 🔹 сохраняем актуальное состояние водителя
     hunter.drivers[driverId] = driverState;
     await saveHunterToStorage(hunter);
-
-    // Отдельное событие в таблицу
-    await appendDriverToGoogleSheets(driverState, "selfemployment_committent");
 
     console.log(
       "AsrPul status: selfEmploymentOk+committentOk set for driver",
@@ -2813,32 +2856,90 @@ if (bindOk) {
     );
   }
 
-  await sendDocsToLogChat(draft);
+   await sendDocsToLogChat(draft);
 
   session.driverDraft = null;
   session.step = "main_menu";
 
-  // 🔹 Сообщение о завершении регистрации + индивидуальная кнопка проверки самозанятости
-  if (driverId) {
-    await sendTelegramMessage(
-      chatId,
-      "Рўйхатдан ўтиш муваффақиятли якунланди.",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "➡️ Самозанятость статусини текшириш",
-                callback_data: `check_selfemp:${driverId}`,
-              },
-            ],
-          ],
-        },
-      }
+  // 🔹 Автовыдача приветственного бонуса водителю (БЕЗ проверки самозанятости/комитента)
+  if (
+    driverId &&
+    HUNTER_DRIVER_BONUS_AMOUNT &&
+    Number.isFinite(HUNTER_DRIVER_BONUS_AMOUNT) &&
+    HUNTER_DRIVER_BONUS_AMOUNT > 0
+  ) {
+    const driverState = {
+      driverId,
+      carId: carId || null,
+
+      hunterChatId: draft.hunterChatId || (session.hunter && session.hunter.chatId) || chatId,
+      hunterName: draft.hunterName || (session.hunter && session.hunter.name) || "",
+
+      driverFullName: draft.driverFullName || "",
+      driverPhone: draft.driverPhone || "",
+
+      carPlate: draft.carPlate || "",
+      carBrand: draft.carBrand || "",
+      carModel: draft.carModel || "",
+      carYear: draft.carYear || "",
+
+      selfEmploymentOk: false,
+      committentOk: false,
+      photoControlOk: false,
+      bonusGiven: false,
+      bonusGivenAt: null,
+    };
+
+    const bonusRes = await grantBonusToDriverViaFleet(
+      driverState,
+      HUNTER_DRIVER_BONUS_AMOUNT
     );
-  } else {
-    await sendTelegramMessage(chatId, "Рўйхатдан ўтиш муваффақиятли якунланди.");
+
+    if (bonusRes.ok) {
+      driverState.bonusGiven = true;
+      driverState.bonusGivenAt = new Date().toISOString();
+
+      // сохраняем в хранилище хантера
+      if (session.hunter) {
+        if (!session.hunter.drivers) session.hunter.drivers = {};
+        session.hunter.drivers[driverId] = {
+          ...(session.hunter.drivers[driverId] || {}),
+          ...driverState,
+        };
+        await saveHunterToStorage(session.hunter);
+      }
+
+      // лог в Google Sheets как событие "bonus"
+      await appendDriverToGoogleSheets(driverState, "bonus");
+
+      // сообщение хантеру, что бонус зачислен ВОДИТЕЛЮ
+      await sendTelegramMessage(
+        chatId,
+        `✅ Haydovchi balansiga ${HUNTER_DRIVER_BONUS_AMOUNT.toLocaleString(
+          "ru-RU"
+        )} so'm bonus berildi.`
+      );
+    } else {
+      console.error("grantBonusToDriverViaFleet failed:", bonusRes);
+
+      await sendOperatorAlert(
+        "⚠️ Hunter-bot: xato при начислении бонуса водителю.\n" +
+          `👤 Хантер: ${draft.hunterName || ""} (chat_id: ${
+            draft.hunterChatId || (session.hunter && session.hunter.chatId) || chatId
+          })\n` +
+          `👤 Водитель: ${draft.driverFullName || "—"}\n` +
+          `📞 Телефон водителя: ${draft.driverPhone || "—"}\n` +
+          `Driver ID: ${driverId || "—"}\n` +
+          `Ошибka: ${bonusRes.message || bonusRes.error || "—"}`
+      );
+    }
   }
+
+  // 🔹 Сообщение о завершении регистрации (без кнопки самозанятости)
+  await sendTelegramMessage(
+    chatId,
+    "Рўйхатдан ўтиш муваффақиятли якунланди."
+  );
 
   await sendTelegramMessage(
     chatId,
@@ -2846,6 +2947,7 @@ if (bindOk) {
     { reply_markup: mainMenuKeyboard() }
   );
 }
+
 
 // ================== SELF-EMPLOYMENT & BONUS HELPERS ==================
 //

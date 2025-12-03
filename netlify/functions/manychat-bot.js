@@ -185,10 +185,8 @@ exports.handler = async (event) => {
   }
 };
 
-// netlify/functions/manychat-bot.js
 const { getStore } = require("@netlify/blobs");
 
-// 🔹 тот же хелпер, можно даже вынести в общий модуль
 function getPromptStore() {
   const siteID = process.env.BLOBS_SITE_ID;
   const token = process.env.BLOBS_TOKEN;
@@ -197,8 +195,13 @@ function getPromptStore() {
     throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
   }
 
-  return getStore("manychat-prompts", { siteID, token });
+  return getStore({
+    name: "manychat-prompts",
+    siteID,
+    token,
+  });
 }
+
 
 // дефолтный промпт на случай, если в хранилище ещё пусто
 const DEFAULT_SYSTEM_PROMPT = `

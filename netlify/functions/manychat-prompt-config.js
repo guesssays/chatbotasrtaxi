@@ -741,22 +741,11 @@ UZ:
 	•	Контекстни эслаб, бир хил маълумотни қайта-қайта тўлиқ такрорламайди.
 `;
 
-// 🔹 Хелпер для доступа к Blobs c ручной конфигурацией
+// 🔹 Хелпер для доступа к Blobs (Netlify сам подставит siteID + токен)
 function getPromptStore() {
-  const siteID = process.env.BLOBS_SITE_ID;
-  const token = process.env.BLOBS_TOKEN;
-
-  if (!siteID || !token) {
-    throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
-  }
-
-  // ✅ Правильный вызов для @netlify/blobs 10.x
-  return getStore({
-    name: "manychat-prompts",
-    siteID,
-    token,
-  });
+  return getStore("manychat-prompts");
 }
+
 
 
 function checkAuth(event) {

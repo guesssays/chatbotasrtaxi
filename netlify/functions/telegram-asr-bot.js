@@ -68,6 +68,13 @@ if (!UPLOAD_DOC_URL) {
 // Кнопка для принудительной остановки регистрации
 const STOP_REGISTRATION_TEXT = "⛔ Ro‘yxatdan o‘tishni to‘xtatish";
 
+// 🔹 Интро-медиа (загружены в чат этого же бота)
+const INTRO_VIDEO_FILE_ID =
+  "BAACAgIAAxkBAAE-wt5pMTb0Qwb56VPiKXZhsn7fk-RZkgACU6AAAlesiUnDLgjtSEUczDYE"; // 1204.mp4
+const INTRO_AUDIO_FILE_ID =
+  "CQACAgIAAxkBAAE-wt1pMTbzzB0SHQ2xIUxWRWWJ4noeWQACEqEAAlesiUkQAzTwIlnoyjYE"; // 1204 (1).MP3
+
+
 function getStopKeyboard() {
   return {
     keyboard: [[{ text: STOP_REGISTRATION_TEXT }]],
@@ -115,50 +122,54 @@ function scheduleStatusReminders(chatId) {
 
 function getSession(chatId) {
   if (!sessions.has(chatId)) {
-    sessions.set(chatId, {
-      step: "idle",
+sessions.set(chatId, {
+  step: "idle",
 
-      phone: null,
-      isExistingDriver: false,
-      driverFleetId: null,
-      driverName: null,
+  phone: null,
+  isExistingDriver: false,
+  driverFleetId: null,
+  driverName: null,
 
-      carBrandCode: null,
-      carBrandLabel: null,
-      carModelCode: null,
-      carModelLabel: null,
-      carColor: null,
-      carColorCode: null,
+  carBrandCode: null,
+  carBrandLabel: null,
+  carModelCode: null,
+  carModelLabel: null,
+  carColor: null,
+  carColorCode: null,
 
-      isCargo: false,
-      cargoSizeCode: null,
-      cargoDimensions: null,
+  isCargo: false,
+  cargoSizeCode: null,
+  cargoDimensions: null,
 
-      assignedTariffs: [],
-      registerWithoutCar: false,
+  assignedTariffs: [],
+  registerWithoutCar: false,
 
-      docs: {
-        vu_front: null,
-        tech_front: null,
-        tech_back: null,
-      },
+  docs: {
+    vu_front: null,
+    tech_front: null,
+    tech_back: null,
+  },
 
-      data: {},
+  data: {},
 
-      confirmStage: "none",
-      editIndex: 0,
-      editAwaitingValue: false,
-      currentFieldKey: null,
-      editMode: "none",
+  confirmStage: "none",
+  editIndex: 0,
+  editAwaitingValue: false,
+  currentFieldKey: null,
+  editMode: "none",
 
-      isHunterReferral: false,
-      hunterCode: null,
-      wantsDelivery: false,
+  isHunterReferral: false,
+  hunterCode: null,
+  wantsDelivery: false,
 
-      // 🔹 НОВОЕ: выбранная категория исполнителя
-      // taxi/driver | cargo/courier/on-car | cargo/courier/on-truck
-      driverProfession: "taxi/driver",
-    });
+  // 🔹 НОВОЕ: выбранная категория исполнителя
+  // taxi/driver | cargo/courier/on-car | cargo/courier/on-truck
+  driverProfession: "taxi/driver",
+
+  // 🔹 НОВОЕ: отправляли ли уже интро-видео/аудио
+  introSent: false,
+});
+
   }
   return sessions.get(chatId);
 }
@@ -1157,6 +1168,57 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
     console.error("sendTelegramMessage exception:", e);
   }
 }
+
+// Отправка видео по file_id
+async function sendTelegramVideo(chatId, fileId, extra = {}) {
+  if (!TELEGRAM_API) {
+    console.error("sendTelegramVideo: no TELEGRAM_API");
+    return;
+  }
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendVideo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        video: fileId,
+        ...extra,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("sendVideo error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("sendTelegramVideo exception:", e);
+  }
+}
+
+// Отправка аудио (MP3) по file_id
+async function sendTelegramAudio(chatId, fileId, extra = {}) {
+  if (!TELEGRAM_API) {
+    console.error("sendTelegramAudio: no TELEGRAM_API");
+    return;
+  }
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendAudio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        audio: fileId,
+        ...extra,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("sendAudio error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("sendTelegramAudio exception:", e);
+  }
+}
+
 
 async function sendYandexProLinks(chatId) {
   const text =
@@ -3112,9 +3174,31 @@ async function handleMenuAction(chatId, session, action) {
 
 // ===== ЛОГИКА ШАГОВ РЕГИСТРАЦИИ =====
 
+// ===== ЛОГИКА ШАГОВ РЕГИСТРАЦИИ =====
+
 async function handleStart(chatId, session) {
+  // шаг, на котором ждём телефон
   session.step = "waiting_phone";
 
+  // 🔹 1. Один раз показываем видео-инструкцию и аудио
+  if (!session.introSent) {
+    session.introSent = true;
+
+await sendTelegramVideo(chatId, INTRO_VIDEO_FILE_ID, {
+  caption:
+    "📹 ASR TAXI video yo‘riqnoma:\nBot orqali parkka qanday ro‘yxatdan o‘tish mumkin.",
+});
+
+
+await sendTelegramAudio(chatId, INTRO_AUDIO_FILE_ID, {
+  caption: "🎧 Audio yo‘riqnoma.",
+  title: "ASR TAXI audio yo‘riqnoma",
+  performer: "ASR TAXI",
+});
+
+  }
+
+  // 🔹 2. После медиа — текст с просьбой отправить номер телефона
   const text =
     "👋 Assalomu alaykum!\n\n" +
     "Ushbu bot sizga *ASR TAXI* parkiga ulanishga yordam beradi.\n\n" +
@@ -3140,6 +3224,7 @@ async function handleStart(chatId, session) {
     },
   });
 }
+
 
 
 async function askCarBrand(chatId, session) {

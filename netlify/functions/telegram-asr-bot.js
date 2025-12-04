@@ -3821,10 +3821,12 @@ async function autoRegisterCarOnly(chatId, session) {
 
   const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
-  let finishText =
-    "🎉 Avtomobil ma'lumotlaringiz muvaffaqiyatli qayd etildi.\n\n" +
-    `Ulanilgan tariflar: *${tariffStr}*.` +
-    "\n\nEndi buyurtmalarni qabul qilishga tayyor bo‘lasiz.";
+let finishText =
+  "🎉 Avtomobil ma'lumotlaringiz muvaffaqiyatli qayd etildi.\n\n" +
+  `Ulanilgan tariflar: *${tariffStr}*.` +
+  "\n\nEndi buyurtmalarni qabul qilishga tayyor bo‘lasiz.\n\n" +
+  "❗️ Iltimos, *@AsrPulBot* botida samozanyatlik va komitentdan o‘tishni unutmang — bu rasmiy to‘lovlarni qabul qilish uchun zarur.";
+
 
   if (session.wantsDelivery) {
     finishText +=
@@ -4139,12 +4141,13 @@ async function autoRegisterInYandexFleet(chatId, session) {
       : "Новый водитель автоматически зарегистрирован в Yandex Fleet (водитель + авто).",
   });
 
-  const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
+const tariffStr = (session.assignedTariffs || []).join(", ") || "—";
 
-  let finishText =
-    "🎉 Siz Yandex tizimida muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n" +
-    `Ulanilgan tariflar: *${tariffStr}*.\n\n` +
-    "Endi sizga faqat *@AsrPulBot* orqali samozanyatlikdan o‘tish qoladi.";
+let finishText =
+  "🎉 Siz Yandex tizimida muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n" +
+  `Ulanilgan tariflar: *${tariffStr}*.\n\n` +
+  "Endi sizga faqat *@AsrPulBot* orqali samozanyatlik va komitentdan o‘tish qoladi.";
+
 
   if (session.wantsDelivery) {
     finishText +=

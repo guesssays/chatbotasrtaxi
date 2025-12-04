@@ -741,17 +741,21 @@ UZ:
 	•	Контекстни эслаб, бир хил маълумотни қайта-қайта тўлиқ такрорламайди.
 `;
 
+// 🔹 Отдельные env для промпта
+const PROMPT_BLOBS_TOKEN =
+  process.env.PROMPT_BLOBS_TOKEN || process.env.BLOBS_TOKEN || null;
+const PROMPT_BLOBS_SITE_ID =
+  process.env.PROMPT_BLOBS_SITE_ID || process.env.BLOBS_SITE_ID || null;
+
 // 🔹 Хелпер для доступа к Blobs c ручной конфигурацией
 function getPromptStore() {
-  const siteID = process.env.BLOBS_SITE_ID;
-  const token = process.env.BLOBS_TOKEN;
+  const siteID = PROMPT_BLOBS_SITE_ID;
+  const token = PROMPT_BLOBS_TOKEN;
 
   if (!siteID || !token) {
-    throw new Error("Missing BLOBS_SITE_ID or BLOBS_TOKEN env vars");
+    throw new Error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN env vars");
   }
 
-  // ✅ Сигнатура для твоей версии @netlify/blobs:
-  //    getStore({ name, siteID, token })
   return getStore({
     name: "manychat-prompts",
     siteID,
@@ -794,10 +798,11 @@ exports.handler = async (event) => {
       headers: JSON_HEADERS,
       body: JSON.stringify({
         error:
-          "Netlify Blobs не настроены (нет BLOBS_SITE_ID или BLOBS_TOKEN).",
+          "Netlify Blobs не настроены (нет PROMPT_BLOBS_SITE_ID или PROMPT_BLOBS_TOKEN).",
       }),
     };
   }
+
 
   try {
 if (event.httpMethod === "GET") {

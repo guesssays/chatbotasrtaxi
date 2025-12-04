@@ -72,7 +72,7 @@ const STOP_REGISTRATION_TEXT = "⛔ Ro‘yxatdan o‘tishni to‘xtatish";
 const INTRO_VIDEO_FILE_ID =
   "BAACAgIAAxkBAAE-wt5pMTb0Qwb56VPiKXZhsn7fk-RZkgACU6AAAlesiUnDLgjtSEUczDYE"; // 1204.mp4
 const INTRO_AUDIO_FILE_ID =
-  "CQACAgIAAxkBAAE-wt1pMTbzzB0SHQ2xIUxWRWWJ4noeWQACEqEAAlesiUkQAzTwIlnoyjYE"; // 1204 (1).MP3
+  "CQACAgIAAxkBAAE-wx9pMTz8n7k_l2Or4Nh_NuG8ebrhKAACHJYAAogEiEng8v53g9vLlzYE"; // 1204 (1).MP3
 
 
 function getStopKeyboard() {

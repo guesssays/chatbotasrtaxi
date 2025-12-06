@@ -144,11 +144,16 @@ sessions.set(chatId, {
   assignedTariffs: [],
   registerWithoutCar: false,
 
+  // 🔹 NEW: сценарий «Boshqa marka/model» — ручная регистрация авто
+  manualCarOtherBrand: false,
+  manualCarOtherModel: false,
+
   docs: {
     vu_front: null,
     tech_front: null,
     tech_back: null,
   },
+
 
   data: {},
 
@@ -3231,6 +3236,10 @@ await sendTelegramAudio(chatId, INTRO_AUDIO_FILE_ID, {
 async function askCarBrand(chatId, session) {
   session.step = "waiting_car_brand";
 
+  // сбрасываем флаги «другая марка/модель» при новом выборе
+  session.manualCarOtherBrand = false;
+  session.manualCarOtherModel = false;
+
   const rows = [];
   for (let i = 0; i < CAR_BRANDS.length; i += 2) {
     const row = [];
@@ -4336,6 +4345,44 @@ async function handleDocumentPhoto(update, session, docType) {
   } else if (docType === "tech_front") {
     await askDocTechBack(chatId, session);
   } else if (docType === "tech_back") {
+    // 🔹 NEW: «Boshqa marka/model» — avtomobil faqat qo‘lda qo‘shiladi
+    if (session.manualCarOtherBrand || session.manualCarOtherModel) {
+      const noteBase =
+        session.manualCarOtherBrand
+          ? "Другая марка — требуется ручная регистрация автомобиля и привязка к этому водителю."
+          : "Другая модель — требуется ручная регистрация автомобиля и привязка к этому водителю.";
+
+      // Driver ID (agar bor bo‘lsa) — сразу в комментарий
+      const driverIdText = session.driverFleetId
+        ? `Driver ID (Fleet): ${session.driverFleetId}. `
+        : "";
+
+      // 📦 Полный пакет (VU + texpasport old/orqa) оператору
+      await sendDocsToOperators(chatId, session, {
+        note: driverIdText + noteBase,
+      });
+
+      // Сообщение водителю на узбекском
+      await sendTelegramMessage(
+        chatId,
+        "Rahmat, avtomobil bo‘yicha ma’lumotlar operatorga yuborildi.\n" +
+          "Operator bu avtomobilni Yandex tizimida qo‘lda qo‘shadi va profilga biriktiradi.\n" +
+          "Iltimos, javobni kutib turing."
+      );
+
+      // Возвращаем в меню водителя
+      session.step = "driver_menu";
+      session.manualCarOtherBrand = false;
+      session.manualCarOtherModel = false;
+
+      await sendTelegramMessage(chatId, "Asosiy menyuga qaytdik.", {
+        reply_markup: buildDriverMenuKeyboard(),
+      });
+
+      return;
+    }
+
+    // ⬇️ стандартная логика, если НЕ «Boshqa marka/model»
     if (session.isCargo) {
       await askCargoSize(chatId, session);
     } else {
@@ -4352,6 +4399,7 @@ async function handleDocumentPhoto(update, session, docType) {
         );
         session.assignedTariffs = tariffsInfo.tariffs || [];
       }
+
       await sendTelegramMessage(
         chatId,
         "✅ Barcha kerakli hujjatlar qabul qilindi."
@@ -4360,11 +4408,11 @@ async function handleDocumentPhoto(update, session, docType) {
       // Bu yerda biz 2-bosqichdamiz — faqat avtomobil qo‘shilmoqda
       session.registrationFlow = "car_only";
 
-    await startFirstConfirmation(chatId, session);
-
+      await startFirstConfirmation(chatId, session);
     }
   }
 }
+
 /**
  * Получение баланса и заблокированного баланса водителя
  * GET /v1/parks/contractors/blocked-balance
@@ -4588,18 +4636,11 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // ➕ «Boshqa model» — авто только к оператору + алерт
+    // ➕ «Boshqa model» — ручная регистрация авто через оператора
     if (data === "car_model_other") {
-      // флаг: машину не создаём через Fleet
+      // флаги: машину не создаём автоматически, модель «другая»
       session.registerWithoutCar = true;
-
-      await sendOperatorAlert(
-        "*Haydovchi avtomobil uchun «Boshqa model»ni tanladi*\n\n" +
-          `Chat ID: \`${chatId}\`\n` +
-          `Telefon: \`${session.phone || "—"}\`\n` +
-          `Marka: ${session.carBrandLabel || "—"}\n` +
-          "Avtomobil operator tomonidan qo‘lda qo‘shilishi kerak."
-      );
+      session.manualCarOtherModel = true;
 
       await sendTelegramMessage(
         chatId,
@@ -4612,6 +4653,7 @@ exports.handler = async (event) => {
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
+
 
     // 🔙 Назад из выбора марки — в основное меню водителя
     if (data === "car_brand_back") {
@@ -4629,22 +4671,18 @@ exports.handler = async (event) => {
       return { statusCode: 200, body: "OK" };
     }
 
-    // ➕ «Boshqa marka» — авто только к оператору + алерт
+    // ➕ «Boshqa marka» — ручная регистрация авто через оператора
     if (data === "car_brand_other") {
+      // очищаем выбранную марку/модель — будем решать вручную
       session.carBrandCode = null;
       session.carBrandLabel = null;
       session.carModelCode = null;
       session.carModelLabel = null;
 
-      // Машину не создаём автоматом
+      // Машину не создаём автоматом, запоминаем сценарий «другая марка»
       session.registerWithoutCar = true;
-
-      await sendOperatorAlert(
-        "*Haydovchi avtomobil uchun «Boshqa marka»ni tanladi*\n\n" +
-          `Chat ID: \`${chatId}\`\n` +
-          `Telefon: \`${session.phone || "—"}\`\n` +
-          "Avtomobil operator tomonidan qo‘lda qo‘shilishi kerak."
-      );
+      session.manualCarOtherBrand = true;
+      session.manualCarOtherModel = false;
 
       await sendTelegramMessage(
         chatId,
@@ -4657,6 +4695,7 @@ exports.handler = async (event) => {
       await answerCallbackQuery(cq.id);
       return { statusCode: 200, body: "OK" };
     }
+
 
     // выбор бренда
     if (data.startsWith("car_brand:")) {

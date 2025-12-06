@@ -2143,6 +2143,108 @@ async function handleTechBackPhoto(update, session) {
   await showDriverSummaryForConfirm(chatId, session);
 }
 
+// ================== РУЧНОЙ СЦЕНАРИЙ: "Другая марка" — фото техпаспорта ==================
+
+async function handleManualCarTechFrontPhoto(chatId, session, message) {
+  const draft = session.driverDraft || (session.driverDraft = {});
+
+  let fileId = null;
+
+  if (Array.isArray(message.photo) && message.photo.length) {
+    fileId = message.photo[message.photo.length - 1].file_id;
+  } else if (
+    message.document &&
+    message.document.mime_type &&
+    message.document.mime_type.startsWith("image/")
+  ) {
+    fileId = message.document.file_id;
+  }
+
+  if (!fileId) {
+    await sendTelegramMessage(
+      chatId,
+      "Iltimos, texnik pasportning old tomonining aynan *fotosuratini* yuboring.",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // сохраняем file_id лицевой стороны техпаспорта
+  draft.techFrontFileId = fileId;
+
+  // следующий шаг — обратная сторона
+  session.step = "manual_car_tech_back";
+
+  await sendTelegramMessage(
+    chatId,
+    "Endi texnik pasportning orqa tomonining fotosuratini yuboring."
+  );
+}
+
+async function handleManualCarTechBackPhoto(chatId, message, session) {
+  const draft = session.driverDraft || {};
+
+  if (!message.photo || !message.photo.length) {
+    await sendTelegramMessage(
+      chatId,
+      "Iltimos, texnik pasportning orqa tomonining aynan *fotosuratini* yuboring.",
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  const photo = message.photo[message.photo.length - 1];
+  draft.techBackFileId = photo.file_id;
+  session.driverDraft = draft;
+
+  // 🔹 To‘liq ma’lumotlar to‘plami operator uchun
+  const driverIdForAlert = draft.driverId || draft.driverIdForCar || "—";
+
+  const lines = [];
+  lines.push("🚗 So‘rov: \"Boshqa marka\" — avtomobilni qo‘lda ro‘yxatdan o‘tkazish");
+  lines.push("");
+  lines.push("1️⃣ Haydovchi ma’lumotlari:");
+  lines.push(`• F.I.Sh.: ${draft.driverFullName || "—"}`);
+  lines.push(`• Telefon: ${draft.driverPhone || "—"}`);
+  lines.push(`• Driver ID (Fleet): ${driverIdForAlert}`);
+  lines.push("");
+  lines.push("2️⃣ Avtomobil ma’lumotlari (agar kiritilgan bo‘lsa):");
+  lines.push(`• Davlat raqami: ${draft.carPlate || "—"}`);
+  lines.push(
+    `• Rangi: ${draft.carColorText || draft.carColor || "—"}`
+  );
+  lines.push("");
+  lines.push("3️⃣ Texnik pasport fotosuratlari:");
+  lines.push("• Foto №1 — old tomoni (LOG chatga hujjatlar bilan birga yuborilgan)");
+  lines.push("• Foto №2 — orqa tomoni (LOG chatga hujjatlar bilan birga yuborilgan)");
+  lines.push("");
+  lines.push(
+    "Izoh: Hunter avtomobil qo‘shishda «Boshqa marka» tugmasini tanladi. " +
+      "Avtomobilni Yandex Fleet’da qo‘lda ro‘yxatdan o‘tkazish va ushbu haydovchiga biriktirish kerak."
+  );
+
+  // 🔹 Matnli so‘rovni operatorlarga
+  await sendOperatorAlert(lines.join("\n"));
+
+  // 🔹 Foto hujjatlarni LOG chatga jo‘natamiz (technika pasport old + orqa)
+  await sendDocsToLogChat(draft);
+
+  // 🔹 Hunter’ga tasdiqlovchi xabar
+  await sendTelegramMessage(
+    chatId,
+    "Rahmat, avtomobil bo‘yicha ma’lumotlar operatorga yuborildi.\n" +
+      "Operator bu avtomobilni ushbu haydovchiga Yandeks tizimida qo‘lda biriktiradi.\n" +
+      "Iltimos, kutib turing."
+  );
+
+  // Keyingi qadam — haydovchi ma’lumotlarini tasdiqlash ekrani (avtosiz)
+  session.step = "driver_confirm";
+  session.driverDraft = draft;
+  await showDriverSummaryForConfirm(chatId, session);
+}
+
+
+
 // ================== СОЗДАНИЕ ВОДИТЕЛЯ (этап 1) ==================
 async function createDriverInFleetForHunter(draft) {
   const cfg = ensureFleetConfigured();
@@ -2868,6 +2970,17 @@ if (bindOk) {
     Number.isFinite(HUNTER_DRIVER_BONUS_AMOUNT) &&
     HUNTER_DRIVER_BONUS_AMOUNT > 0
   ) {
+    // если hunter уже подгружен — смотрим, не был ли бонус ранее
+    const alreadyGiven =
+      session.hunter &&
+      session.hunter.drivers &&
+      session.hunter.drivers[driverId] &&
+      session.hunter.drivers[driverId].bonusGiven;
+
+    if (alreadyGiven) {
+      // бонус уже выдавался — просто выходим без повторного начисления
+      return;
+    }
     const driverState = {
       driverId,
       carId: carId || null,
@@ -3101,83 +3214,36 @@ async function handleCallback(chatId, session, callback) {
     return;
   }
 
-  // 🔁 Другая марка – авто НЕ создаём, шлём алерт операторам
+  // 🔁 Другая марка – переходим в сценарий ручной регистрации авто по фото техпаспорта
   if (data === "car_brand_other") {
     await answerCallbackQuery(callback.id);
 
-    const driverId = draft.driverIdForCar || draft.driverId || "—";
+    if (!draft || !draft.driverId) {
+      await sendTelegramMessage(
+        chatId,
+        "Haydovchi ma’lumotlari topilmadi. Iltimos, ro‘yxatdan o‘tish jarayonini qaytadan boshlang."
+      );
+      return;
+    }
+
+    // «Boshqa marka» — avtomobil qo‘lda ro‘yxatdan o‘tkaziladi
+    draft.manualCarOtherBrand = true;
+    session.driverDraft = draft;
+    session.step = "manual_car_tech_front";
+
+    // eski inline tugmalarni tozalaymiz
+    if (message && message.message_id) {
+      await editMessageReplyMarkup(chatId, message.message_id, null);
+    }
 
     await sendTelegramMessage(
       chatId,
-      "🔤 Siz *«Boshqa marka»* tugmasini tanladingiz.\n\n" +
-        "Avtomobil ma’lumotlari park operatoriga yuborildi. U avtomobilni qo‘lda qo‘shadi va haydovchiga biriktiradi.",
-      { parse_mode: "Markdown" }
+      "Iltimos, texnik pasportning old tomonining fotosuratini yuboring."
     );
 
-    await sendOperatorAlert(
-      "🚗 Qo‘lda avtomobil qo‘shish kerak (Boshqa marka)\n\n" +
-        `👤 Хантер: ${draft.hunterName || "—"} (chat_id: ${
-          draft.hunterChatId || "—"
-        })\n` +
-        `📞 Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
-        `Driver ID (Fleet): ${driverId}\n` +
-        "Hunter avtomobil markasini ro‘yxatdan tanlay olmadi (Boshqa marka). " +
-        "Iltimos, avtomobilni Fleet’da qo‘lda yarating va haydovchiga biriktiring."
-    );
-
-    // Завершаем поток добавления авто и возвращаем в главное меню
-    session.step = "main_menu";
-    session.driverDraft = null;
-    await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
-      reply_markup: mainMenuKeyboard(),
-    });
     return;
   }
 
-  // 🔙 Назад из списка моделей – возвращаемся к выбору бренда
-  if (data === "car_model_back") {
-    await answerCallbackQuery(callback.id);
-    // Можно просто снова показать бренды
-    await askCarBrand(chatId, session);
-    return;
-  }
-
-  // 🔁 Другая модель – авто тоже НЕ создаём, алерт операторам
-  if (data.startsWith("car_model_other:")) {
-    await answerCallbackQuery(callback.id);
-
-    const [, brandCode] = data.split(":");
-    const brand = CAR_BRANDS.find((b) => b.code === brandCode);
-    const brandLabel = brand ? brand.label : brandCode;
-
-    const driverId = draft.driverIdForCar || draft.driverId || "—";
-
-    await sendTelegramMessage(
-      chatId,
-      "🔤 Siz *«Boshqa model»* tugmasini tanladingiz.\n\n" +
-        "Avtomobil modeli park operatoriga yuborildi. U avtomobilni qo‘lda qo‘shadi va haydovchiga biriktiradi.",
-      { parse_mode: "Markdown" }
-    );
-
-    await sendOperatorAlert(
-      "🚗 Qo‘lda avtomobil qo‘shish kerak (Boshqa model)\n\n" +
-        `👤 Хантер: ${draft.hunterName || "—"} (chat_id: ${
-          draft.hunterChatId || "—"
-        })\n` +
-        `📞 Haydovchi telefoni: ${draft.driverPhone || "—"}\n` +
-        `Driver ID (Fleet): ${driverId}\n` +
-        `Brend (botda): ${brandLabel}\n` +
-        "Hunter kerakli modelni ro‘yxatdan tanlay olmadi (Boshqa model). " +
-        "Iltimos, avtomobilni Fleet’da qo‘lda yarating va haydovchiga biriktiring."
-    );
-
-    session.step = "main_menu";
-    session.driverDraft = null;
-    await sendTelegramMessage(chatId, "Asosiy menyuga qaytdingiz.", {
-      reply_markup: mainMenuKeyboard(),
-    });
-    return;
-  }
 
 
 
@@ -3780,6 +3846,30 @@ if (
     return { statusCode: 200, body: "OK" };
   }
 
+  // 🔹 РУЧНОЙ сценарий "Другая марка" — лицевой техпаспорт
+  if (
+    session.step === "manual_car_tech_front" &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    await handleManualCarTechFrontPhoto(chatId, session, msg);
+    return { statusCode: 200, body: "OK" };
+  }
+
+  // 🔹 РУЧНОЙ сценарий "Другая марка" — обратный техпаспорт
+  if (
+    session.step === "manual_car_tech_back" &&
+    (Array.isArray(msg.photo) ||
+      (msg.document &&
+        msg.document.mime_type &&
+        msg.document.mime_type.startsWith("image/")))
+  ) {
+    await handleManualCarTechBackPhoto(chatId, session, msg);
+    return { statusCode: 200, body: "OK" };
+  }
+
   if (
     session.step === "driver_tech_front" &&
     (Array.isArray(msg.photo) ||
@@ -3801,6 +3891,7 @@ if (
     await handleTechBackPhoto(update, session);
     return { statusCode: 200, body: "OK" };
   }
+
 
   if (session.step === "main_menu") {
     if (text === "➕ Haydovchini ro‘yxatdan o‘tkazish") {

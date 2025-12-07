@@ -24,18 +24,42 @@ if (!TELEGRAM_TOKEN) {
 }
 
 // ===== Netlify Blobs storage (общий store.js уже есть в проекте) =====
-const { initBlobStore, getStore } = require("./bot/store");
+const { getStore: getBlobsStore } = require("@netlify/blobs");
+
 
 const NUR_STORE_NAME = "nur-wb-drivers";
 
 function getNurStore() {
   try {
-    return getStore(NUR_STORE_NAME);
+    const siteID =
+      process.env.NUR_BLOBS_SITE_ID ||
+      process.env.BLOBS_SITE_ID ||
+      process.env.NETLIFY_SITE_ID;
+
+    const token =
+      process.env.NUR_BLOBS_TOKEN || process.env.BLOBS_TOKEN;
+
+    if (!siteID || !token) {
+      console.error("NUR blobs config missing", {
+        hasSiteID: !!siteID,
+        hasToken: !!token,
+      });
+      return null;
+    }
+
+    const store = getBlobsStore({
+      name: NUR_STORE_NAME,
+      siteID,
+      token,
+    });
+
+    return store;
   } catch (e) {
-    console.error("getNurStore error:", e);
+    console.error("getNurStore exception:", e);
     return null;
   }
 }
+
 
 // ===== Сессии в памяти =====
 
@@ -366,22 +390,28 @@ function editMessageReplyMarkup(chatId, messageId, replyMarkup) {
 async function getNextDriverId() {
   const store = getNurStore();
   if (!store) {
-    console.error("No NUR store, cannot generate driverId");
+    console.error("getNextDriverId: store is null");
     return null;
   }
 
-  let meta =
-    (await store.get("meta", {
-      type: "json",
-    })) || { lastId: 0 };
+  try {
+    let meta =
+      (await store.get("meta", { type: "json" })) || { lastId: 0 };
 
-  const next = Number(meta.lastId || 0) + 1;
-  meta.lastId = next;
-  await store.setJSON("meta", meta);
+    const next = Number(meta.lastId || 0) + 1;
+    meta.lastId = next;
+    await store.setJSON("meta", meta);
 
-  const numStr = String(next).padStart(4, "0");
-  return `NUR-${numStr}`;
+    const numStr = String(next).padStart(4, "0");
+    const driverId = `NUR-${numStr}`;
+    console.log("getNextDriverId ->", driverId);
+    return driverId;
+  } catch (e) {
+    console.error("getNextDriverId error:", e);
+    return null;
+  }
 }
+
 
 /**
  * индекс в blobs для рассылок:
@@ -389,43 +419,76 @@ async function getNextDriverId() {
  */
 async function updateDriverIndex(driver) {
   const store = getNurStore();
-  if (!store) return;
-
-  let idx =
-    (await store.get("index", {
-      type: "json",
-    })) || { drivers: [] };
-
-  const existing = idx.drivers.find((d) => d.driverId === driver.driverId);
-  if (existing) {
-    existing.chatId = driver.chatId;
-    existing.lang = driver.lang;
-    existing.status = driver.status || existing.status || "new";
-  } else {
-    idx.drivers.push({
-      driverId: driver.driverId,
-      chatId: driver.chatId,
-      lang: driver.lang,
-      status: driver.status || "new",
-    });
+  if (!store) {
+    console.error("updateDriverIndex: store is null");
+    return;
   }
 
-  await store.setJSON("index", idx);
+  try {
+    let idx =
+      (await store.get("index", { type: "json" })) || { drivers: [] };
+
+    const existing = idx.drivers.find((d) => d.driverId === driver.driverId);
+    if (existing) {
+      existing.chatId = driver.chatId;
+      existing.lang = driver.lang;
+      existing.status = driver.status || existing.status || "new";
+    } else {
+      idx.drivers.push({
+        driverId: driver.driverId,
+        chatId: driver.chatId,
+        lang: driver.lang,
+        status: driver.status || "new",
+      });
+    }
+
+    await store.setJSON("index", idx);
+    console.log("updateDriverIndex: saved", {
+      driverId: driver.driverId,
+      status: driver.status || "new",
+    });
+  } catch (e) {
+    console.error("updateDriverIndex error:", e);
+  }
 }
+
 
 async function saveDriver(driver) {
   const store = getNurStore();
-  if (!store) return;
-  await store.setJSON(`driver:${driver.driverId}`, driver);
-  await updateDriverIndex(driver);
+  if (!store) {
+    console.error("saveDriver: store is null");
+    return;
+  }
+
+  try {
+    await store.setJSON(`driver:${driver.driverId}`, driver);
+    console.log("saveDriver: driver saved", { driverId: driver.driverId });
+    await updateDriverIndex(driver);
+  } catch (e) {
+    console.error("saveDriver error:", e);
+  }
 }
+
 
 async function loadDriver(driverId) {
   const store = getNurStore();
-  if (!store) return null;
-  const d = await store.get(`driver:${driverId}`, { type: "json" });
-  return d || null;
+  if (!store) {
+    console.error("loadDriver: store is null");
+    return null;
+  }
+
+  try {
+    const d = await store.get(`driver:${driverId}`, { type: "json" });
+    if (!d) {
+      console.warn("loadDriver: not found", { driverId });
+    }
+    return d || null;
+  } catch (e) {
+    console.error("loadDriver error:", e);
+    return null;
+  }
 }
+
 
 // ===== Google Sheets интеграция =====
 

@@ -1114,13 +1114,22 @@ async function handleReadyAnswer(chatId, data, callback) {
 
 exports.handler = async function (event) {
   try {
-    initBlobStore(event); // общий init из store.js
+    // Лог для проверки входящих запросов
+    console.log("telegram-nur-wb-bot handler start", {
+      method: event.httpMethod,
+    });
 
     if (event.httpMethod !== "POST") {
       return { statusCode: 200, body: "OK" };
     }
 
     const update = JSON.parse(event.body || "{}");
+
+    const shortInfo = {
+      hasMessage: !!update.message,
+      hasCallback: !!update.callback_query,
+    };
+    console.log("telegram-nur-wb-bot update:", JSON.stringify(shortInfo));
 
     // callback_query
     if (update.callback_query) {

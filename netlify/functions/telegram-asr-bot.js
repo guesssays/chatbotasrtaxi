@@ -4594,6 +4594,12 @@ exports.handler = async (event) => {
   let update;
   try {
     update = JSON.parse(event.body || "{}");
+
+    // 🔍 Временный лог для получения file_id фото
+    console.log(
+      "ASR RAW UPDATE:",
+      JSON.stringify(update, null, 2)
+    );
   } catch (e) {
     console.error("telegram-asr-bot: invalid JSON", e);
     return { statusCode: 200, body: "OK" };

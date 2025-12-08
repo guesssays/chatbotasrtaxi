@@ -70,7 +70,7 @@ const STOP_REGISTRATION_TEXT = "⛔ Ro‘yxatdan o‘tishni to‘xtatish";
 
 // 🔹 Интро-медиа (загружены в чат этого же бота)
 const INTRO_PHOTO_FILE_ID =
-  "AgACAgIAAxkBAAE-9AVpNseHrloxO94X5upqguqtGuPQBAACiRFrG2KiqEmnkhQkD2jSCAEAAwIAA3kAAzYE";
+  "AgACAgIAAxkBAAIjNGk2yF5jh4nMWCnAwISPXmRz_Y_vAAIhD2sbsbS5SRU4FI-Pb-utAQADAgADeAADNgQ";
 
 const INTRO_VIDEO_FILE_ID =
   "BAACAgIAAxkBAAE-wt5pMTb0Qwb56VPiKXZhsn7fk-RZkgACU6AAAlesiUnDLgjtSEUczDYE"; // 1204.mp4

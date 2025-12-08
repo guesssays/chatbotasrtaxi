@@ -69,6 +69,9 @@ if (!UPLOAD_DOC_URL) {
 const STOP_REGISTRATION_TEXT = "⛔ Ro‘yxatdan o‘tishni to‘xtatish";
 
 // 🔹 Интро-медиа (загружены в чат этого же бота)
+const INTRO_PHOTO_FILE_ID =
+  "AgACAgIAAxkBAAE-76RpNmSq0YhFGy8mHFn0u74QQy4xrAACOQxrG5tzsEkWAAFyR6xUp3kBAAMCAAN5AAM2BA";
+
 const INTRO_VIDEO_FILE_ID =
   "BAACAgIAAxkBAAE-wt5pMTb0Qwb56VPiKXZhsn7fk-RZkgACU6AAAlesiUnDLgjtSEUczDYE"; // 1204.mp4
 const INTRO_AUDIO_FILE_ID =
@@ -1173,6 +1176,32 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
     console.error("sendTelegramMessage exception:", e);
   }
 }
+
+// Отправка фото по file_id
+async function sendTelegramPhoto(chatId, fileId, extra = {}) {
+  if (!TELEGRAM_API) {
+    console.error("sendTelegramPhoto: no TELEGRAM_API");
+    return;
+  }
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo: fileId,
+        ...extra,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("sendPhoto error:", res.status, txt);
+    }
+  } catch (e) {
+    console.error("sendTelegramPhoto exception:", e);
+  }
+}
+
 
 // Отправка видео по file_id
 async function sendTelegramVideo(chatId, fileId, extra = {}) {
@@ -3185,24 +3214,29 @@ async function handleStart(chatId, session) {
   // шаг, на котором ждём телефон
   session.step = "waiting_phone";
 
-  // 🔹 1. Один раз показываем видео-инструкцию и аудио
+  // 🔹 1. Один раз показываем фото-инструкцию, видео и аудио
   if (!session.introSent) {
     session.introSent = true;
 
-await sendTelegramVideo(chatId, INTRO_VIDEO_FILE_ID, {
-  caption:
-    "📹 ASR TAXI video yo‘riqnoma:\nBot orqali parkka qanday ro‘yxatdan o‘tish mumkin.",
-});
+    // 1) Картинка-инструкция
+    await sendTelegramPhoto(chatId, INTRO_PHOTO_FILE_ID, {
+      caption: "📄 Botdan foydalanish bo‘yicha qisqa yo‘riqnoma.",
+    });
 
+    // 2) Видео-инструкция
+    await sendTelegramVideo(chatId, INTRO_VIDEO_FILE_ID, {
+      caption:
+        "📹 ASR TAXI video yo‘riqnoma:\nBot orqali parkka qanday ro‘yxatdan o‘tish mumkin.",
+    });
 
-await sendTelegramAudio(chatId, INTRO_AUDIO_FILE_ID, {
-  caption: "🎧 Audio yo‘riqnoma.",
-  title: "ASR TAXI audio yo‘riqnoma",
-  performer: "ASR TAXI",
-});
-
-
+    // 3) Аудио-инструкция
+    await sendTelegramAudio(chatId, INTRO_AUDIO_FILE_ID, {
+      caption: "🎧 Audio yo‘riqnoma.",
+      title: "ASR TAXI audio yo‘riqnoma",
+      performer: "ASR TAXI",
+    });
   }
+
 
   // 🔹 2. После медиа — текст с просьбой отправить номер телефона
   const text =

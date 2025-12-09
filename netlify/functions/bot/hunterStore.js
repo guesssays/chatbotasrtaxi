@@ -1,48 +1,61 @@
 // bot/hunterStore.js
-// Отдельный клиент Netlify Blobs специально для telegram-hunter-bot
 
 const { createClient } = require("@netlify/blobs");
 
 let hunterBlobsClient = null;
+const hunterStores = new Map();
 
 /**
- * Инициализация отдельного Blobs-клиента для hunter-бота.
- * Используем отдельный токен HUNTER_BLOBS_TOKEN,
- * но siteID берём из BLOBS_SITE_ID (как в остальных функциях).
+ * Инициализация отдельного Blobs-клиента
+ * для hunter-бота.
+ *
+ * Используем:
+ *  - HUNTER_BLOBS_TOKEN  — персональный токен только для hunter-бота
+ *  - BLOBS_SITE_ID       — общий site id (как в обычном store.js)
  */
 function initHunterBlobStore() {
-  if (hunterBlobsClient) return;
-
-  const token =
-    process.env.HUNTER_BLOBS_TOKEN || // 🔹 отдельный токен только для hunter-бота
-    process.env.BLOBS_PERSONAL_TOKEN || // запасной вариант, если вдруг не задали
-    process.env.BLOBS_RW_TOKEN || // ещё один запасной
-    process.env.BLOBS_TOKEN; // самый старый вариант
-
-  const siteID = process.env.BLOBS_SITE_ID;
-
-  if (!token || !siteID) {
-    console.error("initHunterBlobStore: no token or siteID", {
-      hasToken: !!token,
-      hasSiteId: !!siteID,
-    });
-    throw new Error("Hunter Blobs not configured (HUNTER_BLOBS_TOKEN/BLOBS_SITE_ID)");
+  if (hunterBlobsClient) {
+    return; // уже инициализирован
   }
 
+  const token = process.env.HUNTER_BLOBS_TOKEN;
+  const siteId = process.env.BLOBS_SITE_ID;
+
+  if (!token) {
+    console.error(
+      "initHunterBlobStore: HUNTER_BLOBS_TOKEN is not set in environment"
+    );
+    throw new Error("HUNTER_BLOBS_TOKEN is not set");
+  }
+
+  if (!siteId) {
+    console.error(
+      "initHunterBlobStore: BLOBS_SITE_ID is not set in environment"
+    );
+    throw new Error("BLOBS_SITE_ID is not set");
+  }
+
+  // ВАЖНО: createClient берём именно как { createClient } из require("@netlify/blobs")
   hunterBlobsClient = createClient({
     token,
-    siteID,
+    siteId,
   });
 }
 
 /**
- * Получение стора по имени (hunter-bot-hunters, hunter-bot-driver-index и т.д.)
+ * Возвращает raw-store по имени.
+ * Перед вызовом ОБЯЗАТЕЛЬНО должна быть вызвана initHunterBlobStore().
  */
-function getHunterStoreRaw(name) {
+function getHunterStoreRaw(storeName) {
   if (!hunterBlobsClient) {
     throw new Error("Hunter blob store is not initialized");
   }
-  return hunterBlobsClient.store(name);
+
+  if (!hunterStores.has(storeName)) {
+    hunterStores.set(storeName, hunterBlobsClient.getStore(storeName));
+  }
+
+  return hunterStores.get(storeName);
 }
 
 module.exports = {

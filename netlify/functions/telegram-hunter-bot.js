@@ -74,15 +74,19 @@ if (!UPLOAD_DOC_URL) {
   );
 }
 
-// ================== PERSISTENT HUNTER STORAGE (Netlify Blobs) ==================
-const { initBlobStore, getStore } = require("./bot/store");
+// ================== PERSISTENT HUNTER STORAGE (Netlify Blobs, отдельный клиент для hunter-бота) ==================
+const {
+  initHunterBlobStore,
+  getHunterStoreRaw,
+} = require("./bot/hunterStore");
+
 
 const HUNTER_STORE_NAME = "hunter-bot-hunters";
 const DRIVER_INDEX_STORE_NAME = "hunter-bot-driver-index";
 
 function getHunterStore() {
   try {
-    return getStore(HUNTER_STORE_NAME);
+    return getHunterStoreRaw(HUNTER_STORE_NAME);
   } catch (e) {
     console.error("getHunterStore error:", e);
     return null;
@@ -91,12 +95,13 @@ function getHunterStore() {
 
 function getDriverIndexStore() {
   try {
-    return getStore(DRIVER_INDEX_STORE_NAME);
+    return getHunterStoreRaw(DRIVER_INDEX_STORE_NAME);
   } catch (e) {
     console.error("getDriverIndexStore error:", e);
     return null;
   }
 }
+
 
 
 async function loadHunterFromStorage(chatId) {
@@ -3683,9 +3688,10 @@ exports.handler = async (event) => {
   }
 
   try {
-    initBlobStore(event);
+    // отдельный Blobs-клиент только для hunter-бота
+    initHunterBlobStore();
   } catch (e) {
-    console.error("initBlobStore error in telegram-hunter-bot:", e);
+    console.error("initHunterBlobStore error in telegram-hunter-bot:", e);
   }
 
   let update;

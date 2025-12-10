@@ -1,61 +1,52 @@
 // bot/hunterStore.js
 
-const { createClient } = require("@netlify/blobs");
+const { getStore: getNetlifyStore } = require("@netlify/blobs");
 
-let hunterBlobsClient = null;
-const hunterStores = new Map();
+// Отдельные env-переменные для hunter-бота
+const HUNTER_BLOBS_SITE_ID =
+  process.env.HUNTER_BLOBS_SITE_ID || // можешь завести такую
+  process.env.BLOBS_SITE_ID ||
+  process.env.NETLIFY_SITE_ID ||
+  process.env.SITE_ID ||
+  null;
 
-/**
- * Инициализация отдельного Blobs-клиента
- * для hunter-бота.
- *
- * Используем:
- *  - HUNTER_BLOBS_TOKEN  — персональный токен только для hunter-бота
- *  - BLOBS_SITE_ID       — общий site id (как в обычном store.js)
- */
+const HUNTER_BLOBS_TOKEN =
+  process.env.HUNTER_BLOBS_TOKEN ||   // персональный токен для hunter
+  process.env.BLOBS_TOKEN ||
+  process.env.NETLIFY_BLOBS_TOKEN ||
+  process.env.NETLIFY_AUTH_TOKEN ||
+  null;
+
+// Чтобы код, который вызывает initHunterBlobStore(), не падал
 function initHunterBlobStore() {
-  if (hunterBlobsClient) {
-    return; // уже инициализирован
-  }
-
-  const token = process.env.HUNTER_BLOBS_TOKEN;
-  const siteId = process.env.BLOBS_SITE_ID;
-
-  if (!token) {
+  if (!HUNTER_BLOBS_SITE_ID || !HUNTER_BLOBS_TOKEN) {
     console.error(
-      "initHunterBlobStore: HUNTER_BLOBS_TOKEN is not set in environment"
+      "Hunter blobs: HUNTER_BLOBS_TOKEN или HUNTER_BLOBS_SITE_ID/BLOBS_SITE_ID не заданы"
     );
-    throw new Error("HUNTER_BLOBS_TOKEN is not set");
+    // можно бросить ошибку, чтобы сразу увидеть проблему
+    // throw new Error("Hunter blob store config missing");
   }
-
-  if (!siteId) {
-    console.error(
-      "initHunterBlobStore: BLOBS_SITE_ID is not set in environment"
-    );
-    throw new Error("BLOBS_SITE_ID is not set");
-  }
-
-  // ВАЖНО: createClient берём именно как { createClient } из require("@netlify/blobs")
-  hunterBlobsClient = createClient({
-    token,
-    siteId,
-  });
 }
 
 /**
- * Возвращает raw-store по имени.
- * Перед вызовом ОБЯЗАТЕЛЬНО должна быть вызвана initHunterBlobStore().
+ * Возвращает store для hunter-бота.
+ * Перед этим в логах можно посмотреть, хватает ли конфигурации.
  */
-function getHunterStoreRaw(storeName) {
-  if (!hunterBlobsClient) {
-    throw new Error("Hunter blob store is not initialized");
+function getHunterStoreRaw(name) {
+  if (!name) {
+    throw new Error("getHunterStoreRaw: store name is required");
   }
 
-  if (!hunterStores.has(storeName)) {
-    hunterStores.set(storeName, hunterBlobsClient.getStore(storeName));
+  if (HUNTER_BLOBS_SITE_ID && HUNTER_BLOBS_TOKEN) {
+    return getNetlifyStore({
+      name,
+      siteID: HUNTER_BLOBS_SITE_ID,
+      token: HUNTER_BLOBS_TOKEN,
+    });
   }
 
-  return hunterStores.get(storeName);
+  // fallback — автоопределение (локально / в v2-функциях)
+  return getNetlifyStore({ name });
 }
 
 module.exports = {

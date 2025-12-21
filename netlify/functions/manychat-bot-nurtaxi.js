@@ -168,7 +168,7 @@ exports.handler = async (event) => {
 
 const { getStore } = require("@netlify/blobs");
 
-const { getStore } = require("@netlify/blobs");
+
 
 // Отдельное хранилище промпта для NUR TAXI
 const NURTAXI_PROMPT_BLOBS_TOKEN =
@@ -922,17 +922,21 @@ T03
 async function getSystemPrompt() {
   try {
     const store = getPromptStore();
-    const saved = await store.get("systemPrompt"); // ← возвращает строку
+    const saved = await store.get("systemPrompt"); // ← строка из Blobs
 
     if (saved && saved.trim().length > 0) {
+      console.log("NurTaxi systemPrompt loaded from Blobs, length:", saved.length);
       return saved;
     }
+
+    console.log("NurTaxi systemPrompt: Blobs empty, use DEFAULT_SYSTEM_PROMPT");
   } catch (err) {
     console.error("getSystemPrompt error, use default:", err);
   }
 
   return DEFAULT_SYSTEM_PROMPT;
 }
+
 
 
 async function generateReply(userMessage, contactId, context = "") {

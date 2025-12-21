@@ -182,7 +182,7 @@ function getPromptStore() {
 
   // ВАЖНО: отдельное хранилище под NUR TAXI, чтобы не пересекалось с ASR
   return getStore({
-    name: "manychat-prompts-nurtaxi",
+    name: "manychat-nurtaxi-prompts",
     siteID,
     token,
   });

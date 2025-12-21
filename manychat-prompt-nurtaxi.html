@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Промпт Instagram-бота NurTaxi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 15px;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    textarea {
+      width: 100%;
+      min-height: 500px;
+      background: #020617;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      resize: vertical;
+    }
+    .buttons { margin-top: 12px; display: flex; gap: 10px; }
+    button { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; }
+    #saveBtn { background: #22c55e; }
+    #reloadBtn { background: #4b5563; color: #e5e7eb; }
+    #status { margin-top: 15px; opacity: 0.8; }
+  </style>
+</head>
+
+<body>
+  <h1>Промпт Instagram-бота NurTaxi</h1>
+  <div class="info">Для доступа нужен параметр ?token=...</div>
+
+  <textarea id="prompt"></textarea>
+
+  <div class="buttons">
+    <button id="saveBtn">💾 Сохранить</button>
+    <button id="reloadBtn">🔄 Обновить</button>
+  </div>
+
+  <div id="status"></div>
+
+  <script>
+    const textarea = document.getElementById("prompt");
+    const statusEl = document.getElementById("status");
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token");
+
+    if (!token) {
+      statusEl.textContent = "Нет token в URL. Доступ запрещён.";
+    }
+
+    const API_URL = `/.netlify/functions/manychat-prompt-nurtaxi-config?token=${encodeURIComponent(token)}`;
+
+    async function load() {
+      statusEl.textContent = "Загрузка...";
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      textarea.value = data.systemPrompt || "";
+      statusEl.textContent = "Загружено.";
+    }
+
+    async function save() {
+      statusEl.textContent = "Сохранение...";
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt: textarea.value }),
+      });
+      statusEl.textContent = "Сохранено.";
+    }
+
+    document.getElementById("saveBtn").onclick = save;
+    document.getElementById("reloadBtn").onclick = load;
+
+    if (token) load();
+  </script>
+</body>
+</html>

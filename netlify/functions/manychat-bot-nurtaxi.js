@@ -902,16 +902,23 @@ T03
 `;
 
 // подтягиваем сохранённый промпт
+// ================== SYSTEM PROMPT LOADER (FROM BLOBS) ==================
+
 async function getSystemPrompt() {
   try {
     const store = getPromptStore();
-    const saved = await store.get("systemPrompt");
-    if (saved && saved.trim().length > 0) return saved;
-  } catch (e) {
-    console.error("getSystemPrompt error, use default:", e);
+    const saved = await store.get("systemPrompt"); // ← возвращает строку
+
+    if (saved && saved.trim().length > 0) {
+      return saved;
+    }
+  } catch (err) {
+    console.error("getSystemPrompt error, use default:", err);
   }
+
   return DEFAULT_SYSTEM_PROMPT;
 }
+
 
 async function generateReply(userMessage, contactId, context = "") {
   const apiKey = process.env.OPENAI_API_KEY;

@@ -168,28 +168,43 @@ exports.handler = async (event) => {
 
 const { getStore } = require("@netlify/blobs");
 
+const { getStore } = require("@netlify/blobs");
+
 // Отдельное хранилище промпта для NUR TAXI
 const NURTAXI_PROMPT_BLOBS_TOKEN =
-  process.env.NURTAXI_PROMPT_BLOBS_TOKEN || process.env.NUR_BLOBS_TOKEN || null;
+  process.env.NURTAXI_PROMPT_BLOBS_TOKEN ||
+  process.env.NUR_BLOBS_TOKEN ||
+  process.env.PROMPT_BLOBS_TOKEN ||
+  process.env.BLOBS_TOKEN ||
+  null;
+
 const NURTAXI_PROMPT_BLOBS_SITE_ID =
-  process.env.NURTAXI_PROMPT_BLOBS_SITE_ID || process.env.NUR_BLOBS_SITE_ID || null;
+  process.env.NURTAXI_PROMPT_BLOBS_SITE_ID ||
+  process.env.NUR_BLOBS_SITE_ID ||
+  process.env.PROMPT_BLOBS_SITE_ID ||
+  process.env.BLOBS_SITE_ID ||
+  null;
 
 function getPromptStore() {
-  const siteID = process.env.PROMPT_BLOBS_SITE_ID || process.env.BLOBS_SITE_ID || null;
-  const token = process.env.PROMPT_BLOBS_TOKEN || process.env.BLOBS_TOKEN || null;
+  const siteID = NURTAXI_PROMPT_BLOBS_SITE_ID;
+  const token = NURTAXI_PROMPT_BLOBS_TOKEN;
 
   if (!siteID || !token) {
-    console.error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN in env");
-    throw new Error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN in env");
+    console.error(
+      "Missing NURTAXI_PROMPT_BLOBS_SITE_ID or NURTAXI_PROMPT_BLOBS_TOKEN in env"
+    );
+    throw new Error(
+      "Missing NURTAXI_PROMPT_BLOBS_SITE_ID or NURTAXI_PROMPT_BLOBS_TOKEN in env"
+    );
   }
 
-  // читаем из того же стора, что и страница manychat-prompt-nurtaxi
   return getStore({
     name: "manychat-nurtaxi-prompts",
     siteID,
     token,
   });
 }
+
 
 
 

@@ -168,25 +168,30 @@ exports.handler = async (event) => {
 
 const { getStore } = require("@netlify/blobs");
 
-// Используем те же переменные окружения
-const PROMPT_BLOBS_TOKEN = process.env.PROMPT_BLOBS_TOKEN || process.env.BLOBS_TOKEN || null;
-const PROMPT_BLOBS_SITE_ID = process.env.PROMPT_BLOBS_SITE_ID || process.env.BLOBS_SITE_ID || null;
+// Отдельное хранилище промпта для NUR TAXI
+const NURTAXI_PROMPT_BLOBS_TOKEN =
+  process.env.NURTAXI_PROMPT_BLOBS_TOKEN || process.env.NUR_BLOBS_TOKEN || null;
+const NURTAXI_PROMPT_BLOBS_SITE_ID =
+  process.env.NURTAXI_PROMPT_BLOBS_SITE_ID || process.env.NUR_BLOBS_SITE_ID || null;
 
 function getPromptStore() {
-  const siteID = PROMPT_BLOBS_SITE_ID;
-  const token = PROMPT_BLOBS_TOKEN;
+  const siteID = NURTAXI_PROMPT_BLOBS_SITE_ID;
+  const token = NURTAXI_PROMPT_BLOBS_TOKEN;
 
   if (!siteID || !token) {
-    throw new Error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN env vars");
+    throw new Error(
+      "Missing NURTAXI_PROMPT_BLOBS_SITE_ID or NURTAXI_PROMPT_BLOBS_TOKEN env vars"
+    );
   }
 
-  // ВАЖНО: отдельное хранилище под NUR TAXI, чтобы не пересекалось с ASR
+  // отдельное хранилище под NUR TAXI, чтобы не пересекалось с ASR
   return getStore({
     name: "manychat-nurtaxi-prompts",
     siteID,
     token,
   });
 }
+
 
 // Дефолтный промпт (пока тот же по структуре, но бренд NUR TAXI)
 const DEFAULT_SYSTEM_PROMPT = `

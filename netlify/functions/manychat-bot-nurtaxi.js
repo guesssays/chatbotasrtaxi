@@ -175,22 +175,22 @@ const NURTAXI_PROMPT_BLOBS_SITE_ID =
   process.env.NURTAXI_PROMPT_BLOBS_SITE_ID || process.env.NUR_BLOBS_SITE_ID || null;
 
 function getPromptStore() {
-  const siteID = NURTAXI_PROMPT_BLOBS_SITE_ID;
-  const token = NURTAXI_PROMPT_BLOBS_TOKEN;
+  const siteID = process.env.PROMPT_BLOBS_SITE_ID || process.env.BLOBS_SITE_ID || null;
+  const token = process.env.PROMPT_BLOBS_TOKEN || process.env.BLOBS_TOKEN || null;
 
   if (!siteID || !token) {
-    throw new Error(
-      "Missing NURTAXI_PROMPT_BLOBS_SITE_ID or NURTAXI_PROMPT_BLOBS_TOKEN env vars"
-    );
+    console.error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN in env");
+    throw new Error("Missing PROMPT_BLOBS_SITE_ID or PROMPT_BLOBS_TOKEN in env");
   }
 
-  // отдельное хранилище под NUR TAXI, чтобы не пересекалось с ASR
+  // читаем из того же стора, что и страница manychat-prompt-nurtaxi
   return getStore({
     name: "manychat-nurtaxi-prompts",
     siteID,
     token,
   });
 }
+
 
 
 // Дефолтный промпт (пока тот же по структуре, но бренд NUR TAXI)
